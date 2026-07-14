@@ -107,6 +107,13 @@ img {
   flex-direction: column;
 }
 
+/* Desktop-only nav; the bottom-nav covers mobile. Actual layout (width,
+   position, item styling) lives in the desktop media query below — this
+   is just the mobile-first default so it doesn't render unstyled. */
+.side-nav {
+  display: none;
+}
+
 .topbar {
   position: sticky;
   top: 0;
@@ -798,6 +805,8 @@ main {
 
 .field input[type="text"],
 .field input[type="number"],
+.field input[type="email"],
+.field input[type="password"],
 .field select,
 .field textarea {
   width: 100%;
@@ -1517,17 +1526,6 @@ main {
   border-color: var(--blood, #7a2a32);
 }
 
-.signin-row {
-  display: flex;
-  gap: 8px;
-  align-items: center;
-}
-
-.signin-row input {
-  flex: 1;
-  min-width: 0;
-}
-
 .settings-row__label strong {
   color: var(--gold);
   font-weight: 600;
@@ -1536,4 +1534,93 @@ main {
 /* The pill would crowd the search box on a narrow phone */
 @media (max-width: 420px) {
   .sync-pill { display: none; }
+}
+
+/* ============================================================
+   BOOT SPLASH + SIGN-IN GATE
+   Neither has nav, topbar or fab — deliberately chrome-free so
+   there's nothing route-specific to flash before we know whether
+   this visitor is signed in, a returning guest, or neither.
+   ============================================================ */
+.boot-splash {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  color: var(--gold-bright);
+}
+
+.boot-splash__mark {
+  display: flex;
+  opacity: 0.9;
+}
+
+.boot-splash__word {
+  font-family: var(--font-display);
+  font-size: 18px;
+  letter-spacing: 0.04em;
+  color: var(--parchment-dim);
+}
+
+.gate {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+
+.gate__card {
+  width: 100%;
+  max-width: 380px;
+  background: var(--bg-panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-raised);
+  padding: 28px 24px;
+  text-align: center;
+}
+
+.gate__brand {
+  font-family: var(--font-display);
+  font-size: 20px;
+  letter-spacing: 0.03em;
+  color: var(--gold-bright);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+.gate__tagline {
+  font-size: 13px;
+  color: var(--ink);
+  margin-top: 6px;
+}
+
+.gate__field {
+  text-align: left;
+  margin-top: 22px;
+  margin-bottom: 0;
+}
+
+.gate__divider {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 20px 0 16px;
+  color: var(--ink-dim);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.gate__divider::before,
+.gate__divider::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: var(--line);
 }

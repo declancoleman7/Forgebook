@@ -241,6 +241,7 @@ const KEYS = {
   recents: "forgebook.recents",
   art: "forgebook.factionArt",
   schema: "forgebook.schema",
+  guest: "forgebook.guest",
 };
 
 function readJSON(key, fallback) {
