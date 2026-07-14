@@ -1,4 +1,8 @@
-const CACHE_NAME = "forgebook-v5";
+// Bump this when you remove or rename a core asset, so the old, now-
+// unreachable cache entry gets cleared out. Routine updates don't need a
+// bump any more — network-first below means fresh code always wins when
+// there's a connection; the cache is only the offline fallback.
+const CACHE_NAME = "forgebook-v6";
 const CORE_ASSETS = [
   "./",
   "./index.html",
@@ -40,9 +44,14 @@ self.addEventListener("activate", (event) => {
   self.clients.claim();
 });
 
-// Cache-first for same-origin core assets, network-first fallback to cache
-// for everything else (e.g. Google Fonts), so the app still works offline
-// after the first successful load.
+// Network-first for same-origin core assets, falling back to cache only when
+// the network is unreachable. This used to be cache-first, which is the bug
+// behind "some devices never get the update": whatever got cached the very
+// first time a device loaded the app was served back forever after, no
+// matter what actually changed on the server — a device that first installed
+// at v0.4 would silently stay on v0.4 code indefinitely. Network-first means
+// anyone with a connection always gets current code; offline use (the whole
+// point of this being a PWA) still works via the cache fallback below.
 self.addEventListener("fetch", (event) => {
   const req = event.request;
   if (req.method !== "GET") return;
@@ -59,17 +68,13 @@ self.addEventListener("fetch", (event) => {
 
   if (isSameOrigin) {
     event.respondWith(
-      caches.match(req).then(
-        (cached) =>
-          cached ||
-          fetch(req)
-            .then((res) => {
-              const copy = res.clone();
-              caches.open(CACHE_NAME).then((cache) => cache.put(req, copy));
-              return res;
-            })
-            .catch(() => caches.match("./index.html"))
-      )
+      fetch(req)
+        .then((res) => {
+          const copy = res.clone();
+          caches.open(CACHE_NAME).then((cache) => cache.put(req, copy));
+          return res;
+        })
+        .catch(() => caches.match(req).then((cached) => cached || caches.match("./index.html")))
     );
   } else {
     event.respondWith(
