@@ -18,7 +18,7 @@ const ICONS = {
 };
 
 function icon(name, size = 20) {
-  return `<svg viewBox="0 0 24 24" width="${size}" height="${size}" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${ICONS[name] || ""}</svg>`;
+  return `<svg viewBox="0 0 24 24" width="${size}" height="${size}" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${ICONS[name] || ""}</svg>`;
 }
 
 function emblemSvg(key, size = 24) {
@@ -951,6 +951,28 @@ function bindRecipeForm(root) {
 // ---------------------------------------------------------------
 // View: Settings
 // ---------------------------------------------------------------
+// Shared by the boot-time gate and this signed-out Settings block, so the
+// two never drift out of sync on copy or on which disclaimers get shown.
+function authFormHtml() {
+  return `
+    <div class="field" style="margin-bottom:10px">
+      <label>Email</label>
+      <input type="email" id="signin-email" placeholder="you@example.com" autocomplete="email" />
+    </div>
+    <div class="field" style="margin-bottom:10px">
+      <label>Password</label>
+      <input type="password" id="signin-password" placeholder="Your password" autocomplete="current-password" />
+    </div>
+    <button class="btn btn-primary btn-block" data-action="sign-in" ${cloudAvailable() ? "" : "disabled"}>Sign in</button>
+    <button type="button" class="btn btn-ghost btn-sm" data-action="forgot-password" style="margin-top:8px">Forgot password?</button>
+    <div class="settings-row__desc" style="margin-top:10px">
+      ${cloudAvailable()
+        ? "Forgebook is invite only \u2014 there's no sign-up form. If you've accepted an invite and set a password, sign in above."
+        : "You're offline, so sign-in isn't available right now. The app works fine without it."}
+    </div>
+  `;
+}
+
 function viewSettings() {
   return `
     <div class="page-enter">
@@ -968,6 +990,13 @@ function viewSettings() {
           </div>
           <div class="settings-row">
             <div>
+              <div class="settings-row__label">Change password</div>
+              <div class="settings-row__desc">Update the password you sign in with.</div>
+            </div>
+            <button class="btn btn-ghost btn-sm" data-nav="change-password">Change</button>
+          </div>
+          <div class="settings-row">
+            <div>
               <div class="settings-row__label">Sign out</div>
               <div class="settings-row__desc">Clears this device's copy of your book. Your recipes stay in the cloud.</div>
             </div>
@@ -976,17 +1005,10 @@ function viewSettings() {
         ` : `
           <div class="settings-row" style="display:block">
             <div class="settings-row__label">Sign in to sync across devices</div>
-            <div class="settings-row__desc" style="margin-bottom:10px">
-              Forgebook is invite only. Enter the email address you were invited with and
-              we'll send you a sign-in link \u2014 no password to remember.
+            <div class="settings-row__desc" style="margin-bottom:14px">
+              Enter the email and password you set when you accepted your invite.
             </div>
-            <div class="signin-row">
-              <input type="email" id="signin-email" placeholder="you@example.com" autocomplete="email" />
-              <button class="btn btn-primary" data-action="send-link" ${cloudAvailable() ? "" : "disabled"}>Send link</button>
-            </div>
-            ${cloudAvailable()
-              ? `<div class="settings-row__desc" style="margin-top:8px">Without signing in, Forgebook still works \u2014 your book just stays on this device.</div>`
-              : `<div class="settings-row__desc" style="margin-top:8px">You're offline, so sign-in isn't available. The app works fine without it.</div>`}
+            ${authFormHtml()}
           </div>
         `}
       </div>
@@ -1038,7 +1060,46 @@ function viewSettings() {
       <div class="fine-print">
         Faction names are used to organise your own recipes. Forgebook is an unofficial hobby
         tool, not affiliated with or endorsed by Games Workshop. All emblems shipped with the
-        app are original artwork.
+        app are original artwork. If you sign in, your email address and an encrypted password
+        are stored with our database provider (Supabase) so your recipes can sync across
+        devices — this is a small, self-run hobby project, not a professional security service,
+        so please use a password you don't rely on elsewhere. Nothing is required to use
+        Forgebook without an account.
+      </div>
+    </div>
+  `;
+}
+
+// ---------------------------------------------------------------
+// View: Change password (signed-in users only)
+// ---------------------------------------------------------------
+function viewChangePassword() {
+  return `
+    <div class="page-enter">
+      <div class="detail-header">
+        <button class="icon-btn" data-nav="settings">${icon("back", 18)}</button>
+        <div class="page-title" style="margin:0">Change Password</div>
+        <div style="width:36px"></div>
+      </div>
+
+      <div class="field">
+        <label>New password</label>
+        <input type="password" id="new-password" placeholder="At least 8 characters" autocomplete="new-password" />
+      </div>
+      <div class="field">
+        <label>Confirm password</label>
+        <input type="password" id="new-password-confirm" placeholder="Type it again" autocomplete="new-password" />
+      </div>
+
+      <div class="notice">
+        Use a password you don't already rely on elsewhere. Forgebook is a small, self-run
+        hobby project, not a professional security service — Supabase (our database provider)
+        handles and stores your password, hashed; Forgebook itself never sees it in plain text.
+      </div>
+
+      <div class="detail-actions">
+        <button class="btn btn-ghost btn-block" data-nav="settings">Cancel</button>
+        <button class="btn btn-primary btn-block" data-action="change-password-save">Save password</button>
       </div>
     </div>
   `;
@@ -1070,7 +1131,26 @@ function mergePromptHtml() {
   `;
 }
 
+function bindAuthInputs(root) {
+  const bind = (id, fn) => { const el = root.querySelector(id); if (el) el.oninput = fn; };
+  bind("#signin-email", (e) => { authEmail = e.target.value; });
+  bind("#signin-password", (e) => { authPassword = e.target.value; });
+  bind("#new-password", (e) => { authNewPassword = e.target.value; });
+  bind("#new-password-confirm", (e) => { authNewPasswordConfirm = e.target.value; });
+}
+
 function render() {
+  // render() is also the callback auth state changes fire into. If the shell
+  // hasn't been built yet, we're sitting on the boot splash, the gate, or a
+  // password screen — the only thing that can happen here is a sign-in
+  // resolving after the fact (e.g. an invite/recovery link), in which case we
+  // re-run the boot decision instead of trying (and failing) to touch a
+  // #view-root that doesn't exist yet.
+  if (!appBooted) {
+    decideBootState();
+    return;
+  }
+
   const { route, params } = state;
   const root = document.getElementById("view-root");
   let html = "";
@@ -1110,6 +1190,11 @@ function render() {
     html = viewPaintForm(!!paintForm.id);
     showFab = false;
   } else if (route === "settings") { html = viewSettings(); showFab = false; }
+  else if (route === "change-password") {
+    if (!isSignedIn()) { navigate("settings"); return; }
+    html = viewChangePassword();
+    showFab = false;
+  }
   else html = viewHome();
 
   root.innerHTML = html;
@@ -1130,8 +1215,7 @@ function render() {
   document.getElementById("fab").classList.toggle("hidden", !showFab);
   updateSyncPill();
 
-  const signinEmail = root.querySelector("#signin-email");
-  if (signinEmail) signinEmail.oninput = (e) => { authEmail = e.target.value; };
+  bindAuthInputs(root);
 
   const installBtn = document.getElementById("install-btn");
   if (installBtn) {
@@ -1146,6 +1230,11 @@ function render() {
 // Sync status pill (topbar)
 // ---------------------------------------------------------------
 let authEmail = "";
+let authPassword = "";
+let authNewPassword = "";
+let authNewPasswordConfirm = "";
+let passwordScreenMode = null; // "setup" | "recovery" while a password screen is showing
+let appBooted = false; // false while the boot splash, gate, or a password screen is showing
 
 function updateSyncPill() {
   const pill = document.getElementById("sync-pill");
@@ -1164,12 +1253,58 @@ document.addEventListener("click", async (e) => {
   const t = (sel) => e.target.closest(sel);
 
   // --- account ---
-  if (t("[data-action='send-link']")) {
+  if (t("[data-action='sign-in']")) {
     const email = (authEmail || "").trim();
-    if (!email || !email.includes("@")) { showToast("Enter the email you were invited with"); return; }
+    const password = authPassword || "";
+    if (!email || !email.includes("@")) { showToast("Enter your email"); return; }
+    if (!password) { showToast("Enter your password"); return; }
+    const res = await signIn(email, password);
+    if (!res.ok) { showToast(res.message); return; }
+    authPassword = "";
+    if (!appBooted) decideBootState();
+    else render();
+    return;
+  }
+
+  if (t("[data-action='forgot-password']")) {
+    const email = (authEmail || "").trim();
+    if (!email || !email.includes("@")) { showToast("Enter your email above first, then try again"); return; }
     showToast("Sending\u2026");
-    const res = await sendMagicLink(email);
+    const res = await requestPasswordReset(email);
     showToast(res.message);
+    return;
+  }
+
+  if (t("[data-action='submit-password']")) {
+    const pw = authNewPassword || "";
+    const pw2 = authNewPasswordConfirm || "";
+    if (pw.length < 8) { showToast("Use at least 8 characters"); return; }
+    if (pw !== pw2) { showToast("Passwords don't match"); return; }
+    const res = await setPassword(pw);
+    if (!res.ok) { showToast(res.message || "Couldn't set that password"); return; }
+    const wasSetup = passwordScreenMode === "setup";
+    authNewPassword = ""; authNewPasswordConfirm = ""; passwordScreenMode = null;
+    decideBootState();
+    showToast(wasSetup ? "Password set \u2014 welcome!" : "Password updated");
+    return;
+  }
+
+  if (t("[data-action='change-password-save']")) {
+    const pw = authNewPassword || "";
+    const pw2 = authNewPasswordConfirm || "";
+    if (pw.length < 8) { showToast("Use at least 8 characters"); return; }
+    if (pw !== pw2) { showToast("Passwords don't match"); return; }
+    const res = await setPassword(pw);
+    if (!res.ok) { showToast(res.message || "Couldn't update your password"); return; }
+    authNewPassword = ""; authNewPasswordConfirm = "";
+    showToast("Password updated");
+    navigate("settings");
+    return;
+  }
+
+  if (t("[data-action='continue-guest']")) {
+    continueAsGuest();
+    bootIntoApp();
     return;
   }
 
@@ -1607,24 +1742,140 @@ function buildShell() {
   `;
 }
 
-async function init() {
-  initStore();
+// ---------------------------------------------------------------
+// Boot splash + sign-in gate
+// ---------------------------------------------------------------
+// Forgebook is invite only, but local-first: the book on this device is
+// never at risk, and offline use never blocks on the gate. So the gate is
+// soft — a sign-in screen with an always-available "continue without an
+// account" escape, remembered so it only has to be dismissed once.
+//
+// We can't decide gate-vs-app until we know whether a session is already
+// persisted, and that check is async (initCloud). Rendering the full app
+// shell first and swapping to the gate a moment later would flash the app
+// chrome at anyone who isn't signed in yet, so instead we hold on a minimal
+// splash — no nav, no fab, nothing route-specific — until that's resolved,
+// then commit to exactly one of gate or app.
+function showBootSplash() {
+  document.getElementById("app").innerHTML = `
+    <div class="boot-splash">
+      <span class="boot-splash__mark">${icon("book", 30)}</span>
+      <span class="boot-splash__word">Forgebook</span>
+    </div>
+  `;
+}
+
+function gateHtml() {
+  return `
+    <div class="gate">
+      <div class="gate__card">
+        <div class="gate__brand">${icon("book", 26)} Forgebook</div>
+        <div class="gate__tagline">Your paint recipes, wherever you paint.</div>
+
+        <div class="gate__field" style="margin-top:20px; text-align:left">
+          ${authFormHtml()}
+        </div>
+
+        <div class="gate__divider"><span>or</span></div>
+
+        <button class="btn btn-ghost btn-block" data-action="continue-guest">Continue without an account</button>
+        <div class="settings-row__desc" style="margin-top:8px">
+          Your book stays on this device until you sign in. Nothing is lost either way.
+        </div>
+      </div>
+      <div class="toast" id="toast"></div>
+    </div>
+  `;
+}
+
+function showGate() {
+  document.getElementById("app").innerHTML = gateHtml();
+  bindAuthInputs(document);
+}
+
+// The blocking screen for both "finish your invite" (mode "setup") and
+// "forgot password" (mode "recovery") — same fields, different framing, both
+// funnel into setPassword().
+function passwordFormHtml(mode) {
+  const isSetup = mode === "setup";
+  return `
+    <div class="gate">
+      <div class="gate__card">
+        <div class="gate__brand">${icon("book", 26)} Forgebook</div>
+        <div class="gate__tagline">
+          ${isSetup
+            ? `You're invited${currentEmail() ? `, ${escapeHtml(currentEmail())}` : ""}. Set a password to finish creating your account.`
+            : "Choose a new password for your account."}
+        </div>
+
+        <div class="field gate__field" style="margin-top:20px">
+          <label>New password</label>
+          <input type="password" id="new-password" placeholder="At least 8 characters" autocomplete="new-password" />
+        </div>
+        <div class="field gate__field" style="margin-top:0">
+          <label>Confirm password</label>
+          <input type="password" id="new-password-confirm" placeholder="Type it again" autocomplete="new-password" />
+        </div>
+
+        <button class="btn btn-primary btn-block" data-action="submit-password">
+          ${isSetup ? "Set password & continue" : "Update password"}
+        </button>
+
+        <div class="notice" style="margin-top:16px; text-align:left">
+          This is a small, self-run hobby project — not a professional security service.
+          Please use a password you don't already rely on elsewhere. Forgebook never sees your
+          password itself; it's handled and stored, hashed, by Supabase, our database provider.
+        </div>
+      </div>
+      <div class="toast" id="toast"></div>
+    </div>
+  `;
+}
+
+function showPasswordScreen(mode) {
+  passwordScreenMode = mode;
+  document.getElementById("app").innerHTML = passwordFormHtml(mode);
+  bindAuthInputs(document);
+}
+
+// The single source of truth for "what should be on screen right now,"
+// before the app shell exists. Re-run any time auth state changes while
+// we're still pre-boot (e.g. a recovery or invite link resolving).
+function decideBootState() {
+  if (inPasswordRecovery()) { showPasswordScreen("recovery"); return; }
+  if (isSignedIn() && needsPasswordSetup()) { showPasswordScreen("setup"); return; }
+  if (isSignedIn() || isGuest()) { bootIntoApp(); return; }
+  showGate();
+}
+
+// Commit to the full app: build the shell, route, and render — the point of
+// no return past which the gate can't reappear this session.
+function bootIntoApp() {
+  if (appBooted) return;
+  appBooted = true;
   buildShell();
   const { route, params } = parseHash();
   state.route = route;
   state.params = params;
-
-  // Paint first, ask the network later. The app is usable before the cloud
-  // layer has even finished loading — that's the whole point of local-first.
   render();
 
   if ("serviceWorker" in navigator) {
     navigator.serviceWorker.register("service-worker.js").catch(() => {});
   }
-
-  await initCloud();
-  render();
   if (isSignedIn() && !pendingMerge) syncNow();
+}
+
+async function init() {
+  initStore();
+  showBootSplash();
+
+  // The persisted-session check is local (no network round trip unless a
+  // token needs refreshing), so this resolves fast — but we still wait for
+  // it rather than guessing, since guessing wrong is exactly the flash we're
+  // trying to avoid.
+  await initCloud();
+
+  decideBootState();
 }
 
 window.addEventListener("beforeinstallprompt", (e) => {

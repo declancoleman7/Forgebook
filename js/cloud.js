@@ -24,6 +24,22 @@ function currentEmail() { return session && session.user ? session.user.email : 
 function cloudAvailable() { return !!sb; }
 function lastSyncedAt() { return localStorage.getItem(SYNC_KEYS.lastSync) || null; }
 
+// An invited account has a session (from the invite link) but no password of
+// its own yet — that's the signal to show the "set your password" screen
+// instead of the normal app.
+function needsPasswordSetup() {
+  return isSignedIn() && !(session.user.user_metadata && session.user.user_metadata.password_set);
+}
+
+let passwordRecovery = false; // true once a "forgot password" link has been followed
+function inPasswordRecovery() { return passwordRecovery; }
+
+// The soft gate's escape hatch. Once chosen, this device never sees the gate
+// again until the person signs out — browsing without an account is a
+// first-class, remembered choice, not a one-time click-through.
+function isGuest() { return localStorage.getItem(KEYS.guest) === "1"; }
+function continueAsGuest() { localStorage.setItem(KEYS.guest, "1"); }
+
 // ---------------------------------------------------------------
 // Init
 // ---------------------------------------------------------------
@@ -37,23 +53,29 @@ async function initCloud() {
       auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true },
     });
 
-    const { data } = await sb.auth.getSession();
-    session = data ? data.session : null;
-
-    // The magic-link callback lands back here with ?code=... (PKCE). Supabase
-    // consumes it above; strip it so it doesn't sit in the address bar or
-    // confuse our hash router.
-    if (location.search.includes("code=") || location.search.includes("error=")) {
-      history.replaceState({}, "", location.pathname + (location.hash || "#/home"));
-    }
-
+    // Registered before the getSession() await below, not after: a recovery
+    // or invite link's ?code=... can be exchanged (and its one-shot event
+    // fired) during that very await, and PASSWORD_RECOVERY is the only signal
+    // we get that this was a reset link rather than an ordinary session — miss
+    // it and "forgot password" quietly degrades into "log me back in".
     sb.auth.onAuthStateChange((event, s) => {
       const wasSignedIn = isSignedIn();
       session = s;
+      if (event === "PASSWORD_RECOVERY") passwordRecovery = true;
       if (event === "SIGNED_IN" && !wasSignedIn) onSignedIn();
       if (event === "SIGNED_OUT") onSignedOut();
       if (typeof render === "function") render();
     });
+
+    const { data } = await sb.auth.getSession();
+    session = data ? data.session : null;
+
+    // The invite / password-reset callback lands back here with ?code=...
+    // (PKCE). Supabase consumes it above; strip it so it doesn't sit in the
+    // address bar or confuse our hash router.
+    if (location.search.includes("code=") || location.search.includes("error=")) {
+      history.replaceState({}, "", location.pathname + (location.hash || "#/home"));
+    }
 
     return true;
   } catch (e) {
@@ -64,25 +86,51 @@ async function initCloud() {
 }
 
 // ---------------------------------------------------------------
-// Auth — magic link only.
-//
-// shouldCreateUser: false is the lock. Combined with sign-ups disabled in the
-// Supabase dashboard, an uninvited email simply never receives a link. There
-// is no signup path to find, so the invite list IS the access control.
+// Auth — email + password. No self-serve sign-up anywhere in this file:
+// the only way an account is ever created is an admin invite from the
+// Supabase dashboard, which lands the person on the password-setup screen
+// (see needsPasswordSetup, above). Combined with public sign-ups disabled in
+// the dashboard, the invite list IS the access control — there's no
+// signup form to find or brute-force.
 // ---------------------------------------------------------------
-async function sendMagicLink(email) {
-  if (!sb) return { ok: false, message: "No connection \u2014 try again when you're online." };
-  const redirect = location.origin + location.pathname;
-  const { error } = await sb.auth.signInWithOtp({
-    email: email.trim(),
-    options: { shouldCreateUser: false, emailRedirectTo: redirect },
-  });
+async function signIn(email, password) {
+  if (!sb) return { ok: false, message: "No connection — try again when you're online." };
+  const { data, error } = await sb.auth.signInWithPassword({ email: email.trim(), password });
   if (error) {
-    // Supabase deliberately returns a generic error for unknown addresses so
-    // the endpoint can't be used to probe who has an account.
-    return { ok: false, message: "That address isn't on the invite list, or the link couldn't be sent." };
+    // Deliberately the same message for "no such account" and "wrong
+    // password" — distinguishing them would let someone probe which
+    // invited addresses exist.
+    return { ok: false, message: "Incorrect email or password." };
   }
-  return { ok: true, message: "Check your email for a sign-in link." };
+  session = data.session; // don't wait on the auth-state event for this
+  return { ok: true };
+}
+
+// Used both to finish an invite (first password ever) and to change an
+// existing one — the only difference is which screen calls it.
+async function setPassword(password) {
+  if (!sb) return { ok: false, message: "No connection — try again when you're online." };
+  const { data, error } = await sb.auth.updateUser({
+    password,
+    data: { password_set: true },
+  });
+  if (error) return { ok: false, message: error.message || "Couldn't set that password." };
+  if (session) session.user = data.user;
+  passwordRecovery = false;
+  return { ok: true };
+}
+
+async function requestPasswordReset(email) {
+  if (!sb) return { ok: false, message: "No connection — try again when you're online." };
+  const redirect = location.origin + location.pathname;
+  const { error } = await sb.auth.resetPasswordForEmail(email.trim(), { redirectTo: redirect });
+  // Supabase resolves this the same way whether or not the address has an
+  // account, specifically so the reset form can't be used to probe the
+  // invite list. We keep that property rather than surfacing `error` here.
+  if (error && error.status >= 500) {
+    return { ok: false, message: "Something went wrong — try again in a moment." };
+  }
+  return { ok: true, message: "If that address has an account, a reset link is on its way." };
 }
 
 async function signOutCloud() {
