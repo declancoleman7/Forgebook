@@ -1,8 +1,72 @@
-# Forgebook — Warhammer Paint Recipe Book (v0.4)
+# Forgebook — Warhammer Paint Recipe Book (v0.5)
 
 A installable, offline-capable web app for logging and browsing your
 miniature paint recipes. Dark, Citadel-Colour-inspired UI; no frameworks,
 no build step — just static files.
+
+## What's new in v0.5 — Accounts & Sync
+
+Forgebook now has optional cloud sync, backed by Supabase. It remains
+**local-first**: your device's copy is the source of truth the app reads from,
+so it still works with no signal at the painting table. The cloud is a
+background replica that catches up when it can.
+
+- Sign in with a **magic email link** — no passwords
+- **Invite only.** Sign-ups are disabled in Supabase; the only accounts that
+  exist are ones you invite. An uninvited address simply never receives a link.
+- Recipes and the paint rack sync across all your devices
+- Photos move to cloud storage (the database stores a path, not a base64 blob)
+- Signing in on a device that already has recipes asks whether to merge them
+- Signing out clears the device's copy, so a shared laptop doesn't leak your book
+- The app is fully usable **without** signing in — it just stays on that device
+
+### Conflict handling
+Each record carries a timestamp; on sync, the newer edit wins, per record.
+Timestamps are monotonic per record (always at least 1ms newer than the version
+they were edited from), so a device with a fast clock can't strand a later,
+genuine edit from another device. Deletes are tombstones, so deleting on your
+phone also removes it on your laptop rather than the laptop resurrecting it.
+
+## Setup (one time)
+
+1. **Run the schema.** Supabase dashboard → SQL Editor → New query → paste the
+   contents of `supabase/schema.sql` → Run. This creates the tables, the photo
+   bucket, and the Row Level Security policies that stop one user reading
+   another's book.
+
+2. **Lock the door.** Authentication → Providers → Email:
+   - Enable Email
+   - **Turn OFF "Allow new users to sign up"** ← this is what makes it invite only
+   - Enable "Confirm email"
+
+3. **Set the URLs.** Authentication → URL Configuration:
+   - Site URL: `https://forgebook.co.uk`
+   - Redirect URLs: add `https://forgebook.co.uk` and `https://forgebook.co.uk/`
+
+4. **Set up email sending.** Supabase's built-in email is rate-limited and meant
+   for testing — magic links will start silently failing. Wire up an SMTP
+   provider (Resend's free tier is plenty) under Project Settings → Auth → SMTP.
+   Do this **before** inviting anyone real.
+
+5. **Invite people.** Authentication → Users → "Invite user" → their email.
+   That's the entire access-control system. To revoke someone, delete the user.
+
+6. **Keep the free project awake.** Free Supabase projects pause after 7 days of
+   no traffic. Either upgrade to Pro, or add a scheduled GitHub Action that
+   pings the API weekly.
+
+## Security notes
+- `js/config.js` contains the project URL and the **publishable (anon) key**.
+  Both are designed to be public and are safe in this repo. The `service_role`
+  key must NEVER go in here — it bypasses all security.
+- Row Level Security is what actually protects data: the database refuses to
+  return another user's rows, so a frontend bug can't leak anyone's book.
+- The photo bucket is **public-read with unguessable filenames**. Photos of
+  painted minis are low-risk and this keeps them cacheable offline. If you'd
+  rather they were fully private, set `public = false` in schema.sql and switch
+  the app to signed URLs.
+- You are now storing other people's email addresses. Be prepared to delete an
+  account and its data on request.
 
 ## What's new in v0.4
 - **All current Games Workshop factions pre-loaded** — 28 Warhammer 40,000
@@ -82,7 +146,7 @@ To host this at your repo `declancoleman7/Forgebook`:
 2. Commit and push:
    ```
    git add .
-   git commit -m "Forgebook v0.4"
+   git commit -m "Forgebook v0.5"
    git push
    ```
 3. On GitHub: **Settings → Pages → Build and deployment → Source**, choose

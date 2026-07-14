@@ -1,4 +1,4 @@
-const CACHE_NAME = "forgebook-v4";
+const CACHE_NAME = "forgebook-v5";
 const CORE_ASSETS = [
   "./",
   "./index.html",
@@ -6,9 +6,23 @@ const CORE_ASSETS = [
   "./css/styles.css",
   "./js/app.js",
   "./js/data.js",
+  "./js/cloud.js",
+  "./js/config.js",
   "./icons/icon-192.png",
   "./icons/icon-512.png",
 ];
+
+// Cross-origin things worth keeping offline: the Supabase client library, and
+// recipe photos once they've moved to cloud storage. Without this, an offline
+// user would see broken images where their minis used to be.
+const RUNTIME_CACHEABLE = [
+  "cdn.jsdelivr.net",
+  "/storage/v1/object/public/recipe-photos/",
+];
+
+function isRuntimeCacheable(url) {
+  return RUNTIME_CACHEABLE.some((frag) => url.includes(frag));
+}
 
 self.addEventListener("install", (event) => {
   event.waitUntil(
@@ -35,6 +49,13 @@ self.addEventListener("fetch", (event) => {
 
   const url = new URL(req.url);
   const isSameOrigin = url.origin === self.location.origin;
+
+  // Never cache Supabase API/auth traffic — a cached auth response or a stale
+  // recipe list would be worse than no response at all. Photos and the client
+  // library are the exceptions, and they're matched explicitly below.
+  const isSupabaseApi =
+    url.hostname.endsWith(".supabase.co") && !isRuntimeCacheable(req.url);
+  if (isSupabaseApi) return;
 
   if (isSameOrigin) {
     event.respondWith(

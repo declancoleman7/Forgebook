@@ -1489,3 +1489,51 @@ main {
 .bottom-nav__item span {
   font-size: 9px;
 }
+
+/* ============================================================
+   v0.5 — ACCOUNTS & SYNC
+   ============================================================ */
+
+.sync-pill {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.03em;
+  color: var(--ink);
+  background: var(--bg-raised);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 5px 10px;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.sync-pill.is-busy {
+  color: var(--gold);
+  border-color: var(--gold-dim, var(--line));
+}
+
+.sync-pill.is-error {
+  color: var(--blood-bright, #c0555f);
+  border-color: var(--blood, #7a2a32);
+}
+
+.signin-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.signin-row input {
+  flex: 1;
+  min-width: 0;
+}
+
+.settings-row__label strong {
+  color: var(--gold);
+  font-weight: 600;
+}
+
+/* The pill would crowd the search box on a narrow phone */
+@media (max-width: 420px) {
+  .sync-pill { display: none; }
+}

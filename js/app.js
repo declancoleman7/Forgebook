@@ -44,8 +44,13 @@ let state = {
 // ---------------------------------------------------------------
 // Storage accessors
 // ---------------------------------------------------------------
-function getRecipes() { return readJSON(KEYS.recipes, []); }
-function getPaints() { return readJSON(KEYS.paints, []); }
+// Deleted records are kept locally as tombstones so the deletion can be synced
+// (and so a stale cloud copy can't resurrect them). The UI never sees them.
+function getAllRecipeRows() { return readJSON(KEYS.recipes, []); }
+function getAllPaintRows() { return readJSON(KEYS.paints, []); }
+
+function getRecipes() { return getAllRecipeRows().filter((r) => !r.deleted); }
+function getPaints() { return getAllPaintRows().filter((p) => !p.deleted); }
 function getRecents() { return readJSON(KEYS.recents, []); }
 function getFactionArt() { return readJSON(KEYS.art, {}); }
 
@@ -57,9 +62,50 @@ function save(key, value) {
     return false; // almost always QuotaExceededError — photos are the usual cause
   }
 }
-function saveRecipes(r) { return save(KEYS.recipes, r); }
-function savePaints(p) { return save(KEYS.paints, p); }
+
+// Every write stamps the record and schedules a background push. Local storage
+// is still the source of truth; the cloud catches up when it can.
+function saveRecipes(rows) {
+  const ok = save(KEYS.recipes, rows);
+  if (ok) queueSync();
+  return ok;
+}
+function savePaints(rows) {
+  const ok = save(KEYS.paints, rows);
+  if (ok) queueSync();
+  return ok;
+}
 function saveFactionArt(a) { return save(KEYS.art, a); }
+
+// Timestamp a record for the merge.
+//
+// Devices don't agree on the time. If a phone's clock runs a few minutes fast,
+// a naive `Date.now()` would make its rows unbeatable — a later, genuine edit
+// from a laptop would look "older" and be discarded. So a stamp is always at
+// least 1ms newer than the version it was edited from. An edit therefore
+// always supersedes its own parent, whatever the clocks say.
+function stamp(record, prevIso) {
+  const prev = prevIso ? new Date(prevIso).getTime() : 0;
+  const next = Math.max(Date.now(), prev + 1);
+  record.updatedAt = new Date(next).toISOString();
+  delete record.seed; // touching a sample record makes it yours
+  return record;
+}
+
+// Soft delete, so the deletion propagates to your other devices.
+function tombstoneRecipe(id) {
+  const rows = getAllRecipeRows();
+  const r = rows.find((x) => x.id === id);
+  if (r) { r.deleted = true; stamp(r, r.updatedAt); }
+  return saveRecipes(rows);
+}
+
+function tombstonePaint(id) {
+  const rows = getAllPaintRows();
+  const p = rows.find((x) => x.id === id);
+  if (p) { p.deleted = true; stamp(p, p.updatedAt); }
+  return savePaints(rows);
+}
 
 function pushRecent(id) {
   let recents = getRecents().filter((r) => r !== id);
@@ -746,7 +792,7 @@ function newStep() {
 
 function initRecipeForm(existing, presetFaction, presetUnit) {
   recipeForm = existing
-    ? JSON.parse(JSON.stringify(existing))
+    ? Object.assign(JSON.parse(JSON.stringify(existing)), { originalPhoto: existing.photo || null })
     : {
         id: null,
         name: "",
@@ -910,6 +956,41 @@ function viewSettings() {
     <div class="page-enter">
       <div class="page-title">Settings</div>
 
+      <div class="section-label">Account</div>
+      <div class="settings-group">
+        ${isSignedIn() ? `
+          <div class="settings-row">
+            <div>
+              <div class="settings-row__label">${escapeHtml(currentEmail())}</div>
+              <div class="settings-row__desc">${escapeHtml(syncStatusLabel() || "")}</div>
+            </div>
+            <button class="btn btn-ghost btn-sm" data-action="sync-now" ${syncing ? "disabled" : ""}>Sync now</button>
+          </div>
+          <div class="settings-row">
+            <div>
+              <div class="settings-row__label">Sign out</div>
+              <div class="settings-row__desc">Clears this device's copy of your book. Your recipes stay in the cloud.</div>
+            </div>
+            <button class="btn btn-danger" data-action="sign-out">Sign out</button>
+          </div>
+        ` : `
+          <div class="settings-row" style="display:block">
+            <div class="settings-row__label">Sign in to sync across devices</div>
+            <div class="settings-row__desc" style="margin-bottom:10px">
+              Forgebook is invite only. Enter the email address you were invited with and
+              we'll send you a sign-in link \u2014 no password to remember.
+            </div>
+            <div class="signin-row">
+              <input type="email" id="signin-email" placeholder="you@example.com" autocomplete="email" />
+              <button class="btn btn-primary" data-action="send-link" ${cloudAvailable() ? "" : "disabled"}>Send link</button>
+            </div>
+            ${cloudAvailable()
+              ? `<div class="settings-row__desc" style="margin-top:8px">Without signing in, Forgebook still works \u2014 your book just stays on this device.</div>`
+              : `<div class="settings-row__desc" style="margin-top:8px">You're offline, so sign-in isn't available. The app works fine without it.</div>`}
+          </div>
+        `}
+      </div>
+
       <div class="settings-group">
         <div class="settings-row">
           <div>
@@ -949,7 +1030,7 @@ function viewSettings() {
         <div class="settings-row">
           <div>
             <div class="settings-row__label">Forgebook</div>
-            <div class="settings-row__desc">Version 0.4 &middot; ${getRecipes().length} recipes &middot; ${getPaints().length} paints &middot; Works offline</div>
+            <div class="settings-row__desc">Version 0.5 &middot; ${getRecipes().length} recipes &middot; ${getPaints().length} paints &middot; Works offline</div>
           </div>
         </div>
       </div>
@@ -966,11 +1047,43 @@ function viewSettings() {
 // ---------------------------------------------------------------
 // Render
 // ---------------------------------------------------------------
+function mergePromptHtml() {
+  return `
+    <div class="page-enter">
+      <div class="page-title">Welcome back</div>
+      <div class="notice" style="margin-bottom:18px">
+        Signed in as <strong>${escapeHtml(currentEmail() || "")}</strong>
+      </div>
+      <div class="settings-group">
+        <div class="settings-row" style="display:block">
+          <div class="settings-row__label">This device has ${pendingMerge} recipe${pendingMerge === 1 ? "" : "s"} saved locally</div>
+          <div class="settings-row__desc" style="margin:8px 0 14px">
+            Do you want to add them to your account, so they sync to your other devices?
+            If this isn't your device, or these aren't yours, discard them instead —
+            anything already in your account is untouched either way.
+          </div>
+          <button class="btn btn-primary btn-block" data-action="merge-accept">Add them to my account</button>
+          <button class="btn btn-ghost btn-block" data-action="merge-decline">Discard this device's copy</button>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
 function render() {
   const { route, params } = state;
   const root = document.getElementById("view-root");
   let html = "";
   let showFab = true;
+
+  // A pending merge decision blocks everything else — we must not sync until
+  // the person has told us whether this device's book is theirs.
+  if (pendingMerge) {
+    root.innerHTML = mergePromptHtml();
+    document.getElementById("fab").classList.add("hidden");
+    updateSyncPill();
+    return;
+  }
 
   if (route === "home") html = viewHome();
   else if (route === "factions") html = viewFactions();
@@ -1015,6 +1128,10 @@ function render() {
   });
 
   document.getElementById("fab").classList.toggle("hidden", !showFab);
+  updateSyncPill();
+
+  const signinEmail = root.querySelector("#signin-email");
+  if (signinEmail) signinEmail.oninput = (e) => { authEmail = e.target.value; };
 
   const installBtn = document.getElementById("install-btn");
   if (installBtn) {
@@ -1026,10 +1143,53 @@ function render() {
 }
 
 // ---------------------------------------------------------------
+// Sync status pill (topbar)
+// ---------------------------------------------------------------
+let authEmail = "";
+
+function updateSyncPill() {
+  const pill = document.getElementById("sync-pill");
+  if (!pill) return;
+  const label = syncStatusLabel();
+  pill.classList.toggle("hidden", !label);
+  pill.classList.toggle("is-busy", syncing);
+  pill.classList.toggle("is-error", cloudError === "sync" || !navigator.onLine);
+  if (label) pill.textContent = label;
+}
+
+// ---------------------------------------------------------------
 // Click delegation
 // ---------------------------------------------------------------
-document.addEventListener("click", (e) => {
+document.addEventListener("click", async (e) => {
   const t = (sel) => e.target.closest(sel);
+
+  // --- account ---
+  if (t("[data-action='send-link']")) {
+    const email = (authEmail || "").trim();
+    if (!email || !email.includes("@")) { showToast("Enter the email you were invited with"); return; }
+    showToast("Sending\u2026");
+    const res = await sendMagicLink(email);
+    showToast(res.message);
+    return;
+  }
+
+  if (t("[data-action='sign-out']")) {
+    if (confirm("Sign out? This device's copy of your book will be cleared. Your recipes stay safely in your account.")) {
+      await signOutCloud();
+      showToast("Signed out");
+      navigate("home");
+    }
+    return;
+  }
+
+  if (t("[data-action='sync-now']")) {
+    const res = await syncNow({ full: true });
+    showToast(res.ok ? "Synced" : "Couldn't sync \u2014 will retry automatically");
+    return;
+  }
+
+  if (t("[data-action='merge-accept']")) { await acceptMerge(); navigate("home"); return; }
+  if (t("[data-action='merge-decline']")) { await declineMerge(); navigate("home"); return; }
 
   const navEl = t("[data-nav]");
   if (navEl) {
@@ -1135,7 +1295,6 @@ document.addEventListener("click", (e) => {
     const steps = recipeForm.steps.filter((s) => s.paintId);
     if (!steps.length) { showToast("Add at least one step with a paint"); return; }
 
-    const recipes = getRecipes();
     const payload = {
       id: recipeForm.id,
       name: recipeForm.name.trim(),
@@ -1148,14 +1307,21 @@ document.addEventListener("click", (e) => {
     };
 
     const isNew = !payload.id;
+    const prevRow = payload.id ? getAllRecipeRows().find((r) => r.id === payload.id) : null;
+    stamp(payload, prevRow ? prevRow.updatedAt : null);
+    payload.photoPath = recipeForm.photoPath || null;
+    if (recipeForm.photo !== (recipeForm.originalPhoto || null)) payload.photoPath = null; // photo changed → re-upload
+    payload.published = !!recipeForm.published;
+
+    const rows = getAllRecipeRows();
     if (isNew) {
       payload.id = generateId(payload.faction);
-      recipes.unshift(payload);
+      rows.unshift(payload);
     } else {
-      const idx = recipes.findIndex((r) => r.id === payload.id);
-      if (idx > -1) recipes[idx] = payload;
+      const idx = rows.findIndex((r) => r.id === payload.id);
+      if (idx > -1) rows[idx] = payload;
     }
-    if (!saveRecipes(recipes)) { showToast("Storage is full \u2014 try removing a photo"); return; }
+    if (!saveRecipes(rows)) { showToast("Storage is full \u2014 try removing a photo"); return; }
 
     recipeForm = null;
     showToast("Recipe saved");
@@ -1166,7 +1332,7 @@ document.addEventListener("click", (e) => {
   const delRecipe = t("[data-action='delete-recipe']");
   if (delRecipe) {
     if (confirm("Delete this recipe? This cannot be undone.")) {
-      saveRecipes(getRecipes().filter((r) => r.id !== delRecipe.dataset.id));
+      tombstoneRecipe(delRecipe.dataset.id);
       showToast("Recipe deleted");
       navigate("recipes");
     }
@@ -1197,15 +1363,19 @@ document.addEventListener("click", (e) => {
 
     const returnStep = paintForm.returnToRecipe;
     let savedId = paintForm.id;
+    const rows = getAllPaintRows();
 
     if (paintForm.id) {
-      const idx = paints.findIndex((p) => p.id === paintForm.id);
-      if (idx > -1) paints[idx] = { id: paintForm.id, name: paintForm.name.trim(), brand: paintForm.brand, hex: paintForm.hex, type: paintForm.type };
+      const idx = rows.findIndex((p) => p.id === paintForm.id);
+      if (idx > -1) {
+        const prev = rows[idx].updatedAt;
+        rows[idx] = stamp({ id: paintForm.id, name: paintForm.name.trim(), brand: paintForm.brand, hex: paintForm.hex, type: paintForm.type }, prev);
+      }
     } else {
       savedId = "p-" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
-      paints.push({ id: savedId, name: paintForm.name.trim(), brand: paintForm.brand, hex: paintForm.hex, type: paintForm.type });
+      rows.push(stamp({ id: savedId, name: paintForm.name.trim(), brand: paintForm.brand, hex: paintForm.hex, type: paintForm.type }, null));
     }
-    if (!savePaints(paints)) { showToast("Storage is full"); return; }
+    if (!savePaints(rows)) { showToast("Storage is full"); return; }
     paintForm = null;
     showToast("Paint saved");
 
@@ -1227,7 +1397,7 @@ document.addEventListener("click", (e) => {
       ? `This paint is used in ${n} recipe${n === 1 ? "" : "s"}. Deleting it will leave those steps without a paint. Continue?`
       : "Remove this paint from your rack?";
     if (confirm(msg)) {
-      savePaints(getPaints().filter((p) => p.id !== delPaint.dataset.id));
+      tombstonePaint(delPaint.dataset.id);
       showToast("Paint removed");
       navigate("paints");
     }
@@ -1422,6 +1592,7 @@ function buildShell() {
         ${icon("search", 16)}
         <input type="text" id="search-input" placeholder="Search recipes, armies or paints" />
       </div>
+      <div class="sync-pill hidden" id="sync-pill"></div>
     </header>
     <main id="view-root"></main>
     <button class="fab" id="fab" data-nav="recipe-new" aria-label="Add recipe">${icon("plus", 24)}</button>
@@ -1436,17 +1607,24 @@ function buildShell() {
   `;
 }
 
-function init() {
+async function init() {
   initStore();
   buildShell();
   const { route, params } = parseHash();
   state.route = route;
   state.params = params;
+
+  // Paint first, ask the network later. The app is usable before the cloud
+  // layer has even finished loading — that's the whole point of local-first.
   render();
 
   if ("serviceWorker" in navigator) {
     navigator.serviceWorker.register("service-worker.js").catch(() => {});
   }
+
+  await initCloud();
+  render();
+  if (isSignedIn() && !pendingMerge) syncNow();
 }
 
 window.addEventListener("beforeinstallprompt", (e) => {

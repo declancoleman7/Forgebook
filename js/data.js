@@ -234,7 +234,7 @@ const SEED_RECIPES = [
 // ============================================================
 // Storage + migration
 // ============================================================
-const SCHEMA_VERSION = 4;
+const SCHEMA_VERSION = 5;
 const KEYS = {
   recipes: "forgebook.recipes",
   paints: "forgebook.paints",
@@ -275,6 +275,8 @@ function migrateFromV3(oldRecipes) {
       brand: p.brand || "",
       hex: p.hex || "#808080",
       type: "Other",
+      updatedAt: new Date().toISOString(),
+      deleted: false,
     };
     paints.push(entry);
     byKey.set(key, entry);
@@ -298,10 +300,19 @@ function migrateFromV3(oldRecipes) {
         .map((s) => ({ id: s.id, technique: s.technique, paintId: localMap[s.paintId] || "", notes: s.notes || "" }))
         .filter((s) => s.paintId),
       notes: r.notes || "",
+      updatedAt: new Date().toISOString(),
+      deleted: false,
     };
   });
 
   return { recipes, paints };
+}
+
+// Sample data is flagged so sync never pushes it to the cloud as if it were
+// the user's own work, and so signing in can quietly clear it away.
+function seeded(rows) {
+  const t = new Date().toISOString();
+  return rows.map((r) => Object.assign({}, r, { seed: true, deleted: false, updatedAt: t }));
 }
 
 function initStore() {
@@ -309,8 +320,8 @@ function initStore() {
   const existing = readJSON(KEYS.recipes, null);
 
   if (!existing) {
-    localStorage.setItem(KEYS.recipes, JSON.stringify(SEED_RECIPES));
-    localStorage.setItem(KEYS.paints, JSON.stringify(SEED_PAINTS));
+    localStorage.setItem(KEYS.recipes, JSON.stringify(seeded(SEED_RECIPES)));
+    localStorage.setItem(KEYS.paints, JSON.stringify(seeded(SEED_PAINTS)));
     localStorage.setItem(KEYS.recents, JSON.stringify(["ORK-001"]));
     localStorage.setItem(KEYS.schema, String(SCHEMA_VERSION));
     return;
@@ -323,8 +334,23 @@ function initStore() {
       localStorage.setItem(KEYS.recipes, JSON.stringify(migrated.recipes));
       localStorage.setItem(KEYS.paints, JSON.stringify(migrated.paints));
     } else if (!localStorage.getItem(KEYS.paints)) {
-      localStorage.setItem(KEYS.paints, JSON.stringify(SEED_PAINTS));
+      localStorage.setItem(KEYS.paints, JSON.stringify(seeded(SEED_PAINTS)));
     }
+
+    // v0.5 adds sync metadata. Anything already on the device is treated as
+    // the user's own work (never as sample data), so it survives sign-in.
+    const t = new Date().toISOString();
+    const addMeta = (key) => {
+      const rows = readJSON(key, []).map((x) => {
+        if (!x.updatedAt) x.updatedAt = t;
+        if (x.deleted === undefined) x.deleted = false;
+        return x;
+      });
+      localStorage.setItem(key, JSON.stringify(rows));
+    };
+    addMeta(KEYS.recipes);
+    addMeta(KEYS.paints);
+
     localStorage.setItem(KEYS.schema, String(SCHEMA_VERSION));
   }
 
@@ -334,8 +360,8 @@ function initStore() {
 }
 
 function resetStore() {
-  localStorage.setItem(KEYS.recipes, JSON.stringify(SEED_RECIPES));
-  localStorage.setItem(KEYS.paints, JSON.stringify(SEED_PAINTS));
+  localStorage.setItem(KEYS.recipes, JSON.stringify(seeded(SEED_RECIPES)));
+  localStorage.setItem(KEYS.paints, JSON.stringify(seeded(SEED_PAINTS)));
   localStorage.setItem(KEYS.recents, JSON.stringify(["ORK-001"]));
   localStorage.removeItem(KEYS.art);
   localStorage.setItem(KEYS.schema, String(SCHEMA_VERSION));
