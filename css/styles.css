@@ -160,7 +160,7 @@ img {
   background: transparent;
   border: none;
   color: var(--parchment);
-  font-size: 14px;
+  font-size: 16px; /* iOS zoom-on-focus guard — see .field input comment */
   padding: 0 8px;
 }
 
@@ -815,7 +815,11 @@ main {
   border-radius: var(--radius-sm);
   padding: 10px 12px;
   color: var(--parchment);
-  font-size: 14px;
+  /* 16px, not the 14px used elsewhere: iOS Safari auto-zooms the whole page
+     on focus for any input under 16px, and doesn't reliably zoom back out —
+     that's the "page is stuck slightly zoomed in" bug. Restored to 14px for
+     desktop below, where that behaviour doesn't apply. */
+  font-size: 16px;
   font-family: inherit;
 }
 
@@ -1134,6 +1138,18 @@ main {
 
   .recipe-grid {
     grid-template-columns: repeat(3, 1fr);
+  }
+
+  /* The 16px mobile input size is a phone-only guard (see the base rules) —
+     desktop has no on-screen keyboard to zoom, so restore the tighter size. */
+  .field input[type="text"],
+  .field input[type="number"],
+  .field input[type="email"],
+  .field input[type="password"],
+  .field select,
+  .field textarea,
+  .topbar__search input {
+    font-size: 14px;
   }
 }
 
@@ -1543,7 +1559,13 @@ main {
    this visitor is signed in, a returning guest, or neither.
    ============================================================ */
 .boot-splash {
+  /* 100vh on mobile Safari/Chrome is the *largest possible* viewport (address
+     bar hidden) — sizing to it leaves a gap under the real, visible viewport
+     and causes a jump/flash as the address bar animates in and out on scroll.
+     100dvh tracks the actual visible viewport; the plain 100vh above is only
+     a fallback for browsers that don't understand dvh yet. */
   min-height: 100vh;
+  min-height: 100dvh;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -1565,7 +1587,8 @@ main {
 }
 
 .gate {
-  min-height: 100vh;
+  min-height: 100vh; /* fallback — see .boot-splash comment above */
+  min-height: 100dvh;
   display: flex;
   align-items: center;
   justify-content: center;

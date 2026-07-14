@@ -1707,7 +1707,18 @@ document.addEventListener("input", (e) => {
   else navigate("recipes");
 });
 
-window.addEventListener("resize", () => render());
+// A mobile on-screen keyboard opening/closing fires a resize event too (it
+// shrinks the viewport height), and re-rendering mid-keystroke would replace
+// the very input the person is typing into — killing its focus and dropping
+// the keyboard the instant they tap in. Width is what actually changes on a
+// real rotation or window resize, so gate on that instead of firing on every
+// height wobble.
+let lastResizeWidth = window.innerWidth;
+window.addEventListener("resize", () => {
+  if (window.innerWidth === lastResizeWidth) return;
+  lastResizeWidth = window.innerWidth;
+  render();
+});
 
 // ---------------------------------------------------------------
 // Init
