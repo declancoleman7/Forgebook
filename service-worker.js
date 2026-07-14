@@ -1,4 +1,4 @@
-const CACHE_NAME = "forgebook-v3";
+const CACHE_NAME = "forgebook-v4";
 const CORE_ASSETS = [
   "./",
   "./index.html",

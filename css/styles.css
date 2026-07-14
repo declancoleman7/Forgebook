@@ -1217,3 +1217,275 @@ main {
   from { opacity: 0.35; transform: translateX(-64px); }
   to   { opacity: 1;    transform: translateX(0); }
 }
+
+/* ============================================================
+   v0.4 — ARMIES, UNITS, PAINT RACK
+   ============================================================ */
+
+/* Faction chips now carry an emblem rather than a dot */
+.faction-chip__emblem {
+  display: inline-flex;
+  align-items: center;
+  margin-right: 2px;
+}
+
+.faction-chip__count {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--ink);
+  margin-left: 4px;
+}
+
+/* Faction browse grid */
+.alliance-label {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ink-dim);
+  margin: 14px 2px 8px;
+}
+
+.faction-tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(104px, 1fr));
+  gap: 10px;
+  margin-bottom: 6px;
+}
+
+.faction-tile {
+  background: var(--bg-panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  padding: 12px 8px 10px;
+  text-align: center;
+  cursor: pointer;
+  transition: transform 0.15s ease, border-color 0.15s ease;
+  border-bottom: 2px solid var(--faction-color, var(--line));
+}
+
+.faction-tile:hover {
+  transform: translateY(-2px);
+  border-color: var(--faction-color, var(--gold));
+}
+
+.faction-tile__art {
+  height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 8px;
+  border-radius: var(--radius-sm);
+}
+
+.faction-tile__art.has-art {
+  background-size: cover;
+  background-position: center;
+}
+
+.faction-tile__name {
+  font-family: var(--font-display);
+  font-size: 12px;
+  line-height: 1.25;
+  color: var(--parchment);
+}
+
+.faction-tile__count {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--ink-dim);
+  margin-top: 4px;
+}
+
+/* Faction detail banner */
+.faction-banner {
+  height: 130px;
+  border-radius: var(--radius-lg);
+  background: var(--bg-panel);
+  border: 1px solid var(--line);
+  border-bottom: 4px solid var(--faction-color, var(--gold));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 14px;
+  overflow: hidden;
+}
+
+.faction-banner.has-art {
+  background-size: cover;
+  background-position: center;
+}
+
+.detail-sub {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--ink);
+  margin-top: 4px;
+}
+
+/* Unit list */
+.unit-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.unit-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: var(--bg-panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  padding: 13px 12px;
+  cursor: pointer;
+  transition: border-color 0.15s ease;
+}
+
+.unit-row:hover {
+  border-color: var(--gold);
+}
+
+.unit-row.is-general {
+  border-style: dashed;
+}
+
+.unit-row__bar {
+  width: 3px;
+  height: 22px;
+  border-radius: 2px;
+  flex-shrink: 0;
+}
+
+.unit-row__name {
+  flex: 1;
+  font-family: var(--font-display);
+  font-size: 14px;
+  color: var(--parchment);
+}
+
+.unit-row__count {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--ink);
+}
+
+.unit-row__chevron {
+  color: var(--ink-dim);
+  display: flex;
+}
+
+/* Breadcrumbs on a recipe */
+.detail-crumbs {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  margin-bottom: 6px;
+}
+
+.detail-crumbs span {
+  cursor: pointer;
+}
+
+.detail-crumbs .sep {
+  color: var(--ink-dim);
+  cursor: default;
+}
+
+.detail-crumbs span:not(.sep):hover {
+  text-decoration: underline;
+}
+
+/* Paint rack */
+.paint-hero {
+  height: 90px;
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--line);
+  margin-bottom: 14px;
+}
+
+.paint-lib-row {
+  cursor: pointer;
+}
+
+.paint-pick-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.paint-pick-row select {
+  flex: 1;
+  min-width: 0;
+}
+
+.paint-pick-row__swatch {
+  width: 26px;
+  height: 26px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--line);
+  flex-shrink: 0;
+}
+
+/* Small button variant */
+.btn-sm {
+  padding: 7px 10px;
+  font-size: 11px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  white-space: nowrap;
+}
+
+/* Inline notice + hints */
+.notice {
+  background: var(--bg-raised);
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--gold);
+  border-radius: var(--radius-sm);
+  padding: 10px 12px;
+  font-size: 12px;
+  color: var(--parchment-dim);
+  margin-bottom: 12px;
+}
+
+.label-hint {
+  color: var(--ink-dim);
+  font-weight: 400;
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+.fine-print {
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--ink-dim);
+  margin-top: 22px;
+  padding: 0 2px;
+}
+
+.recipe-card__steps {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--ink-dim);
+}
+
+.recipe-card__emblem {
+  display: flex;
+  opacity: 0.85;
+}
+
+.empty-state__glyph {
+  display: flex;
+  justify-content: center;
+  color: var(--ink-dim);
+}
+
+/* 5 tabs need a little more room than 4 */
+.bottom-nav__item span {
+  font-size: 9px;
+}
