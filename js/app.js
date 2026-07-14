@@ -132,6 +132,39 @@ function paintUsageCount(paintId) {
   return getRecipes().filter((r) => (r.steps || []).some((s) => s.paintId === paintId)).length;
 }
 
+// ---------------------------------------------------------------
+// Paint library — browsing a real catalogue (PAINT_LIBRARY, in data.js) and
+// tracking which entries the rack already has, or still needs to buy.
+// ---------------------------------------------------------------
+function ownedPaintFor(name, brand) {
+  return getPaints().find((p) => paintKey(p.name, p.brand) === paintKey(name, brand));
+}
+
+// Device-local only — not part of the paints array, so it doesn't ride along
+// with cloud sync the way owned paints (and their needsRestock flag) do.
+// Keeping it local avoids adding a whole new synced table for what's really
+// just a personal shopping-list checkbox.
+function getWantToBuy() { return readJSON(KEYS.wantToBuy, []); }
+function isWanted(name, brand) { return getWantToBuy().includes(paintKey(name, brand)); }
+function toggleWanted(name, brand) {
+  const key = paintKey(name, brand);
+  const list = getWantToBuy();
+  const idx = list.indexOf(key);
+  if (idx > -1) list.splice(idx, 1); else list.push(key);
+  save(KEYS.wantToBuy, list);
+}
+
+// Restock is a flag on an owned paint itself, so — unlike wantToBuy — it
+// rides along with that paint's normal sync.
+function toggleRestock(id) {
+  const rows = getAllPaintRows();
+  const p = rows.find((x) => x.id === id);
+  if (!p) return;
+  p.needsRestock = !p.needsRestock;
+  stamp(p, p.updatedAt);
+  savePaints(rows);
+}
+
 // Units that actually have recipes in a faction, plus the General bucket.
 function unitsForFaction(facId) {
   const recipes = getRecipes().filter((r) => r.faction === facId);
@@ -159,6 +192,38 @@ function difficultyDots(level, max = 5) {
   let out = "";
   for (let i = 1; i <= max; i++) out += `<span class="${i <= level ? "is-filled" : ""}"></span>`;
   return `<span class="difficulty">${out}</span>`;
+}
+
+// A rough painting-time estimate, purely computed from step count — not a
+// stored/synced field, so it needs no schema change and no form to fill in.
+// ~12 minutes per step (basecoat, shade, highlight are all in the same
+// ballpark), rounded to the nearest 5.
+function estimatedMinutes(r) {
+  const steps = (r.steps || []).length;
+  if (!steps) return 0;
+  return Math.max(5, Math.round((steps * 12) / 5) * 5);
+}
+
+function formatDuration(mins) {
+  if (!mins) return "—";
+  if (mins < 60) return `~${mins}m`;
+  const h = Math.floor(mins / 60);
+  const m = mins % 60;
+  return m ? `~${h}h ${m}m` : `~${h}h`;
+}
+
+// Steps are grouped by consecutive matching "area" (e.g. Armour, Base) so a
+// recipe with no groups renders exactly as before — grouping is opt-in per
+// step, not a new required field.
+function groupStepsByArea(steps) {
+  const groups = [];
+  (steps || []).forEach((s, i) => {
+    const area = (s.area || "").trim();
+    const last = groups[groups.length - 1];
+    if (last && last.area === area) last.items.push({ step: s, num: i + 1 });
+    else groups.push({ area, items: [{ step: s, num: i + 1 }] });
+  });
+  return groups;
 }
 
 function escapeHtml(str) {
@@ -586,9 +651,19 @@ function viewRecipeDetail(id) {
         <span data-open-unit="${r.unit ? escapeHtml(r.unit) : "_general"}" data-faction="${f.id}">${escapeHtml(r.unit || "General")}</span>
       </div>
       <div class="detail-title">${escapeHtml(r.name)}</div>
-      <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-top:8px;">
-        <div class="detail-faction-tag">${difficultyDots(r.difficulty || 1)}</div>
-        <div class="detail-faction-tag">${(r.steps || []).length} steps</div>
+      <div class="metastrip">
+        <div class="metastrip__cell">
+          <div class="metastrip__n">${difficultyDots(r.difficulty || 1)}</div>
+          <div class="metastrip__l">Difficulty</div>
+        </div>
+        <div class="metastrip__cell">
+          <div class="metastrip__n">${(r.steps || []).length}</div>
+          <div class="metastrip__l">Steps</div>
+        </div>
+        <div class="metastrip__cell">
+          <div class="metastrip__n">${formatDuration(estimatedMinutes(r))}</div>
+          <div class="metastrip__l">Est. time</div>
+        </div>
       </div>
 
       <div class="section-label">Paints Used</div>
@@ -606,23 +681,26 @@ function viewRecipeDetail(id) {
       </div>
 
       <div class="section-label">Method</div>
-      <div class="layer-stack">
-        ${(r.steps || []).map((s, i) => {
-          const p = findPaint(s.paintId);
-          return `
-            <div class="layer-stack__row">
-              <div class="layer-stack__num">${i + 1}</div>
-              <div class="layer-stack__swatch" style="background:${p ? p.hex : f.color}"></div>
-              <div class="layer-stack__content">
-                <div class="layer-stack__top">
-                  <span class="layer-stack__technique">${escapeHtml(s.technique)}</span>
-                  <span class="layer-stack__paint">${p ? escapeHtml(p.name) : "(paint deleted)"}</span>
+      ${(r.steps || []).length ? groupStepsByArea(r.steps).map((g) => `
+        ${g.area ? `<div class="grouphead">${escapeHtml(g.area)}</div>` : ""}
+        <div class="layer-stack">
+          ${g.items.map(({ step: s, num }) => {
+            const p = findPaint(s.paintId);
+            return `
+              <div class="layer-stack__row">
+                <div class="layer-stack__num">${num}</div>
+                <div class="layer-stack__swatch" style="background:${p ? p.hex : f.color}"></div>
+                <div class="layer-stack__content">
+                  <div class="layer-stack__top">
+                    <span class="layer-stack__technique">${escapeHtml(s.technique)}</span>
+                    <span class="layer-stack__paint">${p ? escapeHtml(p.name) : "(paint deleted)"}</span>
+                  </div>
+                  ${s.notes ? `<div class="layer-stack__notes">${escapeHtml(s.notes)}</div>` : ""}
                 </div>
-                ${s.notes ? `<div class="layer-stack__notes">${escapeHtml(s.notes)}</div>` : ""}
-              </div>
-            </div>`;
-        }).join("") || `<div class="empty-state__sub">No steps recorded.</div>`}
-      </div>
+              </div>`;
+          }).join("")}
+        </div>
+      `).join("") : `<div class="empty-state__sub">No steps recorded.</div>`}
 
       ${r.notes ? `<div class="section-label">Notes</div><div class="notes-block">${escapeHtml(r.notes)}</div>` : ""}
 
@@ -634,7 +712,7 @@ function viewRecipeDetail(id) {
 }
 
 // ---------------------------------------------------------------
-// View: Paint library
+// View: Paint rack (the user's own paints)
 // ---------------------------------------------------------------
 function viewPaints() {
   const q = state.searchQuery.toLowerCase();
@@ -658,8 +736,11 @@ function viewPaints() {
         Add them here once, then pull them into any recipe.
       </div>
 
-      <button class="btn btn-primary btn-block" data-nav="paint-new" style="margin-bottom:18px">
-        + Add paint to rack
+      <button class="btn btn-primary btn-block" data-nav="paint-library" style="margin-bottom:10px">
+        Browse paint library
+      </button>
+      <button class="btn btn-ghost btn-block" data-nav="paint-new" style="margin-bottom:18px">
+        + Add paint manually
       </button>
 
       ${paints.length ? brands.map((brand) => `
@@ -673,6 +754,7 @@ function viewPaints() {
                 <div class="paint-row__name">${escapeHtml(p.name)}</div>
                 <div class="paint-row__brand">${escapeHtml(p.type || "Other")}</div>
               </div>
+              ${p.needsRestock ? `<span class="restock-badge">Buy</span>` : ""}
               <div class="paint-lib-row__count">${n ? n + (n === 1 ? " recipe" : " recipes") : "unused"}</div>
               <div class="unit-row__chevron">${icon("chevron", 14)}</div>
             </div>`;
@@ -704,10 +786,83 @@ function viewPaint(id) {
       <div class="detail-title">${escapeHtml(p.name)}</div>
       <div class="detail-sub">${escapeHtml(p.brand || "Unbranded")} \u00b7 ${escapeHtml(p.type || "Other")} \u00b7 <span class="paint-row__hex">${escapeHtml(p.hex)}</span></div>
 
+      <div class="settings-group" style="margin:16px 0">
+        <div class="settings-row">
+          <div>
+            <div class="settings-row__label">Need to buy</div>
+            <div class="settings-row__desc">Flag this one for restocking next time you're shopping.</div>
+          </div>
+          <button class="btn ${p.needsRestock ? "btn-danger" : "btn-ghost"} btn-sm" data-action="toggle-restock" data-id="${p.id}">
+            ${p.needsRestock ? "Flagged" : "Flag it"}
+          </button>
+        </div>
+      </div>
+
       <div class="section-label">Used In</div>
       ${used.length
         ? `<div class="recipe-grid">${used.map(recipeCardHtml).join("")}</div>`
         : `<div class="empty-state__sub">Not used in any recipe yet.</div>`}
+    </div>
+  `;
+}
+
+// ---------------------------------------------------------------
+// View: Paint library — browse a real catalogue and mark paints as owned
+// or needed. Citadel's current range only for now (see PAINT_LIBRARY).
+// ---------------------------------------------------------------
+function viewPaintLibrary() {
+  const q = state.searchQuery.toLowerCase();
+  const entries = q
+    ? PAINT_LIBRARY.filter((p) => p.name.toLowerCase().includes(q) || p.type.toLowerCase().includes(q))
+    : PAINT_LIBRARY;
+
+  const groups = PAINT_TYPES.filter((t) => entries.some((p) => p.type === t));
+
+  const row = (p) => {
+    const owned = !!ownedPaintFor(p.name, p.brand);
+    const wanted = isWanted(p.name, p.brand);
+    return `
+      <div class="lib-row">
+        <div class="lib-row__top">
+          <div class="paint-row__swatch" style="background:${p.hex}"></div>
+          <div class="lib-row__name">
+            <div class="paint-row__name">${escapeHtml(p.name)}</div>
+            <div class="paint-row__brand">${escapeHtml(p.brand)}</div>
+          </div>
+        </div>
+        <div class="lib-row__actions">
+          <button
+            class="lib-btn ${owned ? "is-on" : ""}"
+            data-action="toggle-have"
+            data-name="${escapeHtml(p.name)}" data-brand="${escapeHtml(p.brand)}"
+            data-hex="${p.hex}" data-type="${escapeHtml(p.type)}"
+          >${owned ? "Have it ✓" : "Have it"}</button>
+          <button
+            class="lib-btn is-wanted ${wanted ? "is-on" : ""}"
+            data-action="toggle-wanted"
+            data-name="${escapeHtml(p.name)}" data-brand="${escapeHtml(p.brand)}"
+          >${wanted ? "Need to buy ✓" : "Need to buy"}</button>
+        </div>
+      </div>`;
+  };
+
+  return `
+    <div class="page-enter">
+      <div class="detail-header">
+        <button class="icon-btn" data-nav="paints">${icon("back", 18)}</button>
+        <div class="page-title" style="margin:0">Paint Library</div>
+        <div style="width:36px"></div>
+      </div>
+      <div class="detail-sub" style="margin-bottom:14px">
+        The current Citadel Colour range. Tap "Have it" for paints already on your rack, or
+        "Need to buy" to flag ones you're missing. Colours are close approximations, not
+        official swatches — Citadel doesn't publish exact codes.
+      </div>
+
+      ${entries.length ? groups.map((type) => `
+        <div class="section-label">${escapeHtml(type)}</div>
+        ${entries.filter((p) => p.type === type).map(row).join("")}
+      `).join("") : emptyStateHtml("search", "No matches", "Try a different search term.")}
     </div>
   `;
 }
@@ -787,7 +942,7 @@ function bindPaintForm(root) {
 let recipeForm = null;
 
 function newStep() {
-  return { id: "ns" + Math.random().toString(36).slice(2, 9), technique: TECHNIQUES[0], paintId: "", notes: "" };
+  return { id: "ns" + Math.random().toString(36).slice(2, 9), technique: TECHNIQUES[0], paintId: "", notes: "", area: "" };
 }
 
 function initRecipeForm(existing, presetFaction, presetUnit) {
@@ -891,9 +1046,9 @@ function viewRecipeForm(isEdit) {
           ${recipeForm.steps.length > 1 ? `<button type="button" class="repeater-item__remove" data-remove-step="${s.id}">&times;</button>` : ""}
           <div class="field" style="margin-bottom:10px;">
             <label>Technique</label>
-            <select data-step-field="technique" data-step-id="${s.id}">
-              ${TECHNIQUES.map((t) => `<option value="${t}" ${s.technique === t ? "selected" : ""}>${t}</option>`).join("")}
-            </select>
+            <div class="tech-picker">
+              ${TECHNIQUES.map((t) => `<button type="button" data-set-technique="${escapeHtml(t)}" data-step-id="${s.id}" class="${s.technique === t ? "is-selected" : ""}">${escapeHtml(t)}</button>`).join("")}
+            </div>
           </div>
           <div class="field" style="margin-bottom:10px;">
             <label>Paint</label>
@@ -903,12 +1058,19 @@ function viewRecipeForm(isEdit) {
               <button type="button" class="btn btn-ghost btn-sm" data-action="quick-paint" data-step-id="${s.id}">+ New</button>
             </div>
           </div>
+          <div class="field" style="margin-bottom:10px;">
+            <label>Group <span class="label-hint">optional — e.g. Armour, Base, Trim</span></label>
+            <input type="text" data-step-field="area" data-step-id="${s.id}" list="area-suggestions" value="${escapeHtml(s.area || "")}" placeholder="e.g. Armour" />
+          </div>
           <div class="field" style="margin-bottom:0;">
             <label>Notes</label>
             <textarea data-step-field="notes" data-step-id="${s.id}" placeholder="e.g. two thin coats, let dry between">${escapeHtml(s.notes)}</textarea>
           </div>
         </div>
       `).join("")}
+      <datalist id="area-suggestions">
+        ${[...new Set(recipeForm.steps.map((s) => s.area).filter(Boolean))].map((a) => `<option value="${escapeHtml(a)}"></option>`).join("")}
+      </datalist>
       <button type="button" class="repeater-add" data-action="add-step">+ Add step</button>
 
       <div class="field">
@@ -1189,7 +1351,8 @@ function render() {
     if (!paintForm) initPaintForm(null);
     html = viewPaintForm(!!paintForm.id);
     showFab = false;
-  } else if (route === "settings") { html = viewSettings(); showFab = false; }
+  } else if (route === "paint-library") { html = viewPaintLibrary(); showFab = false; }
+  else if (route === "settings") { html = viewSettings(); showFab = false; }
   else if (route === "change-password") {
     if (!isSignedIn()) { navigate("settings"); return; }
     html = viewChangePassword();
@@ -1208,7 +1371,7 @@ function render() {
       r === route ||
       (r === "recipes" && (route === "recipe" || route === "recipe-new")) ||
       (r === "factions" && (route === "faction" || route === "unit")) ||
-      (r === "paints" && (route === "paint" || route === "paint-new"));
+      (r === "paints" && (route === "paint" || route === "paint-new" || route === "paint-library"));
     el.classList.toggle("is-active", active);
   });
 
@@ -1240,10 +1403,13 @@ function updateSyncPill() {
   const pill = document.getElementById("sync-pill");
   if (!pill) return;
   const label = syncStatusLabel();
+  const isLive = !!label && !syncing && cloudError !== "sync" && navigator.onLine;
   pill.classList.toggle("hidden", !label);
   pill.classList.toggle("is-busy", syncing);
   pill.classList.toggle("is-error", cloudError === "sync" || !navigator.onLine);
-  if (label) pill.textContent = label;
+  if (label) {
+    pill.innerHTML = (isLive ? '<span class="sync-pill__dot"></span>' : "") + escapeHtml(label);
+  }
 }
 
 // ---------------------------------------------------------------
@@ -1391,6 +1557,13 @@ document.addEventListener("click", async (e) => {
   const setDiff = t("[data-set-difficulty]");
   if (setDiff) { recipeForm.difficulty = Number(setDiff.dataset.setDifficulty); render(); return; }
 
+  const setTech = t("[data-set-technique]");
+  if (setTech) {
+    const step = recipeForm.steps.find((s) => s.id === setTech.dataset.stepId);
+    if (step) { step.technique = setTech.dataset.setTechnique; render(); }
+    return;
+  }
+
   const addStep = t("[data-action='add-step']");
   if (addStep) { recipeForm.steps.push(newStep()); render(); return; }
 
@@ -1477,6 +1650,39 @@ document.addEventListener("click", async (e) => {
   // --- paint form ---
   const editPaint = t("[data-action='edit-paint']");
   if (editPaint) { initPaintForm(findPaint(editPaint.dataset.id)); navigate("paint-new"); return; }
+
+  // --- paint library ---
+  const toggleHave = t("[data-action='toggle-have']");
+  if (toggleHave) {
+    const { name, brand, hex, type } = toggleHave.dataset;
+    const existing = ownedPaintFor(name, brand);
+    if (existing) {
+      tombstonePaint(existing.id);
+      showToast("Removed from rack");
+    } else {
+      const rows = getAllPaintRows();
+      const id = "lib-" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+      rows.push(stamp({ id, name, brand, hex, type }, null));
+      if (!savePaints(rows)) { showToast("Storage is full"); return; }
+      showToast("Added to rack");
+    }
+    render();
+    return;
+  }
+
+  const toggleWant = t("[data-action='toggle-wanted']");
+  if (toggleWant) {
+    toggleWanted(toggleWant.dataset.name, toggleWant.dataset.brand);
+    render();
+    return;
+  }
+
+  const toggleRestockBtn = t("[data-action='toggle-restock']");
+  if (toggleRestockBtn) {
+    toggleRestock(toggleRestockBtn.dataset.id);
+    render();
+    return;
+  }
 
   const paintCancel = t("[data-action='paint-cancel']");
   if (paintCancel) {
@@ -1703,7 +1909,7 @@ document.addEventListener("input", (e) => {
   if (e.target.id !== "search-input") return;
   state.searchQuery = e.target.value;
   // search means different things on different screens, so stay put where it makes sense
-  if (["paints", "factions", "recipes"].includes(state.route)) render();
+  if (["paints", "paint-library", "factions", "recipes"].includes(state.route)) render();
   else navigate("recipes");
 });
 
