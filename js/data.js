@@ -113,7 +113,7 @@ const SYSTEMS = [
   { id: "other", label: "Everything Else", alliances: ["General"] },
 ];
 
-const TECHNIQUES = ["Base", "Shade", "Layer", "Highlight", "Edge Highlight", "Glaze", "Drybrush", "Wash", "Contrast", "Technical"];
+const TECHNIQUES = ["Primer", "Base", "Shade", "Layer", "Highlight", "Edge Highlight", "Glaze", "Drybrush", "Wash", "Contrast", "Technical"];
 const PAINT_TYPES = ["Base", "Layer", "Shade", "Contrast", "Dry", "Technical", "Air", "Spray", "Other"];
 const PAINT_BRANDS = ["Citadel", "Vallejo", "Army Painter", "Scale75", "Pro Acryl", "Two Thin Coats", "AK", "Kimera", "Other"];
 
@@ -414,7 +414,7 @@ const SEED_PAINTS = [
   { id: "pa-plaguebearer",     name: "Plaguebearer Flesh",  brand: "Citadel", hex: "#8FA55B", type: "Layer" },
   { id: "pa-titanium-white",   name: "Bold Titanium White", brand: "Vallejo", hex: "#F1EDE6", type: "Layer" },
   { id: "pa-macragge-blue",    name: "Macragge Blue",       brand: "Citadel", hex: "#1B4B6B", type: "Base" },
-  { id: "pa-nuln-oil",         name: "Nuln Oil",            brand: "Citadel", hex: "#1A1A1A", type: "Shade" },
+  { id: "pa-nuln-oil",         name: "Nuln Oil",            brand: "Citadel", hex: "#1A1A1A", type: "Shade", needsRestock: true },
   { id: "pa-calgar-blue",      name: "Calgar Blue",         brand: "Citadel", hex: "#3D74A6", type: "Layer" },
   { id: "pa-fenrisian-grey",   name: "Fenrisian Grey",      brand: "Citadel", hex: "#A9B7C0", type: "Layer" },
   { id: "pa-retributor",       name: "Retributor Armour",   brand: "Citadel", hex: "#8C6B2A", type: "Base" },
@@ -429,6 +429,8 @@ const SEED_PAINTS = [
   { id: "pa-agrax",            name: "Agrax Earthshade",    brand: "Citadel", hex: "#4A3826", type: "Shade" },
   { id: "pa-leadbelcher",      name: "Leadbelcher",         brand: "Citadel", hex: "#6E7477", type: "Base" },
   { id: "pa-stirland-mud",     name: "Stirland Mud",        brand: "Citadel", hex: "#5A4632", type: "Technical" },
+  { id: "pa-black-spray",      name: "Chaos Black Spray",   brand: "Citadel", hex: "#0A0A0C", type: "Spray" },
+  { id: "pa-white-spray",      name: "Corax White Spray",   brand: "Citadel", hex: "#E8E8E2", type: "Spray" },
 ];
 
 const SEED_RECIPES = [
@@ -440,10 +442,11 @@ const SEED_RECIPES = [
     difficulty: 2,
     photo: null,
     steps: [
-      { id: "s1", technique: "Base",      paintId: "pa-warboss-green",    notes: "Two thin coats over black primer." },
-      { id: "s2", technique: "Wash",      paintId: "pa-german-red-brown", notes: "Thin wash into all recesses, let it pool in the wrinkles." },
-      { id: "s3", technique: "Layer",     paintId: "pa-plaguebearer",     notes: "Mix 1:1 with the base colour, build up on raised muscle." },
-      { id: "s4", technique: "Highlight", paintId: "pa-titanium-white",   notes: "Tiny dot mix on knuckles, brow ridge and tusks only." },
+      { id: "s0", technique: "Primer",    paintId: "pa-black-spray",      notes: "Even coat over the whole model. Let it cure fully before basecoating.", area: "" },
+      { id: "s1", technique: "Base",      paintId: "pa-warboss-green",    notes: "Two thin coats.", area: "Skin" },
+      { id: "s2", technique: "Wash",      paintId: "pa-german-red-brown", notes: "Thin wash into all recesses, let it pool in the wrinkles.", area: "Skin" },
+      { id: "s3", technique: "Layer",     paintId: "pa-plaguebearer",     notes: "Mix 1:1 with the base colour, build up on raised muscle.", area: "Skin" },
+      { id: "s4", technique: "Highlight", paintId: "pa-titanium-white",   notes: "Tiny dot mix on knuckles, brow ridge and tusks only.", area: "Skin" },
     ],
     notes: "Works equally well on Nobz. For Deffskulls, swap the base for a bone tone.",
   },
@@ -455,11 +458,12 @@ const SEED_RECIPES = [
     difficulty: 3,
     photo: null,
     steps: [
-      { id: "s1", technique: "Base",           paintId: "pa-macragge-blue",  notes: "Even coverage, two coats over grey primer." },
-      { id: "s2", technique: "Wash",           paintId: "pa-nuln-oil",       notes: "Full wash over all armour panels." },
-      { id: "s3", technique: "Layer",          paintId: "pa-calgar-blue",    notes: "Panel centres, leave the recesses dark." },
-      { id: "s4", technique: "Edge Highlight", paintId: "pa-fenrisian-grey", notes: "Sharp edge highlight on trim and rims." },
-      { id: "s5", technique: "Base",           paintId: "pa-retributor",     notes: "Shoulder trim and honour badges." },
+      { id: "s0", technique: "Primer",        paintId: "pa-white-spray",    notes: "A bright undercoat keeps Macragge Blue vibrant rather than muddy.", area: "" },
+      { id: "s1", technique: "Base",          paintId: "pa-macragge-blue",  notes: "Even coverage, two coats.", area: "Armour" },
+      { id: "s2", technique: "Wash",          paintId: "pa-nuln-oil",       notes: "Full wash over all armour panels.", area: "Armour" },
+      { id: "s3", technique: "Layer",         paintId: "pa-calgar-blue",    notes: "Panel centres, leave the recesses dark.", area: "Armour" },
+      { id: "s4", technique: "Edge Highlight", paintId: "pa-fenrisian-grey", notes: "Sharp edge highlight on trim and rims.", area: "Armour" },
+      { id: "s5", technique: "Base",           paintId: "pa-retributor",     notes: "Shoulder trim and honour badges.", area: "Trim" },
     ],
     notes: "Applies to the whole army rather than one kit \u2014 which is why it sits under General.",
   },
@@ -471,11 +475,12 @@ const SEED_RECIPES = [
     difficulty: 4,
     photo: null,
     steps: [
-      { id: "s1", technique: "Base",           paintId: "pa-abaddon-black",   notes: "Armour plates, two thin coats." },
-      { id: "s2", technique: "Glaze",          paintId: "pa-screamer-pink",   notes: "Thin purple glaze in the recesses for corruption." },
-      { id: "s3", technique: "Base",           paintId: "pa-warplock-bronze", notes: "All trim, rivets and shoulder pads." },
-      { id: "s4", technique: "Drybrush",       paintId: "pa-sycorax-bronze",  notes: "Light drybrush over the bronze trim only." },
-      { id: "s5", technique: "Edge Highlight", paintId: "pa-runefang-steel",  notes: "Blade edges and chipped paint effects." },
+      { id: "s0", technique: "Primer",         paintId: "pa-black-spray",     notes: "Even coat, this recipe leans on the primer staying visible in recesses.", area: "" },
+      { id: "s1", technique: "Base",           paintId: "pa-abaddon-black",   notes: "Armour plates, two thin coats.", area: "Armour" },
+      { id: "s2", technique: "Glaze",          paintId: "pa-screamer-pink",   notes: "Thin purple glaze in the recesses for corruption.", area: "Armour" },
+      { id: "s3", technique: "Base",           paintId: "pa-warplock-bronze", notes: "All trim, rivets and shoulder pads.", area: "Trim" },
+      { id: "s4", technique: "Drybrush",       paintId: "pa-sycorax-bronze",  notes: "Light drybrush over the bronze trim only.", area: "Trim" },
+      { id: "s5", technique: "Edge Highlight", paintId: "pa-runefang-steel",  notes: "Blade edges and chipped paint effects.", area: "Trim" },
     ],
     notes: "Stipple a little dried blood red near the blade tips for a used look.",
   },

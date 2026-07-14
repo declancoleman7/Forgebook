@@ -15,6 +15,9 @@ const ICONS = {
   download: '<path d="M12 3v12" /><path d="M7 10l5 5 5-5" /><path d="M5 21h14" />',
   upload: '<path d="M12 21V9" /><path d="M7 14l5-5 5 5" /><path d="M5 3h14" />',
   image: '<rect x="3" y="4" width="18" height="16" rx="2" /><circle cx="8.5" cy="9.5" r="1.5" /><path d="M21 16l-5-5-6 6-3-3-4 4" />',
+  check: '<path d="M5 12l5 5L20 6" />',
+  cart: '<circle cx="9" cy="20" r="1.4" fill="currentColor" /><circle cx="18" cy="20" r="1.4" fill="currentColor" /><path d="M2 3h3l2.5 12h11l2-8H6" />',
+  filter: '<path d="M4 6h16" /><path d="M7 12h10" /><path d="M10 18h4" />',
 };
 
 function icon(name, size = 20) {
@@ -36,9 +39,14 @@ const NAV_ITEMS = [
 let state = {
   route: "home",
   params: {},
-  factionFilter: null,
+  factionFilter: null, // single value — the Faction/Unit drill-down and "+ New recipe for X" preset context, NOT the Recipes list filter below
   unitFilter: undefined, // undefined = no unit filter; null = General only; string = that unit
+  recipeFactionFilters: [], // multi-select — the Recipes list's filter window; empty = any
+  recipeDifficultyFilters: [], // multi-select — same window; empty = any
+  recipeFilterOpen: false,
   searchQuery: "",
+  paintLibFilter: "all", // "all" | "owned" | "want" — Paint Library ownership filter
+  paintLibBrand: null, // null = all brands
 };
 
 // ---------------------------------------------------------------
@@ -338,6 +346,12 @@ function getFilteredRecipes() {
   if (state.unitFilter !== undefined) {
     recipes = recipes.filter((r) => (r.unit || null) === state.unitFilter);
   }
+  if (state.recipeFactionFilters.length) {
+    recipes = recipes.filter((r) => state.recipeFactionFilters.includes(r.faction));
+  }
+  if (state.recipeDifficultyFilters.length) {
+    recipes = recipes.filter((r) => state.recipeDifficultyFilters.includes(r.difficulty || 1));
+  }
   if (state.searchQuery) {
     const q = state.searchQuery.toLowerCase();
     recipes = recipes.filter((r) =>
@@ -355,6 +369,17 @@ function getFilteredRecipes() {
 // Swipe between recipes
 // ---------------------------------------------------------------
 let swipeDirection = null; // "left" = swiped left = went to the next recipe
+
+// Every view's HTML bakes in class="page-enter" (a fade-and-rise-in), and
+// render() always does a full root.innerHTML swap — including for in-place
+// interactions that never change the route at all (picking a difficulty,
+// typing a search query, toggling a filter chip, a background sync tick
+// completing). Since innerHTML always creates a brand-new element, the
+// animation replayed on literally every click, which is what reads as the
+// whole app "jerking" or "reloading itself" on every interaction. This key
+// lets render() tell "actually went somewhere new" apart from "same screen,
+// something on it changed" and only animate the former.
+let lastRenderKey = null;
 
 function swipeTo(dir) {
   const siblings = getFilteredRecipes();
@@ -440,6 +465,85 @@ function recipeCardHtml(r) {
       </div>
     </div>
   `;
+}
+
+// A narrow, clickable row for the desktop three-pane layout's list column —
+// recipeCardHtml's tile doesn't fit a 300px sidebar, so this is a distinct,
+// denser presentation of the same data.
+function recipeCompactRowHtml(r, isActive) {
+  const fac = faction(r.faction);
+  const stack = (r.steps || []).slice(0, 5).map((s) => {
+    const p = findPaint(s.paintId);
+    return p ? p.hex : fac.color;
+  });
+  return `
+    <div class="compact-recipe-row ${isActive ? "is-active" : ""}" data-nav="recipe" data-id="${r.id}" style="--faction-color:${fac.color}">
+      <div class="compact-recipe-row__thumb ${r.photo ? "has-photo" : ""}"${r.photo ? ` style="background-image:url('${r.photo}')"` : ""}>
+        ${r.photo ? "" : `<span style="color:${fac.color}">${emblemSvg(fac.emblem, 18)}</span>`}
+      </div>
+      <div class="compact-recipe-row__info">
+        <div class="compact-recipe-row__name">${escapeHtml(r.name)}</div>
+        <div class="compact-recipe-row__meta">${escapeHtml(fac.label)}${r.unit ? " · " + escapeHtml(r.unit) : ""}</div>
+        <div class="compact-recipe-row__stack">${stack.map((c) => `<span style="background:${c}"></span>`).join("")}</div>
+      </div>
+    </div>`;
+}
+
+// Shared by the mobile grid and the desktop list column in viewRecipes() —
+// a single trigger button, badged with the active filter count, that opens
+// the multi-select filter window below. Both call this and
+// recipeFilterOverlayHtml() so mobile and desktop never drift apart.
+function recipeFilterTriggerHtml() {
+  const count = state.recipeFactionFilters.length + state.recipeDifficultyFilters.length;
+  return `
+    <button type="button" class="btn btn-ghost recipe-filter-trigger" data-action="open-recipe-filters" style="margin-bottom:14px">
+      ${icon("filter", 14)} Filters
+      ${count ? `<span class="recipe-filter-trigger__count">${count}</span>` : ""}
+    </button>`;
+}
+
+// A toggle-everything-at-once window rather than inline chips: army and
+// difficulty are both multi-select (tap several armies on at once), and
+// nothing here is hidden behind a scroll the way the old chip row was.
+function recipeFilterOverlayHtml(used) {
+  if (!state.recipeFilterOpen) return "";
+  const toggle = (active, label, dataAttr) =>
+    `<div class="faction-chip ${active ? "is-active" : ""}" ${dataAttr}>${label}</div>`;
+
+  return `
+    <div class="filter-overlay">
+      <div class="filter-overlay__backdrop" data-action="close-recipe-filters"></div>
+      <div class="filter-overlay__panel">
+        <div class="filter-overlay__header">
+          <div class="page-title" style="margin:0">Filter recipes</div>
+          <button type="button" class="icon-btn" data-action="close-recipe-filters" aria-label="Close">${icon("back", 16)}</button>
+        </div>
+        <div class="filter-overlay__body">
+          <div class="section-label">Army</div>
+          <div class="filter-toggle-row">
+            ${used.map((id) => {
+              const f = faction(id);
+              const active = state.recipeFactionFilters.includes(f.id);
+              return `
+                <div class="faction-chip ${active ? "is-active" : ""}" data-toggle-faction-filter="${f.id}" style="--chip-color:${f.color}">
+                  <span class="faction-chip__emblem" style="color:${f.color}">${emblemSvg(f.emblem, 15)}</span>
+                  ${escapeHtml(f.label)}
+                </div>`;
+            }).join("") || `<div class="empty-state__sub">No recipes yet to filter by army.</div>`}
+          </div>
+          <div class="section-label">Difficulty</div>
+          <div class="filter-toggle-row">
+            ${[1, 2, 3, 4, 5].map((n) =>
+              toggle(state.recipeDifficultyFilters.includes(n), difficultyDots(n), `data-toggle-difficulty-filter="${n}"`)
+            ).join("")}
+          </div>
+        </div>
+        <div class="filter-overlay__footer">
+          <button type="button" class="btn btn-ghost btn-block" data-action="clear-recipe-filters">Clear all</button>
+          <button type="button" class="btn btn-primary btn-block" data-action="close-recipe-filters">Done</button>
+        </div>
+      </div>
+    </div>`;
 }
 
 function emptyStateHtml(iconName, title, sub) {
@@ -588,24 +692,35 @@ function viewRecipes() {
   state.unitFilter = undefined; // the all-recipes screen ignores unit scoping
   const recipes = getFilteredRecipes();
   const used = [...new Set(getRecipes().map((r) => r.faction))];
+  const filterTrigger = recipeFilterTriggerHtml();
+  const noMatch = emptyStateHtml("search", "No matches", "Try different filters or a different search term.");
 
+  // Mobile keeps the existing full-width card grid unchanged. Desktop
+  // (≥860px) instead shows a narrow, always-visible list column — this is
+  // what lets a click open a recipe alongside the list instead of replacing
+  // it. Both are rendered; CSS shows exactly one depending on viewport,
+  // the same trick buildShell() already uses for side-nav vs. bottom-nav.
   return `
-    <div class="page-enter">
-      <div class="page-title">Recipes</div>
-      <div class="faction-row" style="margin-bottom:18px">
-        <div class="faction-chip ${!state.factionFilter ? "is-active" : ""}" data-faction-filter="">All</div>
-        ${used.map((id) => {
-          const f = faction(id);
-          return `
-            <div class="faction-chip ${state.factionFilter === f.id ? "is-active" : ""}" data-faction-filter="${f.id}" style="--chip-color:${f.color}">
-              <span class="faction-chip__emblem" style="color:${f.color}">${emblemSvg(f.emblem, 15)}</span>
-              ${escapeHtml(f.label)}
-            </div>`;
-        }).join("")}
+    <div class="page-enter recipe-master">
+      <div class="recipe-master__mobile-grid">
+        <div class="page-title">Recipes</div>
+        ${filterTrigger}
+        ${recipes.length ? `<div class="recipe-grid">${recipes.map(recipeCardHtml).join("")}</div>` : noMatch}
       </div>
-      ${recipes.length
-        ? `<div class="recipe-grid">${recipes.map(recipeCardHtml).join("")}</div>`
-        : emptyStateHtml("search", "No matches", "Try a different army or search term.")}
+      <div class="recipe-master__list">
+        <div class="page-title" style="margin-bottom:2px">Recipes</div>
+        <div class="detail-sub" style="margin-bottom:12px">${recipes.length} recipe${recipes.length === 1 ? "" : "s"}</div>
+        <div class="mini-search">
+          ${icon("search", 14)}
+          <input type="text" id="recipe-list-search" placeholder="Search recipes" value="${escapeHtml(state.searchQuery)}" />
+        </div>
+        ${filterTrigger}
+        ${recipes.length ? recipes.map((r) => recipeCompactRowHtml(r, false)).join("") : noMatch}
+      </div>
+      <div class="recipe-master__placeholder">
+        ${emptyStateHtml("book", "Select a recipe", "Pick one from the list to see it here.")}
+      </div>
+      ${recipeFilterOverlayHtml(used)}
     </div>
   `;
 }
@@ -624,7 +739,7 @@ function viewRecipeDetail(id) {
   const idx = siblings.findIndex((s) => s.id === r.id);
   const swipeCls = swipeDirection === "left" ? "swipe-in-left" : swipeDirection === "right" ? "swipe-in-right" : "";
 
-  return `
+  const detailHtml = `
     <div class="page-enter ${swipeCls}" data-swipe-page>
       <div class="detail-header">
         <button class="icon-btn" data-nav="recipes">${icon("back", 18)}</button>
@@ -706,6 +821,21 @@ function viewRecipeDetail(id) {
 
       <div class="detail-actions">
         <button class="btn btn-ghost btn-block" data-action="print">Print Recipe</button>
+      </div>
+    </div>
+  `;
+
+  // Mobile: .recipe-master is plain block, the list column is hidden, and
+  // the detail above fills the screen exactly as before. Desktop: the two
+  // become side-by-side columns, so switching recipes from the sidebar
+  // never requires leaving this screen.
+  return `
+    <div class="recipe-master">
+      <div class="recipe-master__list">
+        ${siblings.map((s) => recipeCompactRowHtml(s, s.id === r.id)).join("")}
+      </div>
+      <div class="recipe-master__detail">
+        ${detailHtml}
       </div>
     </div>
   `;
@@ -808,41 +938,58 @@ function viewPaint(id) {
 
 // ---------------------------------------------------------------
 // View: Paint library — browse a real catalogue and mark paints as owned
-// or needed. Citadel's current range only for now (see PAINT_LIBRARY).
+// or needed. Citadel's current range only for now (see PAINT_LIBRARY), but
+// brand is a real field throughout so a second brand is just more data, not
+// a rework — the brand filter row below only renders once there's more than
+// one brand to choose between.
+//
+// Three states per paint, not two: not-owned, not-owned-and-wanted ("need to
+// buy" — missing from the rack entirely), and owned-but-needs-restock (you
+// have it, it's running low). Owned and "need to buy" are mutually
+// exclusive; restock only ever applies once something's owned. The trailing
+// icon button is the same slot for both flags — its meaning (buy vs.
+// restock) follows from whether the paint is owned, so it never needs to
+// show both at once.
 // ---------------------------------------------------------------
 function viewPaintLibrary() {
   const q = state.searchQuery.toLowerCase();
-  const entries = q
-    ? PAINT_LIBRARY.filter((p) => p.name.toLowerCase().includes(q) || p.type.toLowerCase().includes(q))
-    : PAINT_LIBRARY;
+  let entries = PAINT_LIBRARY;
+  if (state.paintLibBrand) entries = entries.filter((p) => p.brand === state.paintLibBrand);
+  if (q) entries = entries.filter((p) => p.name.toLowerCase().includes(q) || p.type.toLowerCase().includes(q));
+
+  const isOwnedEntry = (p) => !!ownedPaintFor(p.name, p.brand);
+  const isWantedEntry = (p) => !isOwnedEntry(p) && isWanted(p.name, p.brand);
+
+  if (state.paintLibFilter === "owned") entries = entries.filter(isOwnedEntry);
+  else if (state.paintLibFilter === "want") entries = entries.filter(isWantedEntry);
+
+  const allBrands = [...new Set(PAINT_LIBRARY.map((p) => p.brand))];
+  const totalCount = PAINT_LIBRARY.length;
+  const ownedCount = PAINT_LIBRARY.filter(isOwnedEntry).length;
+  const wantCount = PAINT_LIBRARY.filter(isWantedEntry).length;
+  const pct = totalCount ? Math.round((ownedCount / totalCount) * 100) : 0;
 
   const groups = PAINT_TYPES.filter((t) => entries.some((p) => p.type === t));
 
   const row = (p) => {
-    const owned = !!ownedPaintFor(p.name, p.brand);
+    const owned = ownedPaintFor(p.name, p.brand);
     const wanted = isWanted(p.name, p.brand);
+    const flagBtn = owned
+      ? `<button class="lib-row__flag is-restock ${owned.needsRestock ? "is-on" : ""}" data-action="toggle-restock" data-id="${owned.id}" title="${owned.needsRestock ? "Flagged for restock" : "Flag for restock"}">${icon("cart", 14)}</button>`
+      : `<button class="lib-row__flag is-wanted ${wanted ? "is-on" : ""}" data-action="toggle-wanted" data-name="${escapeHtml(p.name)}" data-brand="${escapeHtml(p.brand)}" title="${wanted ? "On your buy list" : "Add to buy list"}">${icon("cart", 14)}</button>`;
     return `
-      <div class="lib-row">
-        <div class="lib-row__top">
-          <div class="paint-row__swatch" style="background:${p.hex}"></div>
-          <div class="lib-row__name">
-            <div class="paint-row__name">${escapeHtml(p.name)}</div>
-            <div class="paint-row__brand">${escapeHtml(p.brand)}</div>
-          </div>
+      <div class="lib-row ${owned ? "is-owned" : ""}"
+        data-action="toggle-have"
+        data-name="${escapeHtml(p.name)}" data-brand="${escapeHtml(p.brand)}"
+        data-hex="${p.hex}" data-type="${escapeHtml(p.type)}"
+      >
+        <div class="paint-row__swatch" style="background:${p.hex}"></div>
+        <div class="lib-row__info">
+          <div class="paint-row__name">${escapeHtml(p.name)}</div>
+          <div class="paint-row__brand">${escapeHtml(p.brand)} · ${escapeHtml(p.type)}</div>
         </div>
-        <div class="lib-row__actions">
-          <button
-            class="lib-btn ${owned ? "is-on" : ""}"
-            data-action="toggle-have"
-            data-name="${escapeHtml(p.name)}" data-brand="${escapeHtml(p.brand)}"
-            data-hex="${p.hex}" data-type="${escapeHtml(p.type)}"
-          >${owned ? "Have it ✓" : "Have it"}</button>
-          <button
-            class="lib-btn is-wanted ${wanted ? "is-on" : ""}"
-            data-action="toggle-wanted"
-            data-name="${escapeHtml(p.name)}" data-brand="${escapeHtml(p.brand)}"
-          >${wanted ? "Need to buy ✓" : "Need to buy"}</button>
-        </div>
+        ${flagBtn}
+        <span class="lib-row__ring">${icon("check", 14)}</span>
       </div>`;
   };
 
@@ -854,15 +1001,40 @@ function viewPaintLibrary() {
         <div style="width:36px"></div>
       </div>
       <div class="detail-sub" style="margin-bottom:14px">
-        The current Citadel Colour range. Tap "Have it" for paints already on your rack, or
-        "Need to buy" to flag ones you're missing. Colours are close approximations, not
+        Tap a paint to mark it on your rack. Flag ones you're missing for a buy list, or ones
+        you own but are running low for a restock. Colours are close approximations, not
         official swatches — Citadel doesn't publish exact codes.
       </div>
 
-      ${entries.length ? groups.map((type) => `
-        <div class="section-label">${escapeHtml(type)}</div>
-        ${entries.filter((p) => p.type === type).map(row).join("")}
-      `).join("") : emptyStateHtml("search", "No matches", "Try a different search term.")}
+      <div class="lib-progress">
+        <div class="lib-progress__stats">
+          <div class="lib-progress__stat"><span class="lib-progress__n">${ownedCount}<small>/${totalCount}</small></span><span class="lib-progress__l">On rack</span></div>
+          <div class="lib-progress__stat"><span class="lib-progress__n" style="color:var(--blood-bright)">${wantCount}</span><span class="lib-progress__l">To buy</span></div>
+        </div>
+        <div class="lib-progress__bar"><i style="width:${pct}%"></i></div>
+      </div>
+
+      <div class="lib-filter-seg">
+        <button class="${state.paintLibFilter === "all" ? "is-active" : ""}" data-action="lib-filter" data-filter="all">All <span class="b">${totalCount}</span></button>
+        <button class="${state.paintLibFilter === "owned" ? "is-active" : ""}" data-action="lib-filter" data-filter="owned">On rack <span class="b">${ownedCount}</span></button>
+        <button class="${state.paintLibFilter === "want" ? "is-active" : ""}" data-action="lib-filter" data-filter="want">To buy <span class="b">${wantCount}</span></button>
+      </div>
+
+      ${allBrands.length > 1 ? `
+        <div class="faction-row" style="margin-bottom:10px">
+          <div class="faction-chip ${!state.paintLibBrand ? "is-active" : ""}" data-action="lib-brand" data-brand="">All brands</div>
+          ${allBrands.map((b) => `<div class="faction-chip ${state.paintLibBrand === b ? "is-active" : ""}" data-action="lib-brand" data-brand="${escapeHtml(b)}">${escapeHtml(b)}</div>`).join("")}
+        </div>
+      ` : ""}
+
+      ${entries.length ? groups.map((type) => {
+        const inType = entries.filter((p) => p.type === type);
+        const ownedInType = inType.filter(isOwnedEntry).length;
+        return `
+          <div class="section-label">${escapeHtml(type)} <span class="lib-section-count">${ownedInType}/${inType.length} owned</span></div>
+          <div class="lib-grid">${inType.map(row).join("")}</div>
+        `;
+      }).join("") : emptyStateHtml("search", "No matches", "Try a different search or filter.")}
     </div>
   `;
 }
@@ -1041,9 +1213,16 @@ function viewRecipeForm(isEdit) {
       <div class="section-label">Method steps</div>
       ${rackEmpty ? `<div class="notice">Your paint rack is empty. Add a paint first \u2014 every step picks a paint from the rack.</div>` : ""}
 
-      ${recipeForm.steps.map((s) => `
+      ${recipeForm.steps.map((s, i) => `
         <div class="repeater-item">
-          ${recipeForm.steps.length > 1 ? `<button type="button" class="repeater-item__remove" data-remove-step="${s.id}">&times;</button>` : ""}
+          <div class="repeater-item__header">
+            <span class="repeater-item__num">Step ${i + 1}</span>
+            <div class="repeater-item__controls">
+              <button type="button" class="icon-btn-sm" data-action="move-step-up" data-step-id="${s.id}" ${i === 0 ? "disabled" : ""} aria-label="Move step up">${icon("chevron", 13)}</button>
+              <button type="button" class="icon-btn-sm repeater-item__down" data-action="move-step-down" data-step-id="${s.id}" ${i === recipeForm.steps.length - 1 ? "disabled" : ""} aria-label="Move step down">${icon("chevron", 13)}</button>
+              ${recipeForm.steps.length > 1 ? `<button type="button" class="repeater-item__remove" data-remove-step="${s.id}" aria-label="Remove step">&times;</button>` : ""}
+            </div>
+          </div>
           <div class="field" style="margin-bottom:10px;">
             <label>Technique</label>
             <div class="tech-picker">
@@ -1067,6 +1246,7 @@ function viewRecipeForm(isEdit) {
             <textarea data-step-field="notes" data-step-id="${s.id}" placeholder="e.g. two thin coats, let dry between">${escapeHtml(s.notes)}</textarea>
           </div>
         </div>
+        <button type="button" class="repeater-insert" data-action="insert-step-after" data-step-id="${s.id}">+ Insert step here</button>
       `).join("")}
       <datalist id="area-suggestions">
         ${[...new Set(recipeForm.steps.map((s) => s.area).filter(Boolean))].map((a) => `<option value="${escapeHtml(a)}"></option>`).join("")}
@@ -1360,10 +1540,55 @@ function render() {
   }
   else html = viewHome();
 
+  // A swipe (recipe → different recipe) always counts as "went somewhere
+  // new" even though the route name itself doesn't change, since params.id
+  // does — keyed on both together.
+  const routeKey = route + ":" + JSON.stringify(params);
+  const isFreshEntry = routeKey !== lastRenderKey;
+  lastRenderKey = routeKey;
+
+  // The desktop three-pane list column would otherwise snap back to the top
+  // every time you pick a different recipe from it (a full innerHTML swap
+  // has no notion of "the same scrollable element", so its scroll position
+  // is naturally lost) — carry it across manually instead.
+  const prevListScroll = root.querySelector(".recipe-master__list")?.scrollTop;
+
+  // Any input whose own oninput handler calls render() (live-filter-as-you-
+  // type boxes, e.g. the recipe list search) would otherwise lose focus
+  // after exactly one keystroke: innerHTML below destroys and recreates it
+  // fresh each time, and a newly-created element with the same id doesn't
+  // inherit focus just because its predecessor had it. Capture it here and
+  // restore it after, generically, so this can't bite any input like it.
+  const activeEl = document.activeElement;
+  const focusInfo = activeEl && activeEl.id && root.contains(activeEl)
+    ? { id: activeEl.id, selStart: activeEl.selectionStart, selEnd: activeEl.selectionEnd }
+    : null;
+
   root.innerHTML = html;
+  if (!isFreshEntry) {
+    // Same screen as last render, just something on it changed — don't
+    // replay the entrance animation.
+    root.querySelectorAll(".page-enter").forEach((el) => el.classList.remove("page-enter"));
+  }
+  if (prevListScroll) {
+    const newList = root.querySelector(".recipe-master__list");
+    if (newList) newList.scrollTop = prevListScroll;
+  }
+  if (focusInfo) {
+    const el = document.getElementById(focusInfo.id);
+    if (el) {
+      el.focus();
+      if (focusInfo.selStart != null) {
+        try { el.setSelectionRange(focusInfo.selStart, focusInfo.selEnd); } catch (e) {}
+      }
+    }
+  }
   swipeDirection = null; // one-shot: only a swipe-driven render animates directionally
   bindRecipeForm(root);
   bindPaintForm(root);
+
+  const recipeListSearch = root.querySelector("#recipe-list-search");
+  if (recipeListSearch) recipeListSearch.oninput = (e) => { state.searchQuery = e.target.value; render(); };
 
   document.querySelectorAll(".bottom-nav__item, .side-nav__item").forEach((el) => {
     const r = el.dataset.route;
@@ -1522,9 +1747,36 @@ document.addEventListener("click", async (e) => {
     return;
   }
 
-  const facFilter = t("[data-faction-filter]");
-  if (facFilter) {
-    state.factionFilter = facFilter.dataset.factionFilter || null;
+  const openRecipeFilters = t("[data-action='open-recipe-filters']");
+  if (openRecipeFilters) { state.recipeFilterOpen = true; render(); return; }
+
+  const closeRecipeFilters = t("[data-action='close-recipe-filters']");
+  if (closeRecipeFilters) { state.recipeFilterOpen = false; render(); return; }
+
+  const clearRecipeFilters = t("[data-action='clear-recipe-filters']");
+  if (clearRecipeFilters) {
+    state.recipeFactionFilters = [];
+    state.recipeDifficultyFilters = [];
+    render();
+    return;
+  }
+
+  const toggleFacFilter = t("[data-toggle-faction-filter]");
+  if (toggleFacFilter) {
+    const id = toggleFacFilter.dataset.toggleFactionFilter;
+    const list = state.recipeFactionFilters;
+    const idx = list.indexOf(id);
+    if (idx > -1) list.splice(idx, 1); else list.push(id);
+    render();
+    return;
+  }
+
+  const toggleDiffFilter = t("[data-toggle-difficulty-filter]");
+  if (toggleDiffFilter) {
+    const n = Number(toggleDiffFilter.dataset.toggleDifficultyFilter);
+    const list = state.recipeDifficultyFilters;
+    const idx = list.indexOf(n);
+    if (idx > -1) list.splice(idx, 1); else list.push(n);
     render();
     return;
   }
@@ -1566,6 +1818,36 @@ document.addEventListener("click", async (e) => {
 
   const addStep = t("[data-action='add-step']");
   if (addStep) { recipeForm.steps.push(newStep()); render(); return; }
+
+  const insertStep = t("[data-action='insert-step-after']");
+  if (insertStep) {
+    const i = recipeForm.steps.findIndex((s) => s.id === insertStep.dataset.stepId);
+    if (i > -1) recipeForm.steps.splice(i + 1, 0, newStep());
+    render();
+    return;
+  }
+
+  const moveStepUp = t("[data-action='move-step-up']");
+  if (moveStepUp) {
+    const i = recipeForm.steps.findIndex((s) => s.id === moveStepUp.dataset.stepId);
+    if (i > 0) {
+      const [step] = recipeForm.steps.splice(i, 1);
+      recipeForm.steps.splice(i - 1, 0, step);
+    }
+    render();
+    return;
+  }
+
+  const moveStepDown = t("[data-action='move-step-down']");
+  if (moveStepDown) {
+    const i = recipeForm.steps.findIndex((s) => s.id === moveStepDown.dataset.stepId);
+    if (i > -1 && i < recipeForm.steps.length - 1) {
+      const [step] = recipeForm.steps.splice(i, 1);
+      recipeForm.steps.splice(i + 1, 0, step);
+    }
+    render();
+    return;
+  }
 
   const removeStep = t("[data-remove-step]");
   if (removeStep) {
@@ -1652,24 +1934,10 @@ document.addEventListener("click", async (e) => {
   if (editPaint) { initPaintForm(findPaint(editPaint.dataset.id)); navigate("paint-new"); return; }
 
   // --- paint library ---
-  const toggleHave = t("[data-action='toggle-have']");
-  if (toggleHave) {
-    const { name, brand, hex, type } = toggleHave.dataset;
-    const existing = ownedPaintFor(name, brand);
-    if (existing) {
-      tombstonePaint(existing.id);
-      showToast("Removed from rack");
-    } else {
-      const rows = getAllPaintRows();
-      const id = "lib-" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
-      rows.push(stamp({ id, name, brand, hex, type }, null));
-      if (!savePaints(rows)) { showToast("Storage is full"); return; }
-      showToast("Added to rack");
-    }
-    render();
-    return;
-  }
-
+  // The flag button (toggle-wanted / toggle-restock) sits inside the row
+  // that carries toggle-have, so these two must be checked BEFORE
+  // toggle-have below — closest() would otherwise walk up past the button
+  // to the row and fire the wrong handler.
   const toggleWant = t("[data-action='toggle-wanted']");
   if (toggleWant) {
     toggleWanted(toggleWant.dataset.name, toggleWant.dataset.brand);
@@ -1683,6 +1951,33 @@ document.addEventListener("click", async (e) => {
     render();
     return;
   }
+
+  const toggleHave = t("[data-action='toggle-have']");
+  if (toggleHave) {
+    const { name, brand, hex, type } = toggleHave.dataset;
+    const existing = ownedPaintFor(name, brand);
+    if (existing) {
+      tombstonePaint(existing.id);
+      showToast("Removed from rack");
+    } else {
+      const rows = getAllPaintRows();
+      const id = "lib-" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+      rows.push(stamp({ id, name, brand, hex, type }, null));
+      if (!savePaints(rows)) { showToast("Storage is full"); return; }
+      // Owned and "need to buy" are mutually exclusive — clear the wishlist
+      // flag now that it's moot.
+      if (isWanted(name, brand)) toggleWanted(name, brand);
+      showToast("Added to rack");
+    }
+    render();
+    return;
+  }
+
+  const libFilter = t("[data-action='lib-filter']");
+  if (libFilter) { state.paintLibFilter = libFilter.dataset.filter; render(); return; }
+
+  const libBrand = t("[data-action='lib-brand']");
+  if (libBrand) { state.paintLibBrand = libBrand.dataset.brand || null; render(); return; }
 
   const paintCancel = t("[data-action='paint-cancel']");
   if (paintCancel) {
@@ -2077,7 +2372,24 @@ function bootIntoApp() {
   render();
 
   if ("serviceWorker" in navigator) {
-    navigator.serviceWorker.register("service-worker.js").catch(() => {});
+    navigator.serviceWorker.register("service-worker.js").then((reg) => {
+      // Don't just wait for the browser's own (slow, heuristic) background
+      // check — ask right now. This is what actually gets a device that
+      // already has the app installed off an old cached version promptly,
+      // rather than whenever the browser next feels like checking.
+      reg.update().catch(() => {});
+    }).catch(() => {});
+
+    // service-worker.js calls skipWaiting()+clients.claim(), so a new worker
+    // takes over immediately — but this tab's already-running JS is still
+    // the old version until it reloads. Without this, "the SW updated" and
+    // "the page you're looking at updated" are two different things.
+    let refreshingForUpdate = false;
+    navigator.serviceWorker.addEventListener("controllerchange", () => {
+      if (refreshingForUpdate) return;
+      refreshingForUpdate = true;
+      location.reload();
+    });
   }
   if (isSignedIn() && !pendingMerge) syncNow();
 }
