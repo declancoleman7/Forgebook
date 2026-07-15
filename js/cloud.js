@@ -1,15 +1,16 @@
 // ============================================================
 // Forgebook — cloud layer (auth + sync)
 //
-// DESIGN: LOCAL-FIRST.
-// localStorage stays the single source of truth that the UI reads from, so
-// the app keeps working at the painting table with no signal. The cloud is a
-// background replica: we push local changes up and pull remote ones down when
-// we can, and merge per-record by timestamp (last write wins). Nothing in the
-// UI ever blocks on the network.
+// DESIGN: LIVE. An account is required to use the app at all. Supabase is
+// the only copy of your book — every save/delete writes straight through to
+// it, and localStorage is used only as an in-memory-style render cache (kept
+// fresh by loadBook(), never a second source of truth to reconcile). There is
+// no merge, no queue, no "sync later": a write either lands in the cloud or
+// the person is told it didn't.
 //
-// If the Supabase library fails to load (offline, CDN blocked, whatever), the
-// app degrades to exactly the v0.4 behaviour: a local-only paint book.
+// If the Supabase library fails to load (offline, CDN blocked, whatever),
+// the app can't do anything useful — see cloudAvailable() gating the sign-in
+// form.
 // ============================================================
 
 let sb = null;               // supabase client, or null if unavailable
@@ -44,12 +45,6 @@ function needsPasswordSetup() {
 
 let passwordRecovery = false; // true once a "forgot password" link has been followed
 function inPasswordRecovery() { return passwordRecovery; }
-
-// The soft gate's escape hatch. Once chosen, this device never sees the gate
-// again until the person signs out — browsing without an account is a
-// first-class, remembered choice, not a one-time click-through.
-function isGuest() { return localStorage.getItem(KEYS.guest) === "1"; }
-function continueAsGuest() { localStorage.setItem(KEYS.guest, "1"); }
 
 // ---------------------------------------------------------------
 // Init
@@ -119,14 +114,17 @@ async function signIn(email, password) {
 
 // Sets password_set up front (unlike an invite, this account's password
 // isn't a separate step) so a confirmed signup lands straight in the app
-// instead of hitting the invite's password-setup screen.
-async function signUp(email, password) {
+// instead of hitting the invite's password-setup screen. display_name rides
+// along in user_metadata since there's no profiles row yet to put it in —
+// no session exists until the confirmation link is clicked — and
+// ensureProfile reads it back out when it creates that row on first sign-in.
+async function signUp(email, password, displayName) {
   if (!sb) return { ok: false, message: "No connection — try again when you're online." };
   const redirect = location.origin + location.pathname;
   const { error } = await sb.auth.signUp({
     email: email.trim(),
     password,
-    options: { data: { password_set: true }, emailRedirectTo: redirect },
+    options: { data: { password_set: true, display_name: displayName.trim() }, emailRedirectTo: redirect },
   });
   if (error) return { ok: false, message: error.message || "Couldn't create that account." };
   return { ok: true };
@@ -167,57 +165,30 @@ async function signOutCloud() {
 
 function onSignedIn() {
   ensureProfile();
-  // A brand-new device holds nothing but the seed recipes; there's no point
-  // asking to merge those. Only offer if the person has actually made things.
-  const mine = getAllRecipeRows().filter((r) => !r.seed && !r.deleted);
-  if (mine.length) {
-    pendingMerge = mine.length;
-    if (typeof render === "function") render();
-  } else {
-    // Nothing worth keeping locally: clear the seeds and take the cloud's word.
-    clearLocalBook();
-    syncNow({ full: true });
-  }
+  // If we're already booted, a session just appeared out from under a
+  // running app (an invite/recovery link resolving mid-session) — refetch so
+  // the book on screen is this account's, not whatever an earlier signed-out
+  // state left in the cache. The very first sign-in is instead handled by
+  // bootIntoApp(), via decideBootState() -> render() below.
+  if (appBooted) loadBook();
 }
 
 function onSignedOut() {
   // Don't leave one person's book sitting on a shared device.
-  clearLocalBook();
+  clearLiveState();
+  appBooted = false;
+  if (typeof render === "function") render();
+}
+
+function clearLiveState() {
+  save(KEYS.recipes, []);
+  save(KEYS.paints, []);
+  save(KEYS.wantToBuy, []);
+  save(KEYS.sharedRecipes, []);
+  save(KEYS.sharedPaints, []);
+  save(KEYS.profiles, []);
+  save(KEYS.globalArt, {});
   localStorage.removeItem(SYNC_KEYS.lastSync);
-  resetStore();
-  if (typeof render === "function") render();
-}
-
-function clearLocalBook() {
-  localStorage.setItem(KEYS.recipes, JSON.stringify([]));
-  localStorage.setItem(KEYS.paints, JSON.stringify([]));
-  localStorage.setItem(KEYS.recents, JSON.stringify([]));
-  localStorage.setItem(KEYS.wantToBuy, JSON.stringify([]));
-  localStorage.setItem(KEYS.sharedRecipes, JSON.stringify([]));
-  localStorage.setItem(KEYS.sharedPaints, JSON.stringify([]));
-  localStorage.setItem(KEYS.profiles, JSON.stringify([]));
-  localStorage.setItem(KEYS.globalArt, JSON.stringify({}));
-}
-
-let pendingMerge = 0; // >0 when we're asking whether to upload a local book
-
-async function acceptMerge() {
-  pendingMerge = 0;
-  // Strip the seed flag from nothing — seeds are dropped, real work is kept
-  // and stamped so it wins the merge and gets pushed.
-  const rows = getAllRecipeRows().filter((r) => !r.seed);
-  const paints = getAllPaintRows().filter((p) => !p.seed);
-  save(KEYS.recipes, rows);
-  save(KEYS.paints, paints);
-  await syncNow({ full: true });
-  showToast("Your book is now synced to your account");
-}
-
-async function declineMerge() {
-  pendingMerge = 0;
-  clearLocalBook();
-  await syncNow({ full: true });
-  if (typeof render === "function") render();
 }
 
 // ---------------------------------------------------------------
@@ -275,12 +246,12 @@ function fromRemotePaint(row) {
   };
 }
 
-function toRemoteWant(w, userId) {
-  return { paint_key: w.key, user_id: userId, updated_at: w.updatedAt, deleted: !!w.deleted };
+function toRemoteWant(key, userId) {
+  return { paint_key: key, user_id: userId };
 }
 
 function fromRemoteWant(row) {
-  return { key: row.paint_key, updatedAt: row.updated_at, deleted: !!row.deleted };
+  return { key: row.paint_key };
 }
 
 // A shared recipe keeps its author's id — it's a read-only view of someone
@@ -311,7 +282,11 @@ async function ensureProfile() {
     let { data, error } = await sb.from("profiles").select("*").eq("user_id", userId).maybeSingle();
     if (error) throw error;
     if (!data) {
-      const displayName = defaultDisplayName(currentEmail());
+      // Signup collects a display name up front (see signUp) and it rides
+      // in user_metadata until now, since there's no profiles row to hold it
+      // until this first sign-in. The invite flow sets it directly via
+      // updateDisplayName instead, so this call there is a same-value no-op.
+      const displayName = (session.user.user_metadata && session.user.user_metadata.display_name) || defaultDisplayName(currentEmail());
       const { error: insErr } = await sb.from("profiles").insert({ user_id: userId, display_name: displayName });
       if (insErr) throw insErr;
       data = { user_id: userId, display_name: displayName };
@@ -334,11 +309,16 @@ async function updateDisplayName(name) {
   if (!sb || !isSignedIn()) return { ok: false, message: "No connection — try again when you're online." };
   const trimmed = String(name || "").trim();
   if (!trimmed) return { ok: false, message: "Enter a name first." };
-  const { error } = await sb.from("profiles").upsert({
-    user_id: session.user.id,
-    display_name: trimmed,
-    updated_at: nowIso(),
-  });
+  // A plain update, not upsert: upsert's generated ON CONFLICT DO UPDATE sets
+  // every payload column, including user_id itself, and schema.sql only
+  // grants UPDATE on (display_name, updated_at) — including user_id in the
+  // payload made Postgres reject the whole statement with a 403. The row
+  // always exists by the time this is reachable (ensureProfile creates it on
+  // first sign-in), so there's no upsert-vs-update behavioural difference here.
+  const { error } = await sb
+    .from("profiles")
+    .update({ display_name: trimmed, updated_at: nowIso() })
+    .eq("user_id", session.user.id);
   if (error) return { ok: false, message: "Couldn't save that — try again." };
   const profiles = readJSON(KEYS.profiles, []);
   const idx = profiles.findIndex((p) => p.userId === session.user.id);
@@ -448,48 +428,24 @@ async function removeGlobalFactionEmblem(factionId) {
   }
 }
 
-// Upload any photo still sitting in localStorage as a base64 data URL, and
-// swap it for a storage path. Keeps the database small and the app fast.
-async function uploadPendingPhotos(recipes, userId) {
-  let changed = false;
-  for (const r of recipes) {
-    if (!r.photo || !String(r.photo).startsWith("data:") || r.deleted) continue;
-    try {
-      const blob = await (await fetch(r.photo)).blob();
-      const path = `${userId}/${r.id}-${Math.random().toString(36).slice(2, 10)}.jpg`;
-      const { error } = await sb.storage
-        .from(CONFIG.photoBucket)
-        .upload(path, blob, { contentType: "image/jpeg", upsert: true });
-      if (error) continue; // leave it local; we'll retry next sync
-      r.photoPath = path;
-      r.photo = photoUrl(path);
-      changed = true;
-    } catch (e) {
-      // Offline or storage unavailable — the data URL stays put and we retry.
-    }
-  }
-  return changed;
+// Upload a recipe photo straight to storage at save time (rather than
+// lazily, in the background, as before) — under a live model there's no
+// later step to defer it to.
+async function uploadRecipePhoto(dataUrl, userId, recipeId) {
+  const blob = await (await fetch(dataUrl)).blob();
+  const path = `${userId}/${recipeId}-${Math.random().toString(36).slice(2, 10)}.jpg`;
+  const { error } = await sb.storage
+    .from(CONFIG.photoBucket)
+    .upload(path, blob, { contentType: "image/jpeg", upsert: true });
+  if (error) throw error;
+  return path;
 }
 
-// Merge one remote row into a local array. Last write wins, per record.
-// keyFn defaults to .id (recipes, paints); paint_wants has no synthetic id,
-// so it merges on its own natural key (the paint's name+brand) instead.
-function mergeRow(localArr, remote, keyFn = (x) => x.id) {
-  const idx = localArr.findIndex((x) => keyFn(x) === keyFn(remote));
-  if (idx === -1) {
-    localArr.push(remote);
-    return true;
-  }
-  const local = localArr[idx];
-  if (!local.updatedAt || remote.updatedAt >= local.updatedAt) {
-    localArr[idx] = remote;
-    return true;
-  }
-  return false; // local is newer — it'll be pushed instead
-}
-
-async function syncNow(opts = {}) {
-  if (!sb || !isSignedIn() || syncing || pendingMerge) return { ok: false };
+// Fetches this account's whole book fresh from Supabase and replaces the
+// local render cache outright. There's nothing to merge or reconcile —
+// the cloud is the only copy of the data that exists.
+async function loadBook() {
+  if (!sb || !isSignedIn()) return { ok: false };
   syncing = true;
   if (typeof render === "function") render();
 
@@ -497,63 +453,14 @@ async function syncNow(opts = {}) {
   let ok = true;
 
   try {
-    let recipes = getAllRecipeRows();
-    let paints = getAllPaintRows();
-
-    // ORDER MATTERS: pull and merge BEFORE pushing.
-    //
-    // If we pushed first, a stale local copy would upsert straight over a
-    // newer edit made on another device — silent data loss. So we fetch the
-    // remote state, let the newer timestamp win per record, and only then
-    // push back the records where the local copy is genuinely the newer one.
-    //
-    // We always fetch the full set rather than a delta: it's a paint book, not
-    // a data warehouse, and correctness is worth more than the few kB saved.
     const [rRes, pRes] = await Promise.all([
-      sb.from("recipes").select("*").eq("user_id", userId),
-      sb.from("paints").select("*").eq("user_id", userId),
+      sb.from("recipes").select("*").eq("user_id", userId).eq("deleted", false),
+      sb.from("paints").select("*").eq("user_id", userId).eq("deleted", false),
     ]);
     if (rRes.error) throw rRes.error;
     if (pRes.error) throw pRes.error;
-
-    const remoteRecipes = (rRes.data || []).map(fromRemoteRecipe);
-    const remotePaints = (pRes.data || []).map(fromRemotePaint);
-
-    // What did the server have before we merged? Used to decide what to push.
-    const remoteStamp = new Map();
-    remoteRecipes.forEach((r) => remoteStamp.set("r:" + r.id, r.updatedAt));
-    remotePaints.forEach((p) => remoteStamp.set("p:" + p.id, p.updatedAt));
-
-    remoteRecipes.forEach((r) => mergeRow(recipes, r));
-    remotePaints.forEach((p) => mergeRow(paints, p));
-
-    // Sample data has no business in a signed-in account.
-    recipes = recipes.filter((r) => !r.seed);
-    paints = paints.filter((p) => !p.seed);
-
-    // Photos next, so anything we push already points at storage rather than
-    // carrying a base64 blob into the database.
-    await uploadPendingPhotos(recipes, userId);
-
-    // Push only where local is newer than (or absent from) the server.
-    const isNewerLocally = (row, key) => {
-      const remote = remoteStamp.get(key);
-      return !remote || (row.updatedAt && row.updatedAt > remote);
-    };
-    const pushRecipes = recipes.filter((r) => isNewerLocally(r, "r:" + r.id));
-    const pushPaints = paints.filter((p) => isNewerLocally(p, "p:" + p.id));
-
-    if (pushRecipes.length) {
-      const { error } = await sb.from("recipes").upsert(pushRecipes.map((r) => toRemoteRecipe(r, userId)));
-      if (error) throw error;
-    }
-    if (pushPaints.length) {
-      const { error } = await sb.from("paints").upsert(pushPaints.map((p) => toRemotePaint(p, userId)));
-      if (error) throw error;
-    }
-
-    save(KEYS.recipes, recipes);
-    save(KEYS.paints, paints);
+    save(KEYS.recipes, (rRes.data || []).map(fromRemoteRecipe));
+    save(KEYS.paints, (pRes.data || []).map(fromRemotePaint));
     localStorage.setItem(SYNC_KEYS.lastSync, nowIso());
     cloudError = null;
   } catch (e) {
@@ -561,19 +468,21 @@ async function syncNow(opts = {}) {
     cloudError = "sync";
   }
 
-  // Deliberately kept separate from the block above: paint_wants is a newer,
+  // Deliberately isolated from the block above: paint_wants is a newer,
   // optional table. Until someone re-runs schema.sql to add it, this fails
-  // quietly and the want-list just stays device-local — it doesn't take the
-  // recipes/paints sync (the thing that actually matters) down with it.
+  // quietly and the want-list just stays empty — it doesn't take the
+  // recipes/paints load (the thing that actually matters) down with it.
   try {
-    await syncWants(userId);
+    const { data, error } = await sb.from("paint_wants").select("*").eq("user_id", userId).eq("deleted", false);
+    if (error) throw error;
+    save(KEYS.wantToBuy, (data || []).map(fromRemoteWant));
   } catch (e) {
     // swallowed on purpose — see comment above
   }
 
   // Same deliberate isolation: someone else's shared recipes are a nice-to-have,
-  // not the reason this app exists. A stale/missing profiles or paint_wants
-  // table (schema.sql not yet re-run) shouldn't block anything above.
+  // not the reason this app exists. A stale/missing profiles table (schema.sql
+  // not yet re-run) shouldn't block anything above.
   try {
     await fetchSharedRecipes(userId);
   } catch (e) {
@@ -583,8 +492,8 @@ async function syncNow(opts = {}) {
   try {
     await fetchGlobalFactionEmblems();
   } catch (e) {
-    // swallowed on purpose — a missing faction_emblems table just means no
-    // admin-uploaded emblems show up yet, not a broken sync
+    // swallowed on purpose — a missing faction_emblems table just means
+    // no admin-uploaded emblems show up yet, not a broken load
   }
 
   syncing = false;
@@ -592,48 +501,58 @@ async function syncNow(opts = {}) {
   return { ok };
 }
 
-async function syncWants(userId) {
-  let wants = getAllWantRows();
-  const { data, error } = await sb.from("paint_wants").select("*").eq("user_id", userId);
-  if (error) throw error;
-
-  const remoteWants = (data || []).map(fromRemoteWant);
-  const remoteStamp = new Map();
-  remoteWants.forEach((w) => remoteStamp.set(w.key, w.updatedAt));
-  remoteWants.forEach((w) => mergeRow(wants, w, (x) => x.key));
-
-  const pushWants = wants.filter((w) => {
-    const remote = remoteStamp.get(w.key);
-    return !remote || (w.updatedAt && w.updatedAt > remote);
-  });
-  if (pushWants.length) {
-    const { error: upErr } = await sb.from("paint_wants").upsert(pushWants.map((w) => toRemoteWant(w, userId)));
-    if (upErr) throw upErr;
-  }
-
-  save(KEYS.wantToBuy, wants);
+// Direct, live writes — no queue, no background retry. If one of these
+// fails, the local cache is left exactly as it was; the caller is
+// responsible for telling the person their change didn't save.
+async function pushRecipe(row) {
+  if (!sb || !isSignedIn()) return { ok: false, message: "No connection — try again when you're online." };
+  const { error } = await sb.from("recipes").upsert(toRemoteRecipe(row, session.user.id));
+  if (error) return { ok: false, message: "Couldn't save that — try again." };
+  return { ok: true };
 }
 
-// Push in the background after any local change. Debounced so a burst of edits
-// doesn't fire a burst of requests.
-let syncTimer = null;
-function queueSync() {
-  if (!isSignedIn()) return;
-  clearTimeout(syncTimer);
-  syncTimer = setTimeout(() => syncNow(), 1200);
+async function deleteRecipeRemote(id) {
+  if (!sb || !isSignedIn()) return { ok: false, message: "No connection — try again when you're online." };
+  const { error } = await sb.from("recipes").delete().eq("id", id).eq("user_id", session.user.id);
+  if (error) return { ok: false, message: "Couldn't delete that — try again." };
+  return { ok: true };
 }
 
-window.addEventListener("online", () => { if (isSignedIn()) syncNow(); });
+async function pushPaint(row) {
+  if (!sb || !isSignedIn()) return { ok: false, message: "No connection — try again when you're online." };
+  const { error } = await sb.from("paints").upsert(toRemotePaint(row, session.user.id));
+  if (error) return { ok: false, message: "Couldn't save that — try again." };
+  return { ok: true };
+}
+
+async function deletePaintRemote(id) {
+  if (!sb || !isSignedIn()) return { ok: false, message: "No connection — try again when you're online." };
+  const { error } = await sb.from("paints").delete().eq("id", id).eq("user_id", session.user.id);
+  if (error) return { ok: false, message: "Couldn't delete that — try again." };
+  return { ok: true };
+}
+
+async function pushWant(key) {
+  if (!sb || !isSignedIn()) return { ok: false };
+  const { error } = await sb.from("paint_wants").upsert(toRemoteWant(key, session.user.id));
+  return { ok: !error };
+}
+
+async function removeWantRemote(key) {
+  if (!sb || !isSignedIn()) return { ok: false };
+  const { error } = await sb.from("paint_wants").delete().eq("user_id", session.user.id).eq("paint_key", key);
+  return { ok: !error };
+}
 
 function syncStatusLabel() {
   if (!isSignedIn()) return null;
-  if (syncing) return "Syncing\u2026";
-  if (!navigator.onLine) return "Offline \u2014 changes saved on this device";
-  if (cloudError === "sync") return "Sync failed \u2014 will retry";
+  if (syncing) return "Loading…";
+  if (cloudError === "sync") return "Couldn't load — try again";
   const t = lastSyncedAt();
-  if (!t) return "Not synced yet";
+  if (!t) return "Not loaded yet";
   const mins = Math.round((Date.now() - new Date(t).getTime()) / 60000);
-  if (mins < 1) return "Synced just now";
-  if (mins < 60) return `Synced ${mins} min ago`;
-  return "Synced " + new Date(t).toLocaleDateString();
+  if (mins < 1) return "Loaded just now";
+  if (mins < 60) return `Loaded ${mins} min ago`;
+  return "Loaded " + new Date(t).toLocaleDateString();
 }
+

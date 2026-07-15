@@ -49,6 +49,10 @@ function emblemSvg(key, size = 24) {
   return `<svg viewBox="0 0 24 24" width="${size}" height="${size}" fill="currentColor" stroke="none">${emblemPaths(key)}</svg>`;
 }
 
+// A tag on exported backup files, decoupled from any app/schema version --
+// only bumped if the backup JSON's own shape changes.
+const BACKUP_FORMAT_VERSION = 5;
+
 const NAV_ITEMS = [
   { route: "home", label: "Home", icon: "home" },
   { route: "factions", label: "Armies", icon: "banner" },
@@ -74,8 +78,9 @@ let state = {
 // ---------------------------------------------------------------
 // Storage accessors
 // ---------------------------------------------------------------
-// Deleted records are kept locally as tombstones so the deletion can be synced
-// (and so a stale cloud copy can't resurrect them). The UI never sees them.
+// A render cache of whatever Supabase last returned (see cloud.js
+// loadBook/pushRecipe/pushPaint) -- not a second source of truth, just the
+// local copy the UI reads from between fetches.
 function getAllRecipeRows() { return readJSON(KEYS.recipes, []); }
 function getAllPaintRows() { return readJSON(KEYS.paints, []); }
 
@@ -120,57 +125,33 @@ function resolvePaintFor(recipe, paintId) {
   return findPaint(paintId) || null;
 }
 
+// A step's paint is either a real rack paint (paintId) or, for one's own
+// recipes only, a snapshot of a not-yet-owned library paint picked as a
+// shopping-list placeholder (wantPaint/mixWantPaint — see newStep). This
+// resolves whichever is set into one shape for rendering, tagging the
+// latter so callers can show it differently.
+function resolveStepPaint(recipe, step, field) {
+  const id = step[field];
+  if (id) return resolvePaintFor(recipe, id);
+  const want = step[field === "paintId" ? "wantPaint" : "mixWantPaint"];
+  return want ? { ...want, isWant: true } : null;
+}
+
 function save(key, value) {
   try {
     localStorage.setItem(key, JSON.stringify(value));
     return true;
   } catch (e) {
-    return false; // almost always QuotaExceededError — photos are the usual cause
+    return false; // almost always QuotaExceededError -- photos are the usual cause
   }
-}
-
-// Every write stamps the record and schedules a background push. Local storage
-// is still the source of truth; the cloud catches up when it can.
-function saveRecipes(rows) {
-  const ok = save(KEYS.recipes, rows);
-  if (ok) queueSync();
-  return ok;
-}
-function savePaints(rows) {
-  const ok = save(KEYS.paints, rows);
-  if (ok) queueSync();
-  return ok;
 }
 function saveFactionArt(a) { return save(KEYS.art, a); }
 
-// Timestamp a record for the merge.
-//
-// Devices don't agree on the time. If a phone's clock runs a few minutes fast,
-// a naive `Date.now()` would make its rows unbeatable — a later, genuine edit
-// from a laptop would look "older" and be discarded. So a stamp is always at
-// least 1ms newer than the version it was edited from. An edit therefore
-// always supersedes its own parent, whatever the clocks say.
-function stamp(record, prevIso) {
-  const prev = prevIso ? new Date(prevIso).getTime() : 0;
-  const next = Math.max(Date.now(), prev + 1);
-  record.updatedAt = new Date(next).toISOString();
-  delete record.seed; // touching a sample record makes it yours
+// Every write stamps the record with when it changed, then goes straight to
+// Supabase -- there is no local queue and nothing to reconcile.
+function stamp(record) {
+  record.updatedAt = new Date().toISOString();
   return record;
-}
-
-// Soft delete, so the deletion propagates to your other devices.
-function tombstoneRecipe(id) {
-  const rows = getAllRecipeRows();
-  const r = rows.find((x) => x.id === id);
-  if (r) { r.deleted = true; stamp(r, r.updatedAt); }
-  return saveRecipes(rows);
-}
-
-function tombstonePaint(id) {
-  const rows = getAllPaintRows();
-  const p = rows.find((x) => x.id === id);
-  if (p) { p.deleted = true; stamp(p, p.updatedAt); }
-  return savePaints(rows);
 }
 
 function pushRecent(id) {
@@ -188,15 +169,19 @@ function findRecipe(id, authorId) {
 }
 function findPaint(id) { return getPaints().find((p) => p.id === id); }
 
-// Every distinct paint used by a recipe, in the order it's first used.
+// Every distinct paint used by a recipe, in the order it's first used —
+// including "want" placeholders (see resolveStepPaint), so a step planned
+// around a paint you're still shopping for shows up in Paints Used too.
 function recipePaints(r) {
   const seen = new Set();
   const out = [];
   (r.steps || []).forEach((s) => {
-    [s.paintId, s.mixPaintId].forEach((pid) => {
-      if (!pid || seen.has(pid)) return;
-      const p = resolvePaintFor(r, pid);
-      if (p) { seen.add(pid); out.push(p); }
+    ["paintId", "mixPaintId"].forEach((field) => {
+      const want = s[field === "paintId" ? "wantPaint" : "mixWantPaint"];
+      const key = s[field] || (want && "want:" + paintKey(want.name, want.brand));
+      if (!key || seen.has(key)) return;
+      const p = resolveStepPaint(r, s, field);
+      if (p) { seen.add(key); out.push(p); }
     });
   });
   return out;
@@ -214,44 +199,36 @@ function ownedPaintFor(name, brand) {
   return getPaints().find((p) => paintKey(p.name, p.brand) === paintKey(name, brand));
 }
 
-// Synced via its own paint_wants table (see cloud.js's syncWants) rather
-// than living in the paints array — a wanted-but-unowned paint has no
-// business in the rack or the recipe-step paint picker. Tombstoned like
-// recipes/paints so a "no longer want it" toggle propagates instead of the
-// old copy quietly reappearing on another device.
-function getAllWantRows() {
-  const raw = readJSON(KEYS.wantToBuy, []);
-  // Defensive migration: earlier versions stored this as a plain array of
-  // paint keys with no sync metadata. Upgrade any such entries in place.
-  let changed = false;
-  const rows = raw.map((w) => {
-    if (typeof w === "string") { changed = true; return stamp({ key: w, deleted: false }, null); }
-    return w;
-  });
-  if (changed) save(KEYS.wantToBuy, rows);
-  return rows;
-}
-function getWantToBuy() { return getAllWantRows().filter((w) => !w.deleted).map((w) => w.key); }
+// Lives in its own paint_wants table (see cloud.js) rather than in the
+// paints array -- a wanted-but-unowned paint has no business in the rack or
+// the recipe-step paint picker.
+function getWantToBuy() { return readJSON(KEYS.wantToBuy, []).map((w) => w.key); }
 function isWanted(name, brand) { return getWantToBuy().includes(paintKey(name, brand)); }
 function toggleWanted(name, brand) {
   const key = paintKey(name, brand);
-  const rows = getAllWantRows();
-  const existing = rows.find((w) => w.key === key);
-  if (existing) { existing.deleted = !existing.deleted; stamp(existing, existing.updatedAt); }
-  else rows.push(stamp({ key, deleted: false }, null));
-  save(KEYS.wantToBuy, rows);
-  queueSync();
+  const rows = readJSON(KEYS.wantToBuy, []);
+  const idx = rows.findIndex((w) => w.key === key);
+  if (idx > -1) {
+    rows.splice(idx, 1);
+    save(KEYS.wantToBuy, rows);
+    removeWantRemote(key); // fire-and-forget: a wishlist flag isn't worth blocking the tap on
+  } else {
+    rows.push({ key });
+    save(KEYS.wantToBuy, rows);
+    pushWant(key);
+  }
 }
 
-// Restock is a flag on an owned paint itself, so it rides along with that
-// paint's normal sync (see toRemotePaint/fromRemotePaint in cloud.js).
+// A flag on an owned paint itself, so it rides along with that paint's
+// normal live write (see toRemotePaint/fromRemotePaint in cloud.js).
 function toggleRestock(id) {
   const rows = getAllPaintRows();
   const p = rows.find((x) => x.id === id);
   if (!p) return;
   p.needsRestock = !p.needsRestock;
-  stamp(p, p.updatedAt);
-  savePaints(rows);
+  stamp(p);
+  save(KEYS.paints, rows);
+  pushPaint(p); // fire-and-forget, same reasoning as toggleWanted above
 }
 
 // Units that actually have recipes in a faction, plus the General bucket.
@@ -330,6 +307,64 @@ function showToast(msg) {
   toast.classList.add("is-visible");
   clearTimeout(showToast._t);
   showToast._t = setTimeout(() => toast.classList.remove("is-visible"), 2400);
+}
+
+// An in-app "are you sure?" in place of the browser's own confirm() — same
+// role, but styled like the rest of Forgebook instead of OS chrome. Built as
+// its own overlay (rather than a placeholder sitting in every shell variant)
+// so it can be called from anywhere without every screen needing to host one.
+function showConfirm(message, opts = {}) {
+  return new Promise((resolve) => {
+    const wrap = document.createElement("div");
+    wrap.className = "confirm-overlay";
+    wrap.innerHTML = `
+      <div class="confirm-overlay__backdrop"></div>
+      <div class="confirm-dialog" role="alertdialog" aria-modal="true">
+        <div class="confirm-dialog__message">${escapeHtml(message)}</div>
+        <div class="confirm-dialog__actions">
+          <button type="button" class="btn btn-ghost" data-confirm="cancel">${escapeHtml(opts.cancelLabel || "Cancel")}</button>
+          <button type="button" class="btn ${opts.danger === false ? "btn-primary" : "btn-danger"}" data-confirm="ok">${escapeHtml(opts.okLabel || "Remove")}</button>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(wrap);
+
+    const close = (result) => {
+      wrap.remove();
+      document.removeEventListener("keydown", onKeydown);
+      resolve(result);
+    };
+    const onKeydown = (e) => { if (e.key === "Escape") close(false); };
+    document.addEventListener("keydown", onKeydown);
+
+    wrap.querySelector(".confirm-overlay__backdrop").onclick = () => close(false);
+    wrap.querySelector("[data-confirm='cancel']").onclick = () => close(false);
+    wrap.querySelector("[data-confirm='ok']").onclick = () => close(true);
+    wrap.querySelector("[data-confirm='ok']").focus();
+  });
+}
+
+// Full-size view of a recipe photo — same self-contained overlay pattern as
+// showConfirm, closeable via the backdrop, the close button, or Escape.
+function showLightbox(url) {
+  const wrap = document.createElement("div");
+  wrap.className = "lightbox-overlay";
+  wrap.innerHTML = `
+    <div class="lightbox-overlay__backdrop"></div>
+    <button type="button" class="lightbox-overlay__close" aria-label="Close">&times;</button>
+    <img class="lightbox-overlay__img" src="${url}" alt="Finished mini, full size" />
+  `;
+  document.body.appendChild(wrap);
+
+  const close = () => {
+    wrap.remove();
+    document.removeEventListener("keydown", onKeydown);
+  };
+  const onKeydown = (e) => { if (e.key === "Escape") close(); };
+  document.addEventListener("keydown", onKeydown);
+
+  wrap.querySelector(".lightbox-overlay__backdrop").onclick = close;
+  wrap.querySelector(".lightbox-overlay__close").onclick = close;
 }
 
 function slug(s) {
@@ -535,7 +570,7 @@ function viewHome() {
 function recipeCardHtml(r) {
   const fac = faction(r.faction);
   const stack = (r.steps || []).slice(0, 6).map((s) => {
-    const p = resolvePaintFor(r, s.paintId);
+    const p = resolveStepPaint(r, s, "paintId");
     return p ? p.hex : fac.color;
   });
   return `
@@ -565,7 +600,7 @@ function recipeCardHtml(r) {
 function recipeCompactRowHtml(r, isActive) {
   const fac = faction(r.faction);
   const stack = (r.steps || []).slice(0, 5).map((s) => {
-    const p = resolvePaintFor(r, s.paintId);
+    const p = resolveStepPaint(r, s, "paintId");
     return p ? p.hex : fac.color;
   });
   return `
@@ -888,7 +923,7 @@ function viewRecipeDetail(id, authorId) {
         </div>`}
       </div>
 
-      <div class="detail-hero ${r.photo ? "has-photo" : ""}" style="--faction-color:${f.color}${r.photo ? `;background-image:url('${r.photo}')` : ""}">
+      <div class="detail-hero ${r.photo ? "has-photo" : ""}" style="--faction-color:${f.color}${r.photo ? `;background-image:url('${r.photo}')` : ""}" ${r.photo ? `data-action="open-lightbox" data-photo="${escapeHtml(r.photo)}"` : ""}>
         ${r.photo ? "" : `<span class="emblem-badge emblem-badge--xl">${emblemSvg(f.emblem, 40)}</span>`}
       </div>
 
@@ -924,7 +959,8 @@ function viewRecipeDetail(id, authorId) {
       <div class="section-label">Paints Used</div>
       <div class="paint-list">
         ${paints.length ? paints.map((p) => {
-          if (!isShared) {
+          // Own, already-owned paint: a plain row linking to its own detail page.
+          if (!isShared && !p.isWant) {
             return `
               <div class="paint-row" data-nav="paint" data-id="${p.id}">
                 <div class="paint-row__swatch" style="background:${p.hex}"></div>
@@ -936,11 +972,13 @@ function viewRecipeDetail(id, authorId) {
               </div>
             `;
           }
-          // Shared recipe: a paint id only means something within its own
-          // author's rack, so ownership has to be re-checked here by
-          // name+brand against the viewer's own rack \u2014 same key the paint
-          // library's owned/want-to-buy tracking already uses.
-          const owned = !!ownedPaintFor(p.name, p.brand);
+          // Either a shared recipe's paint (ownership only means something
+          // against the viewer's own rack, re-checked here by name+brand \u2014
+          // same key the paint library's owned/want-to-buy tracking uses)
+          // or one's own recipe's "want" placeholder (never owned, by
+          // definition). Either way: no paint-detail page to link to, so
+          // show a toggleable buy-list row instead.
+          const owned = p.isWant ? false : !!ownedPaintFor(p.name, p.brand);
           const wanted = !owned && isWanted(p.name, p.brand);
           return `
             <div class="paint-row ${owned ? "is-owned" : ""}">
@@ -957,20 +995,22 @@ function viewRecipeDetail(id, authorId) {
         }).join("") : `<div class="empty-state__sub">No paints listed.</div>`}
       </div>
       ${isShared && paints.length ? `<div class="fine-print" style="margin-top:6px">${paints.filter((p) => !ownedPaintFor(p.name, p.brand)).length} of ${paints.length} paints not on your rack \u2014 tap the cart to add them to your buy list.</div>` : ""}
+      ${!isShared && paints.some((p) => p.isWant) ? `<div class="fine-print" style="margin-top:6px">Paints marked "not on rack" are steps you've planned around something on your buy list.</div>` : ""}
 
       <div class="section-label">Method</div>
       ${(r.steps || []).length ? groupStepsByArea(r.steps).map((g) => `
         ${g.area ? `<div class="grouphead">${escapeHtml(g.area)}</div>` : ""}
         <div class="layer-stack">
           ${g.items.map(({ step: s, num }) => {
-            const p = resolvePaintFor(r, s.paintId);
-            const mixP = s.mixPaintId ? resolvePaintFor(r, s.mixPaintId) : null;
+            const p = resolveStepPaint(r, s, "paintId");
+            const mixP = (s.mixPaintId || s.mixWantPaint) ? resolveStepPaint(r, s, "mixPaintId") : null;
+            const tag = (x) => x && x.isWant ? ` <span class="paint-picker__want-tag">not on rack</span>` : "";
             const swatchBg = mixP
               ? `linear-gradient(to bottom, ${p ? p.hex : f.color} 50%, ${mixP.hex} 50%)`
               : (p ? p.hex : f.color);
             const paintLabel = mixP
-              ? `${p ? escapeHtml(p.name) : "(paint deleted)"} + ${escapeHtml(mixP.name)}${s.mixRatio ? ` (${escapeHtml(s.mixRatio)})` : ""}`
-              : (p ? escapeHtml(p.name) : "(paint deleted)");
+              ? `${p ? escapeHtml(p.name) : "(paint deleted)"}${tag(p)} + ${escapeHtml(mixP.name)}${s.mixRatio ? ` (${escapeHtml(s.mixRatio)})` : ""}${tag(mixP)}`
+              : (p ? escapeHtml(p.name) + tag(p) : "(paint deleted)");
             return `
               <div class="layer-stack__row">
                 <div class="layer-stack__num">${num}</div>
@@ -1151,9 +1191,15 @@ function viewPaintLibrary() {
     const flagBtn = owned
       ? `<button class="lib-row__flag is-restock ${owned.needsRestock ? "is-on" : ""}" data-action="toggle-restock" data-id="${owned.id}" title="${owned.needsRestock ? "Flagged for restock" : "Flag for restock"}">${icon("cart", 14)}</button>`
       : `<button class="lib-row__flag is-wanted ${wanted ? "is-on" : ""}" data-action="toggle-wanted" data-name="${escapeHtml(p.name)}" data-brand="${escapeHtml(p.brand)}" title="${wanted ? "On your buy list" : "Add to buy list"}">${icon("cart", 14)}</button>`;
+    // Owned rows drop the whole-row tap-to-toggle: it made removing a paint
+    // one accidental tap away. Removing now only ever happens through this
+    // dedicated button, which confirms first.
+    const statusBtn = owned
+      ? `<button class="lib-row__ring is-owned" data-action="lib-remove" data-id="${owned.id}" data-name="${escapeHtml(p.name)}" title="Remove from rack">${icon("trash", 13)}</button>`
+      : `<span class="lib-row__ring">${icon("check", 14)}</span>`;
     return `
       <div class="lib-row ${owned ? "is-owned" : ""}"
-        data-action="toggle-have"
+        ${owned ? "" : `data-action="toggle-have"`}
         data-name="${escapeHtml(p.name)}" data-brand="${escapeHtml(p.brand)}"
         data-hex="${p.hex}" data-type="${escapeHtml(p.type)}"
       >
@@ -1163,7 +1209,7 @@ function viewPaintLibrary() {
           <div class="paint-row__brand">${escapeHtml(p.brand)} · ${escapeHtml(p.type)}</div>
         </div>
         ${flagBtn}
-        <span class="lib-row__ring">${icon("check", 14)}</span>
+        ${statusBtn}
       </div>`;
   };
 
@@ -1175,9 +1221,10 @@ function viewPaintLibrary() {
         <div style="width:36px"></div>
       </div>
       <div class="detail-sub" style="margin-bottom:14px">
-        Tap a paint to mark it on your rack. Flag ones you're missing for a buy list, or ones
-        you own but are running low for a restock. Colours are close approximations, not
-        official swatches — manufacturers don't publish exact codes.
+        Tap a paint to add it to your rack; tap the trash icon on an owned paint to remove it.
+        Flag ones you're missing for a buy list, or ones you own but are running low for a
+        restock. Colours are close approximations, not official swatches — manufacturers
+        don't publish exact codes.
       </div>
 
       <div class="lib-progress">
@@ -1286,12 +1333,25 @@ function bindPaintForm(root) {
 // View: Recipe form (add / edit)
 // ---------------------------------------------------------------
 let recipeForm = null;
+// A snapshot taken when the form opens, compared against on cancel so
+// leaving only prompts when something was actually touched.
+let recipeFormSnapshot = null;
 
 function newStep() {
   // mixPaintId is undefined (not "") when there's no mix at all — that's
   // what tells the form whether to show the "+ Mix in a second paint"
   // button or the expanded second-paint picker.
-  return { id: "ns" + Math.random().toString(36).slice(2, 9), technique: TECHNIQUES[0], paintId: "", notes: "", area: "", mixPaintId: undefined, mixRatio: "" };
+  //
+  // wantPaint/mixWantPaint hold a snapshot ({name,brand,hex,type}) of a
+  // library paint picked that isn't on the rack yet — a way to plan a step
+  // around something you're shopping for. Mutually exclusive with the
+  // matching id field: exactly one of paintId/wantPaint (same for the mix
+  // pair) is ever set at a time.
+  return {
+    id: "ns" + Math.random().toString(36).slice(2, 9),
+    technique: TECHNIQUES[0], paintId: "", wantPaint: undefined,
+    notes: "", area: "", mixPaintId: undefined, mixWantPaint: undefined, mixRatio: "",
+  };
 }
 
 function initRecipeForm(existing, presetFaction, presetUnit) {
@@ -1309,6 +1369,7 @@ function initRecipeForm(existing, presetFaction, presetUnit) {
         published: false,
       };
   if (recipeForm.unit === null) recipeForm.unit = "";
+  recipeFormSnapshot = JSON.stringify(recipeForm);
 }
 
 function generateId(facId) {
@@ -1323,12 +1384,22 @@ function generateId(facId) {
   return id;
 }
 
-function paintOptionsHtml(selectedId) {
-  const paints = getPaints().slice().sort((a, b) => a.name.localeCompare(b.name));
-  return (
-    `<option value="">\u2014 choose from your rack \u2014</option>` +
-    paints.map((p) => `<option value="${p.id}" ${selectedId === p.id ? "selected" : ""}>${escapeHtml(p.name)}${p.brand ? " (" + escapeHtml(p.brand) + ")" : ""}</option>`).join("")
-  );
+// The clickable field that opens the paint picker for one step's paint or
+// mix-paint slot, showing the current pick's swatch \u2014 or a placeholder if
+// nothing's chosen yet, or a "not on rack" tag if it's a want-list pick.
+function paintPickTriggerHtml(step, field) {
+  const p = resolveStepPaint(recipeForm, step, field);
+  const swatch = p ? p.hex : "transparent";
+  const label = p
+    ? `${escapeHtml(p.name)}${p.brand ? " (" + escapeHtml(p.brand) + ")" : ""}`
+    : `<span class="paint-pick-trigger__placeholder">Choose a paint\u2026</span>`;
+  return `
+    <button type="button" class="paint-pick-trigger" data-action="open-paint-picker" data-step-id="${step.id}" data-field="${field}">
+      <span class="paint-pick-row__swatch" style="background:${swatch}"></span>
+      <span class="paint-pick-trigger__label">${label}</span>
+      ${p && p.isWant ? `<span class="paint-picker__want-tag">Not on rack</span>` : ""}
+    </button>
+  `;
 }
 
 function viewRecipeForm(isEdit) {
@@ -1402,7 +1473,7 @@ function viewRecipeForm(isEdit) {
       </div>
 
       <div class="section-label">Method steps</div>
-      ${rackEmpty ? `<div class="notice">Your paint rack is empty. Add a paint first \u2014 every step picks a paint from the rack.</div>` : ""}
+      ${rackEmpty ? `<div class="notice">Your paint rack is empty \u2014 pick a paint from the full library below and it'll go on your buy list, or add one to your rack first.</div>` : ""}
 
       ${recipeForm.steps.map((s, i) => `
         <div class="repeater-item">
@@ -1423,17 +1494,15 @@ function viewRecipeForm(isEdit) {
           <div class="field" style="margin-bottom:10px;">
             <label>Paint</label>
             <div class="paint-pick-row">
-              <span class="paint-pick-row__swatch" data-swatch-for="${s.id}" style="background:${(findPaint(s.paintId) || {}).hex || "transparent"}"></span>
-              <select data-step-field="paintId" data-step-id="${s.id}">${paintOptionsHtml(s.paintId)}</select>
+              ${paintPickTriggerHtml(s, "paintId")}
               <button type="button" class="btn btn-ghost btn-sm" data-action="quick-paint" data-step-id="${s.id}">+ New</button>
             </div>
           </div>
-          ${s.mixPaintId !== undefined ? `
+          ${s.mixPaintId !== undefined || s.mixWantPaint !== undefined ? `
             <div class="field" style="margin-bottom:10px;">
               <label>Mixed with <span class="label-hint">a second paint, blended with the one above</span></label>
               <div class="paint-pick-row">
-                <span class="paint-pick-row__swatch" data-swatch-for="${s.id}-mix" style="background:${(findPaint(s.mixPaintId) || {}).hex || "transparent"}"></span>
-                <select data-step-field="mixPaintId" data-step-id="${s.id}">${paintOptionsHtml(s.mixPaintId)}</select>
+                ${paintPickTriggerHtml(s, "mixPaintId")}
                 <button type="button" class="btn btn-ghost btn-sm" data-action="remove-mix" data-step-id="${s.id}">Remove</button>
               </div>
               <input type="text" data-step-field="mixRatio" data-step-id="${s.id}" value="${escapeHtml(s.mixRatio || "")}" placeholder="Ratio, e.g. 1:1" style="margin-top:8px" />
@@ -1482,12 +1551,159 @@ function bindRecipeForm(root) {
       const step = recipeForm.steps.find((s) => s.id === e.target.dataset.stepId);
       if (!step) return;
       step[e.target.dataset.stepField] = e.target.value;
-      if (e.target.dataset.stepField === "paintId" || e.target.dataset.stepField === "mixPaintId") {
-        // update the swatch beside the picker without a full re-render
-        const isMix = e.target.dataset.stepField === "mixPaintId";
-        const sw = root.querySelector(`[data-swatch-for="${step.id}${isMix ? "-mix" : ""}"]`);
-        const p = findPaint(isMix ? step.mixPaintId : step.paintId);
-        if (sw) sw.style.background = p ? p.hex : "transparent";
+    };
+  });
+}
+
+// ---------------------------------------------------------------
+// Paint picker — a searchable overlay for choosing a recipe step's paint, in
+// place of a plain <select> that becomes unusable once a rack has more than
+// a handful of entries. Self-contained: binds its own listeners directly
+// (like showConfirm) rather than going through the global click delegation.
+// ---------------------------------------------------------------
+let paintPicker = null; // { stepId, field, query, tab } while open
+
+function openPaintPicker(stepId, field) {
+  paintPicker = { stepId, field, query: "", tab: getPaints().length ? "rack" : "library" };
+  renderPaintPicker();
+}
+
+function paintPickerKeydown(e) {
+  if (e.key === "Escape") closePaintPicker();
+}
+
+function closePaintPicker() {
+  const el = document.getElementById("paint-picker-overlay");
+  if (el) el.remove();
+  document.removeEventListener("keydown", paintPickerKeydown);
+  paintPicker = null;
+}
+
+// entry is a plain {name,brand,hex,type} snapshot either way; ownedEntry is
+// the matching rack paint (with its own id) when there is one.
+function pickPaintForStep(entry, ownedEntry) {
+  const step = recipeForm.steps.find((s) => s.id === paintPicker.stepId);
+  if (step) {
+    const idField = paintPicker.field;
+    const wantField = idField === "paintId" ? "wantPaint" : "mixWantPaint";
+    if (ownedEntry) {
+      step[idField] = ownedEntry.id;
+      step[wantField] = undefined;
+    } else {
+      step[idField] = "";
+      step[wantField] = { name: entry.name, brand: entry.brand, hex: entry.hex, type: entry.type };
+      // Picking something you don't own is the point of this path — put it
+      // on the shopping list too, unless it's already there.
+      if (!isWanted(entry.name, entry.brand)) toggleWanted(entry.name, entry.brand);
+    }
+  }
+  closePaintPicker();
+  render();
+}
+
+function paintPickerRowHtml(entry, ownedEntry, isSelected) {
+  const attrs = ownedEntry
+    ? `data-pick-id="${ownedEntry.id}"`
+    : `data-pick-name="${escapeHtml(entry.name)}" data-pick-brand="${escapeHtml(entry.brand || "")}" data-pick-hex="${entry.hex}" data-pick-type="${escapeHtml(entry.type || "")}"`;
+  return `
+    <button type="button" class="paint-picker__row ${isSelected ? "is-selected" : ""}" ${attrs}>
+      <span class="paint-pick-row__swatch" style="background:${entry.hex}"></span>
+      <div class="paint-picker__row-info">
+        <div class="paint-row__name">${escapeHtml(entry.name)}</div>
+        <div class="paint-row__brand">${escapeHtml(entry.brand || "")}${entry.type ? " · " + escapeHtml(entry.type) : ""}</div>
+      </div>
+      ${ownedEntry ? "" : `<span class="paint-picker__want-tag">Not on rack</span>`}
+    </button>
+  `;
+}
+
+function renderPaintPicker() {
+  const { stepId, field, query, tab } = paintPicker;
+  const step = recipeForm.steps.find((s) => s.id === stepId);
+  const currentId = step ? step[field] : null;
+  const currentWant = step ? step[field === "paintId" ? "wantPaint" : "mixWantPaint"] : null;
+
+  const q = query.trim().toLowerCase();
+  let rackList = getPaints().slice().sort((a, b) => a.name.localeCompare(b.name));
+  let libList = PAINT_LIBRARY;
+  if (q) {
+    rackList = rackList.filter((p) => p.name.toLowerCase().includes(q) || (p.brand || "").toLowerCase().includes(q));
+    libList = libList.filter((p) => p.name.toLowerCase().includes(q) || p.brand.toLowerCase().includes(q) || p.type.toLowerCase().includes(q));
+  }
+
+  const rows = tab === "rack"
+    ? (rackList.length
+        ? rackList.map((p) => paintPickerRowHtml(p, p, currentId === p.id)).join("")
+        : `<div class="empty-state__sub" style="padding:20px 0">${q ? "No matches on your rack." : "Nothing on your rack yet — try Full library."}</div>`)
+    : (libList.length
+        ? libList.map((p) => {
+            const owned = ownedPaintFor(p.name, p.brand);
+            const isSelected = owned
+              ? currentId === owned.id
+              : !!(currentWant && paintKey(currentWant.name, currentWant.brand) === paintKey(p.name, p.brand));
+            return paintPickerRowHtml(p, owned, isSelected);
+          }).join("")
+        : `<div class="empty-state__sub" style="padding:20px 0">No matches.</div>`);
+
+  let wrap = document.getElementById("paint-picker-overlay");
+  const isNew = !wrap;
+  if (isNew) {
+    wrap = document.createElement("div");
+    wrap.id = "paint-picker-overlay";
+    wrap.className = "filter-overlay";
+    document.body.appendChild(wrap);
+    document.addEventListener("keydown", paintPickerKeydown);
+  }
+
+  // Same focus/caret preservation as render()'s generic handling — rebuilding
+  // innerHTML on every keystroke would otherwise drop focus from the search
+  // box after exactly one character.
+  const activeEl = document.activeElement;
+  const focusInfo = activeEl && activeEl.id === "paint-picker-search"
+    ? { selStart: activeEl.selectionStart, selEnd: activeEl.selectionEnd }
+    : null;
+
+  wrap.innerHTML = `
+    <div class="filter-overlay__backdrop" data-picker-close="1"></div>
+    <div class="filter-overlay__panel">
+      <div class="paint-picker__header">
+        <div class="paint-picker__title">Choose a paint</div>
+        <button type="button" class="icon-btn" data-picker-close="1" aria-label="Close">${icon("back", 18)}</button>
+      </div>
+      <div class="paint-picker__search">
+        ${icon("search", 15)}
+        <input type="text" id="paint-picker-search" placeholder="Search by name or brand" value="${escapeHtml(query)}" />
+      </div>
+      <div class="lib-filter-seg paint-picker__tabs">
+        <button type="button" class="${tab === "rack" ? "is-active" : ""}" data-picker-tab="rack">On rack <span class="b">${getPaints().length}</span></button>
+        <button type="button" class="${tab === "library" ? "is-active" : ""}" data-picker-tab="library">Full library <span class="b">${PAINT_LIBRARY.length}</span></button>
+      </div>
+      <div class="paint-picker__body">${rows}</div>
+    </div>
+  `;
+
+  wrap.querySelectorAll("[data-picker-close]").forEach((el) => { el.onclick = () => closePaintPicker(); });
+  wrap.querySelectorAll("[data-picker-tab]").forEach((el) => {
+    el.onclick = () => { paintPicker.tab = el.dataset.pickerTab; paintPicker.query = ""; renderPaintPicker(); };
+  });
+
+  const searchInput = wrap.querySelector("#paint-picker-search");
+  searchInput.oninput = (e) => { paintPicker.query = e.target.value; renderPaintPicker(); };
+  if (focusInfo || isNew) {
+    searchInput.focus();
+    if (focusInfo && focusInfo.selStart != null) {
+      try { searchInput.setSelectionRange(focusInfo.selStart, focusInfo.selEnd); } catch (e) {}
+    }
+  }
+
+  wrap.querySelectorAll("[data-pick-id], [data-pick-name]").forEach((el) => {
+    el.onclick = () => {
+      if (el.dataset.pickId) {
+        const owned = getPaints().find((p) => p.id === el.dataset.pickId);
+        if (owned) pickPaintForStep(owned, owned);
+      } else {
+        const entry = { name: el.dataset.pickName, brand: el.dataset.pickBrand, hex: el.dataset.pickHex, type: el.dataset.pickType };
+        pickPaintForStep(entry, null);
       }
     };
   });
@@ -1516,6 +1732,11 @@ function authFormHtml() {
   if (authMode === "signup") {
     return `
       <div class="field" style="margin-bottom:10px">
+        <label>Display name</label>
+        <input type="text" id="auth-display-name" placeholder="What should we call you?" value="${escapeHtml(authDisplayName)}" autocomplete="nickname" />
+        <div class="label-hint" style="margin-top:4px">Shown as the author on any recipe you share.</div>
+      </div>
+      <div class="field" style="margin-bottom:10px">
         <label>Email</label>
         <input type="email" id="signin-email" placeholder="you@example.com" autocomplete="email" />
       </div>
@@ -1531,7 +1752,7 @@ function authFormHtml() {
       <div class="settings-row__desc" style="margin-top:10px">
         ${cloudAvailable()
           ? "You'll get an email with a confirmation link \u2014 you can't sign in until you click it."
-          : "You're offline, so account creation isn't available right now."}
+          : "You're offline, so account creation isn't available right now. An account is required to use Forgebook."}
       </div>
       <button type="button" class="btn btn-ghost btn-sm" data-action="auth-mode-signin" style="margin-top:8px">Already have an account? Sign in</button>
     `;
@@ -1551,7 +1772,7 @@ function authFormHtml() {
     <div class="settings-row__desc" style="margin-top:10px">
       ${cloudAvailable()
         ? "New here?"
-        : "You're offline, so sign-in isn't available right now. The app works fine without it."}
+        : "You're offline, so sign-in isn't available right now. An account is required to use Forgebook."}
       ${cloudAvailable() ? `<button type="button" class="btn btn-ghost btn-sm" data-action="auth-mode-signup" style="margin-left:6px">Create an account</button>` : ""}
     </div>
   `;
@@ -1564,45 +1785,35 @@ function viewSettings() {
 
       <div class="section-label">Account</div>
       <div class="settings-group">
-        ${isSignedIn() ? `
-          <div class="settings-row">
-            <div>
-              <div class="settings-row__label">${escapeHtml(currentEmail())}</div>
-              <div class="settings-row__desc">${escapeHtml(syncStatusLabel() || "")}</div>
-            </div>
-            <button class="btn btn-ghost btn-sm" data-action="sync-now" ${syncing ? "disabled" : ""}>Sync now</button>
+        <div class="settings-row">
+          <div>
+            <div class="settings-row__label">${escapeHtml(currentEmail())}</div>
+            <div class="settings-row__desc">${escapeHtml(syncStatusLabel() || "")}</div>
           </div>
-          <div class="settings-row" style="display:block">
-            <div class="settings-row__label">Display name</div>
-            <div class="settings-row__desc" style="margin-bottom:10px">Shown as the author on any recipe you share.</div>
-            <div class="field" style="display:flex; gap:8px; align-items:center; margin-bottom:0">
-              <input type="text" id="display-name-input" value="${escapeHtml(authorName(currentUserId()))}" placeholder="e.g. ${escapeHtml(defaultDisplayName(currentEmail()))}" />
-              <button class="btn btn-ghost btn-sm" data-action="save-display-name">Save</button>
-            </div>
+          <button class="btn btn-ghost btn-sm" data-action="sync-now" ${syncing ? "disabled" : ""}>Refresh</button>
+        </div>
+        <div class="settings-row" style="display:block">
+          <div class="settings-row__label">Display name</div>
+          <div class="settings-row__desc" style="margin-bottom:10px">Shown as the author on any recipe you share.</div>
+          <div class="field" style="display:flex; gap:8px; align-items:center; margin-bottom:0">
+            <input type="text" id="display-name-input" value="${escapeHtml(authorName(currentUserId()))}" placeholder="e.g. ${escapeHtml(defaultDisplayName(currentEmail()))}" />
+            <button class="btn btn-ghost btn-sm" data-action="save-display-name">Save</button>
           </div>
-          <div class="settings-row">
-            <div>
-              <div class="settings-row__label">Change password</div>
-              <div class="settings-row__desc">Update the password you sign in with.</div>
-            </div>
-            <button class="btn btn-ghost btn-sm" data-nav="change-password">Change</button>
+        </div>
+        <div class="settings-row">
+          <div>
+            <div class="settings-row__label">Change password</div>
+            <div class="settings-row__desc">Update the password you sign in with.</div>
           </div>
-          <div class="settings-row">
-            <div>
-              <div class="settings-row__label">Sign out</div>
-              <div class="settings-row__desc">Clears this device's copy of your book. Your recipes stay in the cloud.</div>
-            </div>
-            <button class="btn btn-danger" data-action="sign-out">Sign out</button>
+          <button class="btn btn-ghost btn-sm" data-nav="change-password">Change</button>
+        </div>
+        <div class="settings-row">
+          <div>
+            <div class="settings-row__label">Sign out</div>
+            <div class="settings-row__desc">You'll need to sign in again to use Forgebook.</div>
           </div>
-        ` : `
-          <div class="settings-row" style="display:block">
-            <div class="settings-row__label">Sign in to sync across devices</div>
-            <div class="settings-row__desc" style="margin-bottom:14px">
-              Enter the email and password you set when you accepted your invite.
-            </div>
-            ${authFormHtml()}
-          </div>
-        `}
+          <button class="btn btn-danger" data-action="sign-out">Sign out</button>
+        </div>
       </div>
 
       <div class="settings-group">
@@ -1622,7 +1833,7 @@ function viewSettings() {
         <div class="settings-row">
           <div>
             <div class="settings-row__label">Install Forgebook</div>
-            <div class="settings-row__desc">Add to your home screen for offline, app-like use.</div>
+            <div class="settings-row__desc">Add to your home screen for quicker, app-like access.</div>
           </div>
           <button class="btn btn-primary" id="install-btn">Install</button>
         </div>
@@ -1644,20 +1855,13 @@ function viewSettings() {
           <button class="icon-btn" data-action="import">${icon("upload", 16)}</button>
           <input type="file" id="import-input" accept="application/json" class="hidden" />
         </div>
-        <div class="settings-row">
-          <div>
-            <div class="settings-row__label">Reset to sample data</div>
-            <div class="settings-row__desc">Erase everything and reload the starter recipes and paints.</div>
-          </div>
-          <button class="btn btn-danger" data-action="reset">Reset</button>
-        </div>
       </div>
 
       <div class="settings-group">
         <div class="settings-row">
           <div>
             <div class="settings-row__label">Forgebook</div>
-            <div class="settings-row__desc">Version 0.5 &middot; ${getRecipes().length} recipes &middot; ${getPaints().length} paints &middot; Works offline</div>
+            <div class="settings-row__desc">Version 0.5 &middot; ${getRecipes().length} recipes &middot; ${getPaints().length} paints</div>
           </div>
         </div>
       </div>
@@ -1668,8 +1872,8 @@ function viewSettings() {
         app are original artwork. If you sign in, your email address and an encrypted password
         are stored with our database provider (Supabase) so your recipes can sync across
         devices — this is a small, self-run hobby project, not a professional security service,
-        so please use a password you don't rely on elsewhere. Nothing is required to use
-        Forgebook without an account.
+        so please use a password you don't rely on elsewhere. An account is required to use
+        Forgebook.
       </div>
     </div>
   `;
@@ -1713,35 +1917,13 @@ function viewChangePassword() {
 // ---------------------------------------------------------------
 // Render
 // ---------------------------------------------------------------
-function mergePromptHtml() {
-  return `
-    <div class="page-enter">
-      <div class="page-title">Welcome back</div>
-      <div class="notice" style="margin-bottom:18px">
-        Signed in as <strong>${escapeHtml(currentEmail() || "")}</strong>
-      </div>
-      <div class="settings-group">
-        <div class="settings-row" style="display:block">
-          <div class="settings-row__label">This device has ${pendingMerge} recipe${pendingMerge === 1 ? "" : "s"} saved locally</div>
-          <div class="settings-row__desc" style="margin:8px 0 14px">
-            Do you want to add them to your account, so they sync to your other devices?
-            If this isn't your device, or these aren't yours, discard them instead —
-            anything already in your account is untouched either way.
-          </div>
-          <button class="btn btn-primary btn-block" data-action="merge-accept">Add them to my account</button>
-          <button class="btn btn-ghost btn-block" data-action="merge-decline">Discard this device's copy</button>
-        </div>
-      </div>
-    </div>
-  `;
-}
-
 function bindAuthInputs(root) {
   const bind = (id, fn) => { const el = root.querySelector(id); if (el) el.oninput = fn; };
   bind("#signin-email", (e) => { authEmail = e.target.value; });
   bind("#signin-password", (e) => { authPassword = e.target.value; });
   bind("#new-password", (e) => { authNewPassword = e.target.value; });
   bind("#new-password-confirm", (e) => { authNewPasswordConfirm = e.target.value; });
+  bind("#auth-display-name", (e) => { authDisplayName = e.target.value; });
 }
 
 function render() {
@@ -1760,15 +1942,6 @@ function render() {
   const root = document.getElementById("view-root");
   let html = "";
   let showFab = true;
-
-  // A pending merge decision blocks everything else — we must not sync until
-  // the person has told us whether this device's book is theirs.
-  if (pendingMerge) {
-    root.innerHTML = mergePromptHtml();
-    document.getElementById("fab").classList.add("hidden");
-    updateSyncPill();
-    return;
-  }
 
   if (route === "home") html = viewHome();
   else if (route === "factions") html = viewFactions();
@@ -1884,6 +2057,7 @@ let authEmail = "";
 let authPassword = "";
 let authNewPassword = "";
 let authNewPasswordConfirm = "";
+let authDisplayName = ""; // collected at signup and on the invite's password-setup screen
 let authMode = "signin"; // "signin" | "signup" — which fields authFormHtml() shows
 let authSignupSent = null; // the email a confirmation link was just sent to, or null
 let passwordScreenMode = null; // "setup" | "recovery" while a password screen is showing
@@ -1917,8 +2091,12 @@ document.addEventListener("click", async (e) => {
     const res = await signIn(email, password);
     if (!res.ok) { showToast(res.message); return; }
     authPassword = "";
-    if (!appBooted) decideBootState();
-    else render();
+    if (!appBooted) {
+      location.hash = ""; // always land on Home after signing in, not wherever the hash last pointed
+      decideBootState();
+    } else {
+      render();
+    }
     return;
   }
 
@@ -1943,12 +2121,14 @@ document.addEventListener("click", async (e) => {
     const email = (authEmail || "").trim();
     const pw = authNewPassword || "";
     const pw2 = authNewPasswordConfirm || "";
+    const name = (authDisplayName || "").trim();
+    if (!name) { showToast("Enter a display name first"); return; }
     if (!email || !email.includes("@")) { showToast("Enter your email"); return; }
     if (pw.length < 8) { showToast("Use at least 8 characters"); return; }
     if (pw !== pw2) { showToast("Passwords don't match"); return; }
-    const res = await signUp(email, pw);
+    const res = await signUp(email, pw, name);
     if (!res.ok) { showToast(res.message); return; }
-    authNewPassword = ""; authNewPasswordConfirm = "";
+    authNewPassword = ""; authNewPasswordConfirm = ""; authDisplayName = "";
     authSignupSent = email;
     render();
     return;
@@ -1957,12 +2137,16 @@ document.addEventListener("click", async (e) => {
   if (t("[data-action='submit-password']")) {
     const pw = authNewPassword || "";
     const pw2 = authNewPasswordConfirm || "";
+    const wasSetup = passwordScreenMode === "setup";
+    const name = (authDisplayName || "").trim();
+    if (wasSetup && !name) { showToast("Enter a display name first"); return; }
     if (pw.length < 8) { showToast("Use at least 8 characters"); return; }
     if (pw !== pw2) { showToast("Passwords don't match"); return; }
     const res = await setPassword(pw);
     if (!res.ok) { showToast(res.message || "Couldn't set that password"); return; }
-    const wasSetup = passwordScreenMode === "setup";
-    authNewPassword = ""; authNewPasswordConfirm = ""; passwordScreenMode = null;
+    if (wasSetup) await updateDisplayName(name);
+    authNewPassword = ""; authNewPasswordConfirm = ""; authDisplayName = ""; passwordScreenMode = null;
+    if (wasSetup) location.hash = ""; // land on Home after finishing account setup
     decideBootState();
     showToast(wasSetup ? "Password set \u2014 welcome!" : "Password updated");
     return;
@@ -1981,17 +2165,10 @@ document.addEventListener("click", async (e) => {
     return;
   }
 
-  if (t("[data-action='continue-guest']")) {
-    continueAsGuest();
-    bootIntoApp();
-    return;
-  }
-
   if (t("[data-action='sign-out']")) {
-    if (confirm("Sign out? This device's copy of your book will be cleared. Your recipes stay safely in your account.")) {
+    if (await showConfirm("Sign out of Forgebook?", { okLabel: "Sign out" })) {
       await signOutCloud();
       showToast("Signed out");
-      navigate("home");
     }
     return;
   }
@@ -2004,8 +2181,8 @@ document.addEventListener("click", async (e) => {
   }
 
   if (t("[data-action='sync-now']")) {
-    const res = await syncNow({ full: true });
-    showToast(res.ok ? "Synced" : "Couldn't sync \u2014 will retry automatically");
+    const res = await loadBook();
+    showToast(res.ok ? "Refreshed" : "Couldn't refresh — try again");
     return;
   }
 
@@ -2017,8 +2194,6 @@ document.addEventListener("click", async (e) => {
     return;
   }
 
-  if (t("[data-action='merge-accept']")) { await acceptMerge(); navigate("home"); return; }
-  if (t("[data-action='merge-decline']")) { await declineMerge(); navigate("home"); return; }
 
   const navEl = t("[data-nav]");
   if (navEl) {
@@ -2119,7 +2294,7 @@ document.addEventListener("click", async (e) => {
   }
   const adminEmblemClear = t("[data-action='admin-emblem-clear']");
   if (adminEmblemClear) {
-    if (!confirm("Remove the shared emblem for this army? Everyone loses it, not just you.")) return;
+    if (!(await showConfirm("Remove the shared emblem for this army? Everyone loses it, not just you.", { okLabel: "Remove" }))) return;
     const res = await removeGlobalFactionEmblem(adminEmblemClear.dataset.id);
     showToast(res.ok ? "Shared emblem removed" : (res.message || "Couldn't remove that"));
     if (res.ok) render();
@@ -2193,7 +2368,7 @@ document.addEventListener("click", async (e) => {
   const removeMix = t("[data-action='remove-mix']");
   if (removeMix) {
     const step = recipeForm.steps.find((s) => s.id === removeMix.dataset.stepId);
-    if (step) { step.mixPaintId = undefined; step.mixRatio = ""; render(); }
+    if (step) { step.mixPaintId = undefined; step.mixWantPaint = undefined; step.mixRatio = ""; render(); }
     return;
   }
 
@@ -2209,10 +2384,27 @@ document.addEventListener("click", async (e) => {
     return;
   }
 
+  const openPicker = t("[data-action='open-paint-picker']");
+  if (openPicker) {
+    openPaintPicker(openPicker.dataset.stepId, openPicker.dataset.field);
+    return;
+  }
+
+  const openLightbox = t("[data-action='open-lightbox']");
+  if (openLightbox) {
+    showLightbox(openLightbox.dataset.photo);
+    return;
+  }
+
   const recipeCancel = t("[data-action='recipe-cancel']");
   if (recipeCancel) {
+    const dirty = JSON.stringify(recipeForm) !== recipeFormSnapshot;
+    if (dirty && !(await showConfirm("Discard your changes to this recipe?", { okLabel: "Discard", cancelLabel: "Keep editing" }))) {
+      return;
+    }
     const id = recipeForm.id;
     recipeForm = null;
+    recipeFormSnapshot = null;
     navigate(id ? "recipe" : "home", id ? { id } : {});
     return;
   }
@@ -2220,7 +2412,7 @@ document.addEventListener("click", async (e) => {
   const recipeSave = t("[data-action='recipe-save']");
   if (recipeSave) {
     if (!recipeForm.name.trim()) { showToast("Give the recipe a name first"); return; }
-    const steps = recipeForm.steps.filter((s) => s.paintId);
+    const steps = recipeForm.steps.filter((s) => s.paintId || s.wantPaint);
     if (!steps.length) { showToast("Add at least one step with a paint"); return; }
 
     const payload = {
@@ -2235,23 +2427,39 @@ document.addEventListener("click", async (e) => {
     };
 
     const isNew = !payload.id;
-    const prevRow = payload.id ? getAllRecipeRows().find((r) => r.id === payload.id) : null;
-    stamp(payload, prevRow ? prevRow.updatedAt : null);
+    stamp(payload);
     payload.photoPath = recipeForm.photoPath || null;
-    if (recipeForm.photo !== (recipeForm.originalPhoto || null)) payload.photoPath = null; // photo changed → re-upload
+    if (recipeForm.photo !== (recipeForm.originalPhoto || null)) payload.photoPath = null; // photo changed -> re-upload
     payload.published = !!recipeForm.published;
+    if (isNew) payload.id = generateId(payload.faction);
+
+    if (payload.photo && String(payload.photo).startsWith("data:")) {
+      showToast("Uploading photo…");
+      try {
+        const path = await uploadRecipePhoto(payload.photo, currentUserId(), payload.id);
+        payload.photoPath = path;
+        payload.photo = photoUrl(path);
+      } catch (e) {
+        showToast("Couldn't upload that photo — try again");
+        return;
+      }
+    }
+
+    showToast("Saving…");
+    const res = await pushRecipe(payload);
+    if (!res.ok) { showToast(res.message); return; }
 
     const rows = getAllRecipeRows();
     if (isNew) {
-      payload.id = generateId(payload.faction);
       rows.unshift(payload);
     } else {
       const idx = rows.findIndex((r) => r.id === payload.id);
-      if (idx > -1) rows[idx] = payload;
+      if (idx > -1) rows[idx] = payload; else rows.unshift(payload);
     }
-    if (!saveRecipes(rows)) { showToast("Storage is full \u2014 try removing a photo"); return; }
+    save(KEYS.recipes, rows);
 
     recipeForm = null;
+    recipeFormSnapshot = null;
     showToast("Recipe saved");
     navigate("recipe", { id: payload.id });
     return;
@@ -2259,8 +2467,11 @@ document.addEventListener("click", async (e) => {
 
   const delRecipe = t("[data-action='delete-recipe']");
   if (delRecipe) {
-    if (confirm("Delete this recipe? This cannot be undone.")) {
-      tombstoneRecipe(delRecipe.dataset.id);
+    if (await showConfirm("Delete this recipe? This cannot be undone.", { okLabel: "Delete" })) {
+      const id = delRecipe.dataset.id;
+      const res = await deleteRecipeRemote(id);
+      if (!res.ok) { showToast(res.message); return; }
+      save(KEYS.recipes, getAllRecipeRows().filter((r) => r.id !== id));
       showToast("Recipe deleted");
       navigate("recipes");
     }
@@ -2290,23 +2501,37 @@ document.addEventListener("click", async (e) => {
     return;
   }
 
+  const libRemove = t("[data-action='lib-remove']");
+  if (libRemove) {
+    const id = libRemove.dataset.id;
+    const n = paintUsageCount(id);
+    const msg = n
+      ? `This paint is used in ${n} recipe${n === 1 ? "" : "s"}. Removing it from your rack will leave those steps without a paint. Continue?`
+      : `Remove ${libRemove.dataset.name || "this paint"} from your rack?`;
+    if (await showConfirm(msg)) {
+      const res = await deletePaintRemote(id);
+      if (!res.ok) { showToast(res.message); return; }
+      save(KEYS.paints, getAllPaintRows().filter((p) => p.id !== id));
+      showToast("Removed from rack");
+      render();
+    }
+    return;
+  }
+
   const toggleHave = t("[data-action='toggle-have']");
   if (toggleHave) {
     const { name, brand, hex, type } = toggleHave.dataset;
-    const existing = ownedPaintFor(name, brand);
-    if (existing) {
-      tombstonePaint(existing.id);
-      showToast("Removed from rack");
-    } else {
-      const rows = getAllPaintRows();
-      const id = "lib-" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
-      rows.push(stamp({ id, name, brand, hex, type }, null));
-      if (!savePaints(rows)) { showToast("Storage is full"); return; }
-      // Owned and "need to buy" are mutually exclusive — clear the wishlist
-      // flag now that it's moot.
-      if (isWanted(name, brand)) toggleWanted(name, brand);
-      showToast("Added to rack");
-    }
+    const id = "lib-" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+    const row = stamp({ id, name, brand, hex, type });
+    const res = await pushPaint(row);
+    if (!res.ok) { showToast(res.message); return; }
+    const rows = getAllPaintRows();
+    rows.push(row);
+    save(KEYS.paints, rows);
+    // Owned and "need to buy" are mutually exclusive — clear the wishlist
+    // flag now that it's moot.
+    if (isWanted(name, brand)) toggleWanted(name, brand);
+    showToast("Added to rack");
     render();
     return;
   }
@@ -2337,26 +2562,33 @@ document.addEventListener("click", async (e) => {
 
     const returnStep = paintForm.returnToRecipe;
     let savedId = paintForm.id;
-    const rows = getAllPaintRows();
-
+    let row;
     if (paintForm.id) {
-      const idx = rows.findIndex((p) => p.id === paintForm.id);
-      if (idx > -1) {
-        const prev = rows[idx].updatedAt;
-        rows[idx] = stamp({ id: paintForm.id, name: paintForm.name.trim(), brand: paintForm.brand, hex: paintForm.hex, type: paintForm.type }, prev);
-      }
+      row = stamp({ id: paintForm.id, name: paintForm.name.trim(), brand: paintForm.brand, hex: paintForm.hex, type: paintForm.type });
     } else {
       savedId = "p-" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
-      rows.push(stamp({ id: savedId, name: paintForm.name.trim(), brand: paintForm.brand, hex: paintForm.hex, type: paintForm.type }, null));
+      row = stamp({ id: savedId, name: paintForm.name.trim(), brand: paintForm.brand, hex: paintForm.hex, type: paintForm.type });
     }
-    if (!savePaints(rows)) { showToast("Storage is full"); return; }
+
+    showToast("Saving…");
+    const res = await pushPaint(row);
+    if (!res.ok) { showToast(res.message); return; }
+
+    const rows = getAllPaintRows();
+    if (paintForm.id) {
+      const idx = rows.findIndex((p) => p.id === paintForm.id);
+      if (idx > -1) rows[idx] = row; else rows.push(row);
+    } else {
+      rows.push(row);
+    }
+    save(KEYS.paints, rows);
     paintForm = null;
     showToast("Paint saved");
 
     // came from a recipe step? drop the new paint straight into it
     if (returnStep !== undefined && recipeForm) {
       const step = recipeForm.steps.find((s) => s.id === returnStep);
-      if (step) step.paintId = savedId;
+      if (step) { step.paintId = savedId; step.wantPaint = undefined; }
       navigate(recipeForm.id ? "recipe" : "recipe-new", recipeForm.id ? { id: recipeForm.id, edit: true } : {});
     } else {
       navigate("paint", { id: savedId });
@@ -2370,8 +2602,11 @@ document.addEventListener("click", async (e) => {
     const msg = n
       ? `This paint is used in ${n} recipe${n === 1 ? "" : "s"}. Deleting it will leave those steps without a paint. Continue?`
       : "Remove this paint from your rack?";
-    if (confirm(msg)) {
-      tombstonePaint(delPaint.dataset.id);
+    if (await showConfirm(msg, { okLabel: "Remove" })) {
+      const id = delPaint.dataset.id;
+      const res = await deletePaintRemote(id);
+      if (!res.ok) { showToast(res.message); return; }
+      save(KEYS.paints, getAllPaintRows().filter((p) => p.id !== id));
       showToast("Paint removed");
       navigate("paints");
     }
@@ -2383,7 +2618,7 @@ document.addEventListener("click", async (e) => {
 
   if (t("[data-action='export']")) {
     const payload = {
-      forgebook: SCHEMA_VERSION,
+      forgebook: BACKUP_FORMAT_VERSION,
       exported: new Date().toISOString(),
       recipes: getRecipes(),
       paints: getPaints(),
@@ -2400,15 +2635,7 @@ document.addEventListener("click", async (e) => {
     return;
   }
 
-  if (t("[data-action='import']")) { document.getElementById("import-input").click(); return; }
-
-  if (t("[data-action='reset']")) {
-    if (confirm("This will erase all recipes and paints and reload the sample data. Continue?")) {
-      resetStore();
-      showToast("Reset to sample data");
-      navigate("home");
-    }
-    return;
+  if (t("[data-action='import']")) { document.getElementById("import-input").click(); return;
   }
 });
 
@@ -2459,24 +2686,16 @@ document.addEventListener("change", (e) => {
     const file = e.target.files[0];
     if (!file) return;
     const reader = new FileReader();
-    reader.onload = () => {
+    reader.onload = async () => {
       try {
         const data = JSON.parse(reader.result);
-        // v0.4 backup
-        if (data && Array.isArray(data.recipes)) {
-          saveRecipes(data.recipes);
-          savePaints(Array.isArray(data.paints) ? data.paints : []);
-          saveFactionArt(data.factionArt || {});
-          localStorage.setItem(KEYS.schema, String(SCHEMA_VERSION));
-        } else if (Array.isArray(data)) {
-          // a bare v0.3 export — run it through the same migration
-          const migrated = migrateFromV3(data);
-          saveRecipes(migrated.recipes);
-          savePaints(migrated.paints);
-          localStorage.setItem(KEYS.schema, String(SCHEMA_VERSION));
-        } else {
-          throw new Error("bad format");
-        }
+        if (!data || !Array.isArray(data.recipes)) throw new Error("bad format");
+        showToast("Importing…");
+        const paints = Array.isArray(data.paints) ? data.paints : [];
+        for (const p of paints) await pushPaint(p);
+        for (const r of data.recipes) await pushRecipe(r);
+        if (data.factionArt) saveFactionArt(data.factionArt);
+        await loadBook();
         showToast("Backup imported");
         navigate("home");
       } catch (err) {
@@ -2609,11 +2828,8 @@ function buildShell() {
 // ---------------------------------------------------------------
 // Boot splash + sign-in gate
 // ---------------------------------------------------------------
-// Forgebook accounts need a confirmed email, but it's local-first regardless:
-// the book on this device is never at risk, and offline use never blocks on
-// the gate. So the gate is soft — a sign-in screen with an always-available
-// "continue without an account" escape, remembered so it only has to be
-// dismissed once.
+// An account is required for everything past this point -- the gate is hard,
+// with no local/offline escape hatch.
 //
 // We can't decide gate-vs-app until we know whether a session is already
 // persisted, and that check is async (initCloud). Rendering the full app
@@ -2641,12 +2857,6 @@ function gateHtml() {
           ${authFormHtml()}
         </div>
 
-        <div class="gate__divider"><span>or</span></div>
-
-        <button class="btn btn-ghost btn-block" data-action="continue-guest">Continue without an account</button>
-        <div class="settings-row__desc" style="margin-top:8px">
-          Your book stays on this device until you sign in. Nothing is lost either way.
-        </div>
       </div>
       <div class="toast" id="toast"></div>
     </div>
@@ -2673,7 +2883,14 @@ function passwordFormHtml(mode) {
             : "Choose a new password for your account."}
         </div>
 
+        ${isSetup ? `
         <div class="field gate__field" style="margin-top:20px">
+          <label>Display name</label>
+          <input type="text" id="auth-display-name" placeholder="What should we call you?" value="${escapeHtml(authDisplayName)}" autocomplete="nickname" />
+          <div class="label-hint" style="margin-top:4px">Shown as the author on any recipe you share.</div>
+        </div>
+        ` : ""}
+        <div class="field gate__field" style="margin-top:${isSetup ? "0" : "20px"}">
           <label>New password</label>
           <input type="password" id="new-password" placeholder="At least 8 characters" autocomplete="new-password" />
         </div>
@@ -2709,46 +2926,61 @@ function showPasswordScreen(mode) {
 function decideBootState() {
   if (inPasswordRecovery()) { showPasswordScreen("recovery"); return; }
   if (isSignedIn() && needsPasswordSetup()) { showPasswordScreen("setup"); return; }
-  if (isSignedIn() || isGuest()) { bootIntoApp(); return; }
+  if (isSignedIn()) { bootIntoApp(); return; }
   showGate();
 }
 
-// Commit to the full app: build the shell, route, and render — the point of
-// no return past which the gate can't reappear this session.
-function bootIntoApp() {
-  if (appBooted) return;
+// Commit to the full app: fetch the account's book, then build the shell,
+// route, and render — the point of no return past which the gate can't
+// reappear this session (short of signing out).
+//
+// bootingIntoApp guards the gap while loadBook() is in flight: appBooted
+// itself doesn't flip true until the shell actually exists, because loadBook()
+// calls render() (to reflect its own loading state), and render() trusts
+// appBooted as its signal that #view-root is safe to touch. Without a
+// separate in-flight guard, any render() during that gap (loadBook's own, or
+// a re-entrant decideBootState() from the SIGNED_IN listener) would see
+// appBooted still false, call decideBootState() again, and call
+// bootIntoApp() a second time.
+let bootingIntoApp = false;
+async function bootIntoApp() {
+  if (appBooted || bootingIntoApp) return;
+  bootingIntoApp = true;
+  showBootSplash();
+  await loadBook();
+  bootingIntoApp = false;
   appBooted = true;
   buildShell();
   const { route, params } = parseHash();
   state.route = route;
   state.params = params;
   render();
+  registerServiceWorker();
+}
 
-  if ("serviceWorker" in navigator) {
-    navigator.serviceWorker.register("service-worker.js").then((reg) => {
-      // Don't just wait for the browser's own (slow, heuristic) background
-      // check — ask right now. This is what actually gets a device that
-      // already has the app installed off an old cached version promptly,
-      // rather than whenever the browser next feels like checking.
-      reg.update().catch(() => {});
-    }).catch(() => {});
+function registerServiceWorker() {
+  if (!("serviceWorker" in navigator)) return;
+  navigator.serviceWorker.register("service-worker.js").then((reg) => {
+    // Don't just wait for the browser's own (slow, heuristic) background
+    // check — ask right now, so a device that already has the app installed
+    // gets fresh code promptly rather than whenever the browser next feels
+    // like checking.
+    reg.update().catch(() => {});
+  }).catch(() => {});
 
-    // service-worker.js calls skipWaiting()+clients.claim(), so a new worker
-    // takes over immediately — but this tab's already-running JS is still
-    // the old version until it reloads. Without this, "the SW updated" and
-    // "the page you're looking at updated" are two different things.
-    let refreshingForUpdate = false;
-    navigator.serviceWorker.addEventListener("controllerchange", () => {
-      if (refreshingForUpdate) return;
-      refreshingForUpdate = true;
-      location.reload();
-    });
-  }
-  if (isSignedIn() && !pendingMerge) syncNow();
+  // service-worker.js calls skipWaiting()+clients.claim(), so a new worker
+  // takes over immediately — but this tab's already-running JS is still the
+  // old version until it reloads. Without this, "the SW updated" and "the
+  // page you're looking at updated" are two different things.
+  let refreshingForUpdate = false;
+  navigator.serviceWorker.addEventListener("controllerchange", () => {
+    if (refreshingForUpdate) return;
+    refreshingForUpdate = true;
+    location.reload();
+  });
 }
 
 async function init() {
-  initStore();
   showBootSplash();
 
   // The persisted-session check is local (no network round trip unless a

@@ -91,6 +91,17 @@
   --shadow-raised: 0 8px 24px rgba(60, 50, 30, 0.22);
 }
 
+/* The painted backdrop below is a dark, moody scene — it doesn't translate
+   to a daylight theme, and dark art behind light-theme's dark-on-light text
+   would wreck contrast. Light mode keeps the plain flat ground instead. */
+html[data-theme="light"] {
+  background-image: radial-gradient(ellipse 900px 500px at 50% -10%, var(--gold-dim), transparent 60%);
+  background-size: auto;
+  background-position: top center;
+  background-repeat: no-repeat;
+  background-attachment: fixed;
+}
+
 * {
   box-sizing: border-box;
 }
@@ -99,17 +110,42 @@ html,
 body {
   margin: 0;
   padding: 0;
-  background: var(--bg-void);
   color: var(--parchment);
   font-family: var(--font-body);
   -webkit-font-smoothing: antialiased;
   height: 100%;
 }
 
-body {
+/* The backdrop lives on html, not body: body's own box is only ever one
+   viewport tall (height: 100% above), while the page's actual scrollable
+   content overflows well past that. A background-attachment: fixed image
+   painted on body only ever covers that first viewport-tall box, so once
+   scrolled further, there was nothing left for it to paint against — this
+   is what showed up as a hard black band partway down every page. html's
+   box spans the full document, so its fixed background stays put and
+   covers the whole scroll range correctly.
+   The middle layer is a flat dark wash over the artwork — insurance so
+   foreground text stays readable regardless of which part of the (busy,
+   variable-brightness) painting happens to sit behind it. */
+html {
+  background-color: var(--bg-void);
   background-image:
-    radial-gradient(ellipse 900px 500px at 50% -10%, var(--gold-dim), transparent 60%);
-  background-attachment: fixed;
+    radial-gradient(ellipse 900px 500px at 50% -10%, var(--gold-dim), transparent 60%),
+    linear-gradient(rgba(8, 7, 5, 0.45), rgba(8, 7, 5, 0.45)),
+    url("../img/bg-mobile.jpg");
+  background-size: auto, auto, cover;
+  background-position: top center, top center, top center;
+  background-repeat: no-repeat, no-repeat, no-repeat;
+  background-attachment: fixed, fixed, fixed;
+}
+
+@media (min-width: 860px) {
+  html {
+    background-image:
+      radial-gradient(ellipse 900px 500px at 50% -10%, var(--gold-dim), transparent 60%),
+      linear-gradient(rgba(8, 7, 5, 0.45), rgba(8, 7, 5, 0.45)),
+      url("../img/bg-desktop.jpg");
+  }
 }
 
 a {
@@ -173,8 +209,8 @@ img {
   align-items: center;
   gap: 12px;
   padding: 0 16px;
-  background: color-mix(in srgb, var(--bg-void) 92%, transparent);
-  backdrop-filter: blur(8px);
+  background: color-mix(in srgb, var(--bg-void) 80%, transparent);
+  backdrop-filter: blur(10px);
   border-bottom: 1px solid var(--line-soft);
 }
 
@@ -287,7 +323,7 @@ main {
   left: 0;
   right: 0;
   height: var(--nav-h);
-  background: color-mix(in srgb, var(--bg-panel) 96%, transparent);
+  background: color-mix(in srgb, var(--bg-panel) 80%, transparent);
   backdrop-filter: blur(10px);
   border-top: 1px solid var(--line-soft);
   display: flex;
@@ -1860,7 +1896,8 @@ main {
     left: 0;
     bottom: 0;
     width: 220px;
-    background: var(--bg-panel);
+    background: color-mix(in srgb, var(--bg-panel) 80%, transparent);
+    backdrop-filter: blur(10px);
     border-right: 1px solid var(--line-soft);
     display: flex;
     flex-direction: column;
@@ -2555,4 +2592,256 @@ main {
   flex: 1;
   height: 1px;
   background: var(--line);
+}
+
+/* ============================================================
+   CONFIRM DIALOG — an in-app "are you sure?" replacing the browser's own
+   confirm(), so it looks like the rest of Forgebook instead of the OS chrome.
+   ============================================================ */
+.confirm-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  animation: confirm-backdrop-in 0.15s ease both;
+}
+
+.confirm-overlay__backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.6);
+}
+
+.confirm-dialog {
+  position: relative;
+  width: 100%;
+  max-width: 360px;
+  background: var(--bg-panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-raised);
+  padding: 22px 20px;
+  animation: confirm-dialog-in 0.18s cubic-bezier(0.2, 0.7, 0.3, 1) both;
+}
+
+.confirm-dialog__message {
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--parchment);
+  margin-bottom: 18px;
+}
+
+.confirm-dialog__actions {
+  display: flex;
+  gap: 10px;
+}
+
+.confirm-dialog__actions .btn {
+  flex: 1;
+}
+
+@keyframes confirm-backdrop-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes confirm-dialog-in {
+  from { opacity: 0; transform: translateY(8px) scale(0.98); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+/* ============================================================
+   PAINT PICKER — a searchable swatch list for choosing a recipe step's
+   paint, in place of a plain <select> that becomes unusable once a rack has
+   more than a handful of entries. Reuses the filter-overlay bottom-sheet
+   shell and the paint library's row/segmented-control look.
+   ============================================================ */
+.paint-picker__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 16px 10px;
+  border-bottom: 1px solid var(--line-soft);
+  flex-shrink: 0;
+}
+
+.paint-picker__title {
+  font-family: var(--font-display);
+  font-size: 16px;
+  color: var(--parchment);
+}
+
+.paint-picker__search {
+  margin: 12px 16px 8px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--bg-raised);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  padding: 0 10px;
+  flex-shrink: 0;
+}
+
+.paint-picker__search svg {
+  width: 15px;
+  height: 15px;
+  stroke: var(--ink);
+  flex-shrink: 0;
+}
+
+.paint-picker__search input {
+  flex: 1;
+  min-width: 0;
+  background: transparent;
+  border: none;
+  color: var(--parchment);
+  font-size: 16px; /* iOS zoom-on-focus guard, same as .field input */
+  padding: 10px 4px;
+}
+
+.paint-picker__search input:focus {
+  outline: none;
+}
+
+.paint-picker__search input::placeholder {
+  color: var(--ink-dim);
+}
+
+.paint-picker__tabs {
+  margin: 0 16px 10px;
+  flex-shrink: 0;
+}
+
+.paint-picker__body {
+  padding: 4px 16px 16px;
+  overflow-y: auto;
+}
+
+.paint-picker__row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  text-align: left;
+  background: var(--bg-panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  padding: 10px 12px;
+  cursor: pointer;
+  margin-bottom: 8px;
+}
+
+.paint-picker__row:hover {
+  border-color: var(--gold);
+}
+
+.paint-picker__row.is-selected {
+  border-color: var(--gold);
+  background: linear-gradient(180deg, var(--gold-dim), var(--bg-panel));
+}
+
+.paint-picker__row-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.paint-picker__want-tag {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.03em;
+  color: var(--blood-bright);
+  border: 1px solid var(--blood-border);
+  background: var(--blood-dim);
+  border-radius: 999px;
+  padding: 3px 8px;
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+.paint-pick-trigger {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: var(--bg-panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  padding: 8px 12px;
+  color: var(--parchment);
+  cursor: pointer;
+  text-align: left;
+}
+
+.paint-pick-trigger:hover {
+  border-color: var(--gold);
+}
+
+.paint-pick-trigger__label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.paint-pick-trigger__placeholder {
+  color: var(--ink-dim);
+}
+
+/* ============================================================
+   LIGHTBOX — full-size view of a recipe's finished-mini photo.
+   ============================================================ */
+.detail-hero.has-photo {
+  cursor: zoom-in;
+}
+
+.lightbox-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  animation: confirm-backdrop-in 0.15s ease both;
+}
+
+.lightbox-overlay__backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.88);
+}
+
+.lightbox-overlay__img {
+  position: relative;
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-raised);
+  animation: confirm-dialog-in 0.18s cubic-bezier(0.2, 0.7, 0.3, 1) both;
+}
+
+.lightbox-overlay__close {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  z-index: 1;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  border: 1px solid var(--line);
+  background: color-mix(in srgb, var(--bg-void) 70%, transparent);
+  color: var(--parchment);
+  font-size: 26px;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
 }

@@ -1,7 +1,7 @@
 {
   "name": "Forgebook — Warhammer Paint Recipes",
   "short_name": "Forgebook",
-  "description": "Record, browse and search your miniature paint recipes. Works offline.",
+  "description": "Record, browse and search your miniature paint recipes.",
   "start_url": "./index.html",
   "scope": "./",
   "display": "standalone",
