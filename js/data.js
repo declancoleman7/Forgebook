@@ -124,7 +124,7 @@ const PAINT_BRANDS = ["Citadel", "Vallejo", "Army Painter", "Scale75", "Pro Acry
 
 // ============================================================
 // Paint library — a browsable catalogue of real paints, separate from the
-// user's own rack (SEED_PAINTS / whatever they've added). Citadel's current
+// user's own rack. Citadel's current
 // range only for now (Base/Layer/Shade/Contrast/Technical/Dry; Spray, Air and
 // texture paints excluded as they're not steps in a recipe the same way).
 // Hex values are best-effort approximations — Citadel doesn't publish exact
@@ -1131,132 +1131,20 @@ function emblemPaths(key) {
 }
 
 // ============================================================
-// Seed data
+// Storage keys
 // ============================================================
-const SEED_PAINTS = [
-  { id: "pa-warboss-green",    name: "Warboss Green",       brand: "Citadel", hex: "#3C5C29", type: "Base" },
-  { id: "pa-german-red-brown", name: "German Red Brown",    brand: "Vallejo", hex: "#5C2E1E", type: "Model Color" },
-  { id: "pa-plaguebearer",     name: "Plaguebearer Flesh",  brand: "Citadel", hex: "#8FA55B", type: "Layer" },
-  { id: "pa-titanium-white",   name: "Bold Titanium White", brand: "Vallejo", hex: "#F1EDE6", type: "Model Color" },
-  { id: "pa-macragge-blue",    name: "Macragge Blue",       brand: "Citadel", hex: "#1B4B6B", type: "Base" },
-  { id: "pa-nuln-oil",         name: "Nuln Oil",            brand: "Citadel", hex: "#1A1A1A", type: "Shade", needsRestock: true },
-  { id: "pa-calgar-blue",      name: "Calgar Blue",         brand: "Citadel", hex: "#3D74A6", type: "Layer" },
-  { id: "pa-fenrisian-grey",   name: "Fenrisian Grey",      brand: "Citadel", hex: "#A9B7C0", type: "Layer" },
-  { id: "pa-retributor",       name: "Retributor Armour",   brand: "Citadel", hex: "#8C6B2A", type: "Base" },
-  { id: "pa-abaddon-black",    name: "Abaddon Black",       brand: "Citadel", hex: "#0E0E10", type: "Base" },
-  { id: "pa-screamer-pink",    name: "Screamer Pink",       brand: "Citadel", hex: "#5B2E63", type: "Base" },
-  { id: "pa-warplock-bronze",  name: "Warplock Bronze",     brand: "Citadel", hex: "#6A4A2E", type: "Base" },
-  { id: "pa-sycorax-bronze",   name: "Sycorax Bronze",      brand: "Citadel", hex: "#9C7A45", type: "Layer" },
-  { id: "pa-runefang-steel",   name: "Runefang Steel",      brand: "Citadel", hex: "#C8CDD1", type: "Layer" },
-  { id: "pa-rhinox-hide",      name: "Rhinox Hide",         brand: "Citadel", hex: "#3A2A22", type: "Base" },
-  { id: "pa-fire-dragon",      name: "Fire Dragon Bright",  brand: "Citadel", hex: "#B8542E", type: "Layer" },
-  { id: "pa-ushabti-bone",     name: "Ushabti Bone",        brand: "Citadel", hex: "#C9B27A", type: "Layer" },
-  { id: "pa-agrax",            name: "Agrax Earthshade",    brand: "Citadel", hex: "#4A3826", type: "Shade" },
-  { id: "pa-leadbelcher",      name: "Leadbelcher",         brand: "Citadel", hex: "#6E7477", type: "Base" },
-  { id: "pa-stirland-mud",     name: "Stirland Mud",        brand: "Citadel", hex: "#5A4632", type: "Technical" },
-  { id: "pa-black-spray",      name: "Chaos Black Spray",   brand: "Citadel", hex: "#0A0A0C", type: "Spray" },
-  { id: "pa-white-spray",      name: "Corax White Spray",   brand: "Citadel", hex: "#E8E8E2", type: "Spray" },
-];
-
-const SEED_RECIPES = [
-  {
-    id: "ORK-001",
-    name: "Ork Boyz Skin",
-    faction: "orks",
-    unit: "Boyz",
-    difficulty: 2,
-    photo: null,
-    steps: [
-      { id: "s0", technique: "Primer",    paintId: "pa-black-spray",      notes: "Even coat over the whole model. Let it cure fully before basecoating.", area: "" },
-      { id: "s1", technique: "Base",      paintId: "pa-warboss-green",    notes: "Two thin coats.", area: "Skin" },
-      { id: "s2", technique: "Wash",      paintId: "pa-german-red-brown", notes: "Thin wash into all recesses, let it pool in the wrinkles.", area: "Skin" },
-      { id: "s3", technique: "Layer",     paintId: "pa-plaguebearer",     mixPaintId: "pa-warboss-green", mixRatio: "1:1", notes: "Build up on raised muscle.", area: "Skin" },
-      { id: "s4", technique: "Highlight", paintId: "pa-titanium-white",   notes: "Tiny dot mix on knuckles, brow ridge and tusks only.", area: "Skin" },
-    ],
-    notes: "Works equally well on Nobz. For Deffskulls, swap the base for a bone tone.",
-  },
-  {
-    id: "SM-001",
-    name: "Ultramarines Power Armour",
-    faction: "space-marines",
-    unit: null,
-    difficulty: 3,
-    photo: null,
-    steps: [
-      { id: "s0", technique: "Primer",        paintId: "pa-white-spray",    notes: "A bright undercoat keeps Macragge Blue vibrant rather than muddy.", area: "" },
-      { id: "s1", technique: "Base",          paintId: "pa-macragge-blue",  notes: "Even coverage, two coats.", area: "Armour" },
-      { id: "s2", technique: "Wash",          paintId: "pa-nuln-oil",       notes: "Full wash over all armour panels.", area: "Armour" },
-      { id: "s3", technique: "Layer",         paintId: "pa-calgar-blue",    notes: "Panel centres, leave the recesses dark.", area: "Armour" },
-      { id: "s4", technique: "Edge Highlight", paintId: "pa-fenrisian-grey", notes: "Sharp edge highlight on trim and rims.", area: "Armour" },
-      { id: "s5", technique: "Base",           paintId: "pa-retributor",     notes: "Shoulder trim and honour badges.", area: "Trim" },
-    ],
-    notes: "Applies to the whole army rather than one kit \u2014 which is why it sits under General.",
-  },
-  {
-    id: "CSM-001",
-    name: "Chaos Trim & Brass",
-    faction: "chaos-space-marines",
-    unit: "Legionaries",
-    difficulty: 4,
-    photo: null,
-    steps: [
-      { id: "s0", technique: "Primer",         paintId: "pa-black-spray",     notes: "Even coat, this recipe leans on the primer staying visible in recesses.", area: "" },
-      { id: "s1", technique: "Base",           paintId: "pa-abaddon-black",   notes: "Armour plates, two thin coats.", area: "Armour" },
-      { id: "s2", technique: "Glaze",          paintId: "pa-screamer-pink",   notes: "Thin purple glaze in the recesses for corruption.", area: "Armour" },
-      { id: "s3", technique: "Base",           paintId: "pa-warplock-bronze", notes: "All trim, rivets and shoulder pads.", area: "Trim" },
-      { id: "s4", technique: "Drybrush",       paintId: "pa-sycorax-bronze",  notes: "Light drybrush over the bronze trim only.", area: "Trim" },
-      { id: "s5", technique: "Edge Highlight", paintId: "pa-runefang-steel",  notes: "Blade edges and chipped paint effects.", area: "Trim" },
-    ],
-    notes: "Stipple a little dried blood red near the blade tips for a used look.",
-  },
-  {
-    id: "TYR-001",
-    name: "Tyranid Carapace",
-    faction: "tyranids",
-    unit: "Termagants",
-    difficulty: 3,
-    photo: null,
-    steps: [
-      { id: "s1", technique: "Base",      paintId: "pa-rhinox-hide",  notes: "Carapace and claws." },
-      { id: "s2", technique: "Layer",     paintId: "pa-fire-dragon",  notes: "Zenithal-style layer, leaving deep recesses brown." },
-      { id: "s3", technique: "Highlight", paintId: "pa-ushabti-bone", notes: "Ridge lines only, thin mix, several light coats." },
-    ],
-    notes: "The soft flesh between plates uses a separate warm pink recipe.",
-  },
-  {
-    id: "GEN-001",
-    name: "Basing \u2014 Dry Earth & Grit",
-    faction: "generic",
-    unit: null,
-    difficulty: 1,
-    photo: null,
-    steps: [
-      { id: "s1", technique: "Technical", paintId: "pa-stirland-mud",  notes: "Thick coat over the whole base, keep the rim clean." },
-      { id: "s2", technique: "Drybrush",  paintId: "pa-ushabti-bone",  notes: "Heavy drybrush to catch the texture." },
-      { id: "s3", technique: "Base",      paintId: "pa-abaddon-black", notes: "Tidy the base rim." },
-    ],
-    notes: "Universal basing recipe \u2014 works for every army, which is why it's Unaligned.",
-  },
-];
-
-// ============================================================
-// Storage + migration
-// ============================================================
-const SCHEMA_VERSION = 5;
 const KEYS = {
   recipes: "forgebook.recipes",
   paints: "forgebook.paints",
   recents: "forgebook.recents",
   art: "forgebook.factionArt",
-  // Admin-uploaded emblem overrides — shared across every user (see
+  // Admin-uploaded emblem overrides -- shared across every user (see
   // cloud.js fetchGlobalFactionEmblems), distinct from the per-device
   // personal override above.
   globalArt: "forgebook.globalFactionArt",
-  schema: "forgebook.schema",
-  guest: "forgebook.guest",
   wantToBuy: "forgebook.wantToBuy",
   // Other people's shared (published) recipes, and the author-owned paints
-  // their steps reference — a read-only cache, kept entirely separate from
+  // their steps reference -- a read-only cache, kept entirely separate from
   // the user's own book so it's never merged in, edited, or pushed back up.
   sharedRecipes: "forgebook.sharedRecipes",
   sharedPaints: "forgebook.sharedPaints",
@@ -1275,115 +1163,4 @@ function readJSON(key, fallback) {
 
 function paintKey(name, brand) {
   return String(name || "").trim().toLowerCase() + "|" + String(brand || "").trim().toLowerCase();
-}
-
-// v0.3 kept a separate copy of each paint inside every recipe. v0.4 has one
-// shared library and recipe steps point into it. This lifts the embedded
-// paints out, dedupes by name+brand, and rewrites the steps — so nobody
-// upgrading from v0.3 loses a recipe.
-function migrateFromV3(oldRecipes) {
-  const paints = [];
-  const byKey = new Map();
-  let n = 0;
-
-  const ensurePaint = (p) => {
-    const key = paintKey(p.name, p.brand);
-    if (byKey.has(key)) return byKey.get(key).id;
-    n++;
-    const entry = {
-      id: "pm-" + n + "-" + Math.random().toString(36).slice(2, 7),
-      name: p.name,
-      brand: p.brand || "",
-      hex: p.hex || "#808080",
-      type: "Other",
-      updatedAt: new Date().toISOString(),
-      deleted: false,
-    };
-    paints.push(entry);
-    byKey.set(key, entry);
-    return entry.id;
-  };
-
-  // Faction ids that changed when the full GW list came in
-  const remap = { chaos: "chaos-space-marines" };
-
-  const recipes = oldRecipes.map((r) => {
-    const localMap = {};
-    (r.paints || []).forEach((p) => { localMap[p.id] = ensurePaint(p); });
-    return {
-      id: r.id,
-      name: r.name,
-      faction: remap[r.faction] || r.faction || "generic",
-      unit: r.unit || null,
-      difficulty: r.difficulty || 1,
-      photo: r.photo || null,
-      steps: (r.steps || [])
-        .map((s) => ({ id: s.id, technique: s.technique, paintId: localMap[s.paintId] || "", notes: s.notes || "" }))
-        .filter((s) => s.paintId),
-      notes: r.notes || "",
-      updatedAt: new Date().toISOString(),
-      deleted: false,
-    };
-  });
-
-  return { recipes, paints };
-}
-
-// Sample data is flagged so sync never pushes it to the cloud as if it were
-// the user's own work, and so signing in can quietly clear it away.
-function seeded(rows) {
-  const t = new Date().toISOString();
-  return rows.map((r) => Object.assign({}, r, { seed: true, deleted: false, updatedAt: t }));
-}
-
-function initStore() {
-  const schema = Number(localStorage.getItem(KEYS.schema) || 0);
-  const existing = readJSON(KEYS.recipes, null);
-
-  if (!existing) {
-    localStorage.setItem(KEYS.recipes, JSON.stringify(seeded(SEED_RECIPES)));
-    localStorage.setItem(KEYS.paints, JSON.stringify(seeded(SEED_PAINTS)));
-    localStorage.setItem(KEYS.recents, JSON.stringify(["ORK-001"]));
-    localStorage.setItem(KEYS.schema, String(SCHEMA_VERSION));
-    return;
-  }
-
-  if (schema < SCHEMA_VERSION) {
-    const looksOld = existing.some((r) => Array.isArray(r.paints));
-    if (looksOld) {
-      const migrated = migrateFromV3(existing);
-      localStorage.setItem(KEYS.recipes, JSON.stringify(migrated.recipes));
-      localStorage.setItem(KEYS.paints, JSON.stringify(migrated.paints));
-    } else if (!localStorage.getItem(KEYS.paints)) {
-      localStorage.setItem(KEYS.paints, JSON.stringify(seeded(SEED_PAINTS)));
-    }
-
-    // v0.5 adds sync metadata. Anything already on the device is treated as
-    // the user's own work (never as sample data), so it survives sign-in.
-    const t = new Date().toISOString();
-    const addMeta = (key) => {
-      const rows = readJSON(key, []).map((x) => {
-        if (!x.updatedAt) x.updatedAt = t;
-        if (x.deleted === undefined) x.deleted = false;
-        return x;
-      });
-      localStorage.setItem(key, JSON.stringify(rows));
-    };
-    addMeta(KEYS.recipes);
-    addMeta(KEYS.paints);
-
-    localStorage.setItem(KEYS.schema, String(SCHEMA_VERSION));
-  }
-
-  if (!localStorage.getItem(KEYS.recents)) {
-    localStorage.setItem(KEYS.recents, JSON.stringify([]));
-  }
-}
-
-function resetStore() {
-  localStorage.setItem(KEYS.recipes, JSON.stringify(seeded(SEED_RECIPES)));
-  localStorage.setItem(KEYS.paints, JSON.stringify(seeded(SEED_PAINTS)));
-  localStorage.setItem(KEYS.recents, JSON.stringify(["ORK-001"]));
-  localStorage.removeItem(KEYS.art);
-  localStorage.setItem(KEYS.schema, String(SCHEMA_VERSION));
 }
