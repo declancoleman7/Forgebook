@@ -21,6 +21,7 @@ const SYNC_KEYS = { lastSync: "forgebook.lastSync" };
 
 function isSignedIn() { return !!(session && session.user); }
 function currentEmail() { return session && session.user ? session.user.email : null; }
+function currentUserId() { return session && session.user ? session.user.id : null; }
 function cloudAvailable() { return !!sb; }
 function lastSyncedAt() { return localStorage.getItem(SYNC_KEYS.lastSync) || null; }
 
@@ -86,12 +87,12 @@ async function initCloud() {
 }
 
 // ---------------------------------------------------------------
-// Auth — email + password. No self-serve sign-up anywhere in this file:
-// the only way an account is ever created is an admin invite from the
-// Supabase dashboard, which lands the person on the password-setup screen
-// (see needsPasswordSetup, above). Combined with public sign-ups disabled in
-// the dashboard, the invite list IS the access control — there's no
-// signup form to find or brute-force.
+// Auth — email + password. Two ways an account gets created: an admin
+// invite from the Supabase dashboard (lands on the password-setup screen,
+// see needsPasswordSetup above), or self-serve sign-up below. Self-serve
+// requires "Enable email signups" AND "Confirm email" both on in the
+// Supabase dashboard's Auth settings — the confirmation link is the only
+// thing standing between this form and anyone with a working email address.
 // ---------------------------------------------------------------
 async function signIn(email, password) {
   if (!sb) return { ok: false, message: "No connection — try again when you're online." };
@@ -103,6 +104,21 @@ async function signIn(email, password) {
     return { ok: false, message: "Incorrect email or password." };
   }
   session = data.session; // don't wait on the auth-state event for this
+  return { ok: true };
+}
+
+// Sets password_set up front (unlike an invite, this account's password
+// isn't a separate step) so a confirmed signup lands straight in the app
+// instead of hitting the invite's password-setup screen.
+async function signUp(email, password) {
+  if (!sb) return { ok: false, message: "No connection — try again when you're online." };
+  const redirect = location.origin + location.pathname;
+  const { error } = await sb.auth.signUp({
+    email: email.trim(),
+    password,
+    options: { data: { password_set: true }, emailRedirectTo: redirect },
+  });
+  if (error) return { ok: false, message: error.message || "Couldn't create that account." };
   return { ok: true };
 }
 
@@ -140,6 +156,7 @@ async function signOutCloud() {
 }
 
 function onSignedIn() {
+  ensureProfile();
   // A brand-new device holds nothing but the seed recipes; there's no point
   // asking to merge those. Only offer if the person has actually made things.
   const mine = getAllRecipeRows().filter((r) => !r.seed && !r.deleted);
@@ -166,6 +183,9 @@ function clearLocalBook() {
   localStorage.setItem(KEYS.paints, JSON.stringify([]));
   localStorage.setItem(KEYS.recents, JSON.stringify([]));
   localStorage.setItem(KEYS.wantToBuy, JSON.stringify([]));
+  localStorage.setItem(KEYS.sharedRecipes, JSON.stringify([]));
+  localStorage.setItem(KEYS.sharedPaints, JSON.stringify([]));
+  localStorage.setItem(KEYS.profiles, JSON.stringify([]));
 }
 
 let pendingMerge = 0; // >0 when we're asking whether to upload a local book
@@ -250,6 +270,110 @@ function toRemoteWant(w, userId) {
 
 function fromRemoteWant(row) {
   return { key: row.paint_key, updatedAt: row.updated_at, deleted: !!row.deleted };
+}
+
+// A shared recipe keeps its author's id — it's a read-only view of someone
+// else's row, never merged into the local book, so there's no local/remote
+// timestamp reconciliation here, just a straight remote -> local mapping.
+function fromRemoteSharedRecipe(row) {
+  return {
+    ...fromRemoteRecipe(row),
+    authorId: row.user_id,
+  };
+}
+
+function fromRemoteSharedPaint(row) {
+  return { ...fromRemotePaint(row), authorId: row.user_id };
+}
+
+function defaultDisplayName(email) {
+  return String(email || "Someone").split("@")[0];
+}
+
+// Every signed-in user needs exactly one row here so their name can show up
+// on anything they share — created lazily on first sign-in rather than via a
+// DB trigger, so it also backfills people invited before this feature shipped.
+async function ensureProfile() {
+  if (!sb || !isSignedIn()) return;
+  const userId = session.user.id;
+  try {
+    let { data, error } = await sb.from("profiles").select("*").eq("user_id", userId).maybeSingle();
+    if (error) throw error;
+    if (!data) {
+      const displayName = defaultDisplayName(currentEmail());
+      const { error: insErr } = await sb.from("profiles").insert({ user_id: userId, display_name: displayName });
+      if (insErr) throw insErr;
+      data = { user_id: userId, display_name: displayName };
+    }
+    // Cache locally too, so the recipe form's "share" toggle can show your
+    // own name immediately rather than waiting on the next full sync.
+    const profiles = readJSON(KEYS.profiles, []);
+    const idx = profiles.findIndex((p) => p.userId === userId);
+    const row = { userId, displayName: data.display_name };
+    if (idx === -1) profiles.push(row); else profiles[idx] = row;
+    save(KEYS.profiles, profiles);
+    if (typeof render === "function") render();
+  } catch (e) {
+    // Non-fatal — worst case, this account's shared recipes show a fallback
+    // author name until the next successful sync tries again.
+  }
+}
+
+async function updateDisplayName(name) {
+  if (!sb || !isSignedIn()) return { ok: false, message: "No connection — try again when you're online." };
+  const trimmed = String(name || "").trim();
+  if (!trimmed) return { ok: false, message: "Enter a name first." };
+  const { error } = await sb.from("profiles").upsert({
+    user_id: session.user.id,
+    display_name: trimmed,
+    updated_at: nowIso(),
+  });
+  if (error) return { ok: false, message: "Couldn't save that — try again." };
+  const profiles = readJSON(KEYS.profiles, []);
+  const idx = profiles.findIndex((p) => p.userId === session.user.id);
+  const row = { userId: session.user.id, displayName: trimmed };
+  if (idx === -1) profiles.push(row); else profiles[idx] = row;
+  save(KEYS.profiles, profiles);
+  return { ok: true };
+}
+
+// Other people's published recipes: fetched read-only, cached separately from
+// the local book, and never pushed anywhere. RLS scopes the paints query to
+// exactly the paints those recipes' steps reference (see schema.sql), so this
+// never pulls in someone else's whole rack.
+async function fetchSharedRecipes(userId) {
+  const { data: recipeRows, error: rErr } = await sb
+    .from("recipes")
+    .select("*")
+    .eq("published", true)
+    .eq("deleted", false)
+    .neq("user_id", userId);
+  if (rErr) throw rErr;
+
+  const sharedRecipes = (recipeRows || []).map(fromRemoteSharedRecipe);
+  const authorIds = [...new Set(sharedRecipes.map((r) => r.authorId))];
+
+  let sharedPaints = [];
+  let profiles = readJSON(KEYS.profiles, []);
+  if (authorIds.length) {
+    const [pRes, profRes] = await Promise.all([
+      sb.from("paints").select("*").in("user_id", authorIds),
+      sb.from("profiles").select("*").in("user_id", authorIds),
+    ]);
+    if (pRes.error) throw pRes.error;
+    if (profRes.error) throw profRes.error;
+    sharedPaints = (pRes.data || []).map(fromRemoteSharedPaint);
+
+    (profRes.data || []).forEach((row) => {
+      const found = profiles.find((p) => p.userId === row.user_id);
+      const mapped = { userId: row.user_id, displayName: row.display_name };
+      if (found) Object.assign(found, mapped); else profiles.push(mapped);
+    });
+  }
+
+  save(KEYS.sharedRecipes, sharedRecipes);
+  save(KEYS.sharedPaints, sharedPaints);
+  save(KEYS.profiles, profiles);
 }
 
 function photoUrl(path) {
@@ -377,6 +501,15 @@ async function syncNow(opts = {}) {
     await syncWants(userId);
   } catch (e) {
     // swallowed on purpose — see comment above
+  }
+
+  // Same deliberate isolation: someone else's shared recipes are a nice-to-have,
+  // not the reason this app exists. A stale/missing profiles or paint_wants
+  // table (schema.sql not yet re-run) shouldn't block anything above.
+  try {
+    await fetchSharedRecipes(userId);
+  } catch (e) {
+    // swallowed on purpose
   }
 
   syncing = false;
