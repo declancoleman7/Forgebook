@@ -1,5 +1,26 @@
 // Forgebook — main app logic (vanilla JS, no framework)
 
+// Applied as the very first thing this script does, before anything else
+// runs, so the chosen theme is on screen as early as this file can manage it.
+// The real fix — no flash at all, even on the very first paint — needs a
+// small inline script in index.html's <head> before the stylesheet link;
+// script tags all currently load at the end of body, so a user who's picked
+// light will still see a brief dark flash on load until that's added.
+if (localStorage.getItem(KEYS.theme) === "light") {
+  document.documentElement.setAttribute("data-theme", "light");
+}
+
+function getThemePref() { return localStorage.getItem(KEYS.theme) === "light" ? "light" : "dark"; }
+function setThemePref(theme) {
+  if (theme === "light") {
+    localStorage.setItem(KEYS.theme, "light");
+    document.documentElement.setAttribute("data-theme", "light");
+  } else {
+    localStorage.removeItem(KEYS.theme);
+    document.documentElement.removeAttribute("data-theme");
+  }
+}
+
 const ICONS = {
   home: '<path d="M3 11l9-8 9 8" /><path d="M5 10v10h14V10" />',
   book: '<path d="M4 4h11a3 3 0 0 1 3 3v13H7a3 3 0 0 1-3-3V4z" /><path d="M18 4v16" />',
@@ -25,7 +46,7 @@ function icon(name, size = 20) {
 }
 
 function emblemSvg(key, size = 24) {
-  return `<svg viewBox="0 0 24 24" width="${size}" height="${size}" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">${emblemPaths(key)}</svg>`;
+  return `<svg viewBox="0 0 24 24" width="${size}" height="${size}" fill="currentColor" stroke="none">${emblemPaths(key)}</svg>`;
 }
 
 const NAV_ITEMS = [
@@ -62,6 +83,11 @@ function getRecipes() { return getAllRecipeRows().filter((r) => !r.deleted); }
 function getPaints() { return getAllPaintRows().filter((p) => !p.deleted); }
 function getRecents() { return readJSON(KEYS.recents, []); }
 function getFactionArt() { return readJSON(KEYS.art, {}); }
+function getGlobalFactionArt() { return readJSON(KEYS.globalArt, {}); }
+
+// Your own personal override (this device only) wins over the admin's
+// shared one, which wins over the built-in mark.
+function resolvedFactionArt(id) { return getFactionArt()[id] || getGlobalFactionArt()[id]; }
 
 // Other users' shared (published) recipes and the paints their steps
 // reference — a read-only cache (see cloud.js fetchSharedRecipes), never
@@ -473,7 +499,7 @@ function viewHome() {
         <div class="section-label">Continue Painting</div>
         <div class="continue-card" data-nav="recipe" data-id="${cont.id}" style="--faction-color:${faction(cont.faction).color}">
           <div class="continue-card__hero ${cont.photo ? "has-photo" : ""}"${cont.photo ? ` style="background-image:url('${cont.photo}')"` : ""}>
-            ${cont.photo ? "" : emblemSvg(faction(cont.faction).emblem, 28)}
+            ${cont.photo ? "" : `<span class="emblem-badge emblem-badge--md">${emblemSvg(faction(cont.faction).emblem, 24)}</span>`}
           </div>
           <div class="continue-card__body">
             <div class="continue-card__eyebrow">${escapeHtml(faction(cont.faction).label)}${cont.unit ? " \u00b7 " + escapeHtml(cont.unit) : ""}</div>
@@ -515,7 +541,7 @@ function recipeCardHtml(r) {
   return `
     <div class="recipe-card" data-nav="recipe" data-id="${r.id}" ${r.authorId ? `data-author="${escapeHtml(r.authorId)}"` : ""} style="--faction-color:${fac.color}">
       <div class="recipe-card__hero ${r.photo ? "has-photo" : ""}"${r.photo ? ` style="background-image:url('${r.photo}')"` : ""}>
-        ${r.photo ? "" : `<span class="recipe-card__emblem" style="color:${fac.color}">${emblemSvg(fac.emblem, 34)}</span>`}
+        ${r.photo ? "" : `<span class="recipe-card__emblem emblem-badge emblem-badge--lg">${emblemSvg(fac.emblem, 26)}</span>`}
         <div class="recipe-card__stack">
           ${stack.map((c) => `<span style="background:${c}"></span>`).join("")}
         </div>
@@ -545,7 +571,7 @@ function recipeCompactRowHtml(r, isActive) {
   return `
     <div class="compact-recipe-row ${isActive ? "is-active" : ""}" data-nav="recipe" data-id="${r.id}" ${r.authorId ? `data-author="${escapeHtml(r.authorId)}"` : ""} style="--faction-color:${fac.color}">
       <div class="compact-recipe-row__thumb ${r.photo ? "has-photo" : ""}"${r.photo ? ` style="background-image:url('${r.photo}')"` : ""}>
-        ${r.photo ? "" : `<span style="color:${fac.color}">${emblemSvg(fac.emblem, 18)}</span>`}
+        ${r.photo ? "" : `<span class="emblem-badge emblem-badge--sm">${emblemSvg(fac.emblem, 16)}</span>`}
       </div>
       <div class="compact-recipe-row__info">
         <div class="compact-recipe-row__name">${escapeHtml(r.name)}</div>
@@ -635,18 +661,30 @@ function emptyStateHtml(iconName, title, sub) {
 // ---------------------------------------------------------------
 function viewFactions() {
   const recipes = getVisibleRecipes();
-  const art = getFactionArt();
+  const art = { ...getGlobalFactionArt(), ...getFactionArt() }; // personal override wins over the admin's shared one
   const q = state.searchQuery.toLowerCase();
 
   const tile = (f) => {
     const n = recipes.filter((r) => r.faction === f.id).length;
+    const hasArt = !!art[f.id];
+    const gradId = `mg-${f.id}`;
+    const allianceClass = `faction-tile--${slug(f.alliance)}`;
+    const mark = (size) => `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="url(#${gradId})" stroke="none" style="color:${f.color}">${emblemPaths(f.emblem)}</svg>`;
+    const icon = hasArt ? "" : `
+      <svg width="0" height="0" style="position:absolute">
+        <defs><linearGradient id="${gradId}" x1="2" y1="2" x2="22" y2="22">
+          <stop offset="0" style="stop-color:color-mix(in srgb, ${f.color} 45%, var(--parchment))"/>
+          <stop offset="0.55" style="stop-color:${f.color}"/>
+          <stop offset="1" style="stop-color:color-mix(in srgb, ${f.color} 60%, black)"/>
+        </linearGradient></defs>
+      </svg>
+      <span class="faction-tile__watermark">${mark(66)}</span>
+      ${mark(48)}`;
     return `
-      <div class="faction-tile" data-nav="faction" data-id="${f.id}" style="--faction-color:${f.color}">
-        <div class="faction-tile__art ${art[f.id] ? "has-art" : ""}"${art[f.id] ? ` style="background-image:url('${art[f.id]}')"` : ""}>
-          ${art[f.id] ? "" : `<span style="color:${f.color}">${emblemSvg(f.emblem, 30)}</span>`}
-        </div>
-        <div class="faction-tile__name">${escapeHtml(f.label)}</div>
-        <div class="faction-tile__count">${n ? n + (n === 1 ? " recipe" : " recipes") : "\u2014"}</div>
+      <div class="faction-tile ${allianceClass}" data-nav="faction" data-id="${f.id}" style="--faction-color:${f.color}" title="${escapeHtml(f.label)}">
+        <div class="faction-tile__rivet tl"></div><div class="faction-tile__rivet tr"></div><div class="faction-tile__rivet bl"></div><div class="faction-tile__rivet br"></div>
+        ${n ? `<div class="faction-tile__count">${n}</div>` : ""}
+        <div class="faction-tile__art ${hasArt ? "has-art" : ""}"${hasArt ? ` style="background-image:url('${art[f.id]}')"` : ""}>${icon}</div>
       </div>
     `;
   };
@@ -683,7 +721,10 @@ function viewFactions() {
 // ---------------------------------------------------------------
 function viewFaction(id) {
   const f = faction(id);
-  const art = getFactionArt()[f.id];
+  const personalArt = getFactionArt()[f.id];
+  const globalArt = getGlobalFactionArt()[f.id];
+  const art = personalArt || globalArt;
+  const admin = isAdmin();
   const { units, general } = unitsForFaction(f.id);
   const total = general + units.reduce((a, u) => a + u.count, 0);
 
@@ -701,12 +742,12 @@ function viewFaction(id) {
       <div class="detail-header">
         <button class="icon-btn" data-nav="factions">${icon("back", 18)}</button>
         <button class="btn btn-ghost btn-sm" data-action="faction-art" data-id="${f.id}">
-          ${icon("image", 14)} ${art ? "Change emblem" : "Add emblem"}
+          ${icon("image", 14)} ${personalArt ? "Change emblem" : "Add emblem"}
         </button>
       </div>
 
       <div class="faction-banner ${art ? "has-art" : ""}"${art ? ` style="background-image:url('${art}')"` : ""} style="--faction-color:${f.color}">
-        ${art ? "" : `<span class="faction-banner__emblem" style="color:${f.color}">${emblemSvg(f.emblem, 64)}</span>`}
+        ${art ? "" : `<span class="faction-banner__emblem emblem-badge emblem-badge--xl">${emblemSvg(f.emblem, 40)}</span>`}
       </div>
       <input type="file" id="faction-art-input" accept="image/*" class="hidden" />
 
@@ -728,7 +769,29 @@ function viewFaction(id) {
           + New recipe for ${escapeHtml(f.label)}
         </button>
       </div>
-      ${art ? `<button class="btn btn-ghost btn-block" data-action="faction-art-clear" data-id="${f.id}">Remove custom emblem</button>` : ""}
+      ${personalArt ? `<button class="btn btn-ghost btn-block" data-action="faction-art-clear" data-id="${f.id}">Remove custom emblem</button>` : ""}
+
+      ${admin ? `
+        <div class="section-label">Admin</div>
+        <div class="settings-group">
+          <div class="settings-row">
+            <div>
+              <div class="settings-row__label">Shared emblem</div>
+              <div class="settings-row__desc">Uploads for every signed-in user, not just this device.</div>
+            </div>
+            <button class="btn btn-ghost btn-sm" data-action="admin-emblem" data-id="${f.id}">${globalArt ? "Replace" : "Upload"}</button>
+          </div>
+          ${globalArt ? `
+          <div class="settings-row">
+            <div>
+              <div class="settings-row__label">Remove shared emblem</div>
+              <div class="settings-row__desc">Everyone goes back to the built-in mark, or their own override if they've set one.</div>
+            </div>
+            <button class="btn btn-danger btn-sm" data-action="admin-emblem-clear" data-id="${f.id}">Remove</button>
+          </div>` : ""}
+        </div>
+        <input type="file" id="admin-emblem-input" accept="image/*" class="hidden" />
+      ` : ""}
     </div>
   `;
 }
@@ -826,7 +889,7 @@ function viewRecipeDetail(id, authorId) {
       </div>
 
       <div class="detail-hero ${r.photo ? "has-photo" : ""}" style="--faction-color:${f.color}${r.photo ? `;background-image:url('${r.photo}')` : ""}">
-        ${r.photo ? "" : `<span style="color:${f.color}">${emblemSvg(f.emblem, 64)}</span>`}
+        ${r.photo ? "" : `<span class="emblem-badge emblem-badge--xl">${emblemSvg(f.emblem, 40)}</span>`}
       </div>
 
       ${idx > -1 && siblings.length > 1 ? `
@@ -1545,6 +1608,19 @@ function viewSettings() {
       <div class="settings-group">
         <div class="settings-row">
           <div>
+            <div class="settings-row__label">Appearance</div>
+            <div class="settings-row__desc">Dark suits painting under a lamp; light holds up in daylight too.</div>
+          </div>
+          <div class="theme-toggle" role="group" aria-label="Theme">
+            <button type="button" class="theme-toggle__btn ${getThemePref() === "dark" ? "is-active" : ""}" data-set-theme="dark">Dark</button>
+            <button type="button" class="theme-toggle__btn ${getThemePref() === "light" ? "is-active" : ""}" data-set-theme="light">Light</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="settings-group">
+        <div class="settings-row">
+          <div>
             <div class="settings-row__label">Install Forgebook</div>
             <div class="settings-row__desc">Add to your home screen for offline, app-like use.</div>
           </div>
@@ -1920,6 +1996,13 @@ document.addEventListener("click", async (e) => {
     return;
   }
 
+  const themeBtn = t("[data-set-theme]");
+  if (themeBtn) {
+    setThemePref(themeBtn.dataset.setTheme);
+    render();
+    return;
+  }
+
   if (t("[data-action='sync-now']")) {
     const res = await syncNow({ full: true });
     showToast(res.ok ? "Synced" : "Couldn't sync \u2014 will retry automatically");
@@ -2025,6 +2108,21 @@ document.addEventListener("click", async (e) => {
     saveFactionArt(art);
     showToast("Custom emblem removed");
     render();
+    return;
+  }
+
+  // --- admin: shared emblem, uploaded once for every user ---
+  const adminEmblem = t("[data-action='admin-emblem']");
+  if (adminEmblem) {
+    document.getElementById("admin-emblem-input").click();
+    return;
+  }
+  const adminEmblemClear = t("[data-action='admin-emblem-clear']");
+  if (adminEmblemClear) {
+    if (!confirm("Remove the shared emblem for this army? Everyone loses it, not just you.")) return;
+    const res = await removeGlobalFactionEmblem(adminEmblemClear.dataset.id);
+    showToast(res.ok ? "Shared emblem removed" : (res.message || "Couldn't remove that"));
+    if (res.ok) render();
     return;
   }
 
@@ -2339,6 +2437,20 @@ document.addEventListener("change", (e) => {
       if (!saveFactionArt(art)) { showToast("Storage is full"); return; }
       showToast("Emblem updated");
       render();
+    });
+    return;
+  }
+
+  if (e.target.id === "admin-emblem-input") {
+    const file = e.target.files[0];
+    if (!file) return;
+    const factionId = state.params.id;
+    downscaleImage(file, 480, async (url) => {
+      if (!url) { showToast("That image could not be read"); return; }
+      showToast("Uploading…");
+      const res = await uploadGlobalFactionEmblem(factionId, url);
+      showToast(res.ok ? "Shared emblem updated for everyone" : (res.message || "Couldn't upload that"));
+      if (res.ok) render();
     });
     return;
   }

@@ -25,6 +25,16 @@ function currentUserId() { return session && session.user ? session.user.id : nu
 function cloudAvailable() { return !!sb; }
 function lastSyncedAt() { return localStorage.getItem(SYNC_KEYS.lastSync) || null; }
 
+// Read from the local profiles cache (kept current by ensureProfile) rather
+// than a live query — this is checked on every render of the faction page,
+// and the real enforcement is server-side RLS regardless, so a client-side
+// cache is fine here: worst case it's a render behind after admin changes.
+function isAdmin() {
+  if (!isSignedIn()) return false;
+  const p = readJSON(KEYS.profiles, []).find((x) => x.userId === currentUserId());
+  return !!(p && p.isAdmin);
+}
+
 // An invited account has a session (from the invite link) but no password of
 // its own yet — that's the signal to show the "set your password" screen
 // instead of the normal app.
@@ -186,6 +196,7 @@ function clearLocalBook() {
   localStorage.setItem(KEYS.sharedRecipes, JSON.stringify([]));
   localStorage.setItem(KEYS.sharedPaints, JSON.stringify([]));
   localStorage.setItem(KEYS.profiles, JSON.stringify([]));
+  localStorage.setItem(KEYS.globalArt, JSON.stringify({}));
 }
 
 let pendingMerge = 0; // >0 when we're asking whether to upload a local book
@@ -309,7 +320,7 @@ async function ensureProfile() {
     // own name immediately rather than waiting on the next full sync.
     const profiles = readJSON(KEYS.profiles, []);
     const idx = profiles.findIndex((p) => p.userId === userId);
-    const row = { userId, displayName: data.display_name };
+    const row = { userId, displayName: data.display_name, isAdmin: !!data.is_admin };
     if (idx === -1) profiles.push(row); else profiles[idx] = row;
     save(KEYS.profiles, profiles);
     if (typeof render === "function") render();
@@ -378,6 +389,63 @@ async function fetchSharedRecipes(userId) {
 
 function photoUrl(path) {
   return `${CONFIG.supabaseUrl}/storage/v1/object/public/${CONFIG.photoBucket}/${path}`;
+}
+
+function factionEmblemUrl(path) {
+  return `${CONFIG.supabaseUrl}/storage/v1/object/public/faction-emblems/${path}`;
+}
+
+// Global, admin-uploaded emblem overrides — visible to every signed-in user,
+// unlike the personal "Change emblem" override (KEYS.art), which stays on
+// one device by design. Read-only for everyone but the admin; enforced
+// server-side (see schema.sql), the isAdmin() checks here are just so the
+// UI doesn't offer an action that would fail.
+async function fetchGlobalFactionEmblems() {
+  const { data, error } = await sb.from("faction_emblems").select("*");
+  if (error) throw error;
+  const map = {};
+  (data || []).forEach((row) => { map[row.faction_id] = factionEmblemUrl(row.image_path); });
+  save(KEYS.globalArt, map);
+}
+
+async function uploadGlobalFactionEmblem(factionId, dataUrl) {
+  if (!sb || !isSignedIn()) return { ok: false, message: "No connection — try again when you're online." };
+  if (!isAdmin()) return { ok: false, message: "Only the admin account can update this for everyone." };
+  try {
+    const blob = await (await fetch(dataUrl)).blob();
+    const path = `${factionId}-${Date.now().toString(36)}.jpg`;
+    const { error: upErr } = await sb.storage
+      .from("faction-emblems")
+      .upload(path, blob, { contentType: "image/jpeg", upsert: true });
+    if (upErr) throw upErr;
+    const { error: dbErr } = await sb.from("faction_emblems").upsert({
+      faction_id: factionId,
+      image_path: path,
+      updated_at: nowIso(),
+      updated_by: session.user.id,
+    });
+    if (dbErr) throw dbErr;
+    const map = readJSON(KEYS.globalArt, {});
+    map[factionId] = factionEmblemUrl(path);
+    save(KEYS.globalArt, map);
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, message: "Couldn't upload that — try again." };
+  }
+}
+
+async function removeGlobalFactionEmblem(factionId) {
+  if (!sb || !isSignedIn() || !isAdmin()) return { ok: false };
+  try {
+    const { error } = await sb.from("faction_emblems").delete().eq("faction_id", factionId);
+    if (error) throw error;
+    const map = readJSON(KEYS.globalArt, {});
+    delete map[factionId];
+    save(KEYS.globalArt, map);
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, message: "Couldn't remove that — try again." };
+  }
 }
 
 // Upload any photo still sitting in localStorage as a base64 data URL, and
@@ -510,6 +578,13 @@ async function syncNow(opts = {}) {
     await fetchSharedRecipes(userId);
   } catch (e) {
     // swallowed on purpose
+  }
+
+  try {
+    await fetchGlobalFactionEmblems();
+  } catch (e) {
+    // swallowed on purpose — a missing faction_emblems table just means no
+    // admin-uploaded emblems show up yet, not a broken sync
   }
 
   syncing = false;
