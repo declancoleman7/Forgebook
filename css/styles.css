@@ -1,34 +1,52 @@
 /* ============================================================
    FORGEBOOK — design tokens
-   Palette drawn from a hobby paint rack, not a generic dark UI:
-   gunmetal/plum void, Retributor-style gold, deep blood accent,
-   parchment text, and faction colours used functionally as
-   wayfinding, not decoration.
+   An instrument for a craft, not a game skin: a graphite (or, in
+   light mode, primed-white) ground, one burnished brass accent used
+   sparingly, and status colour (sage = owned, rust = buy/low) kept
+   deliberately separate from that accent so it means something on
+   its own. Old token NAMES are kept where a new palette maps onto
+   the same role (--gold is now brass, --blood is now rust, etc.) —
+   only the values changed, so every existing var(--x) usage across
+   this file picks up the new palette without being touched.
+
+   Dark is this app's default identity (most of this happens at a
+   desk lamp, not in daylight) — light is an explicit opt-in via
+   Settings, applied through [data-theme="light"] below, not through
+   prefers-color-scheme (an in-app setting shouldn't silently follow
+   the OS chrome).
    ============================================================ */
 :root {
-  --bg-void: #131217;
-  --bg-panel: #1c1a22;
-  --bg-raised: #26232d;
-  --bg-raised-2: #302c38;
-  --line: #332f3b;
-  --line-soft: #262330;
+  --bg-void: #14171a;
+  --bg-panel: #1b1f23;
+  --bg-raised: #242a30;
+  --bg-raised-2: #2d343c;
+  --line: #333a41;
+  --line-soft: #23282d;
 
-  --gold: #c9a227;
-  --gold-bright: #e8c766;
-  --blood: #7a1f2b;
-  --blood-bright: #a8323f;
+  --gold: #b8863f;
+  --gold-bright: #dcae67;
+  --gold-dim: rgba(184, 134, 63, 0.14);
+  --gold-border: rgba(184, 134, 63, 0.32);
 
-  --parchment: #e8e2d0;
-  --parchment-dim: #b9b3a2;
-  --ink: #8a8694;
-  --ink-dim: #625e6b;
+  --blood: #8a4a3a;
+  --blood-bright: #c17358;
+  --blood-dim: rgba(165, 80, 62, 0.16);
+  --blood-border: rgba(165, 80, 62, 0.45);
 
-  --success: #5c7a29;
-  --danger: #a8323f;
+  --parchment: #e9e3d4;
+  --parchment-dim: #c2bcaa;
+  --ink: #9c9587;
+  --ink-dim: #6c6659;
+  --ink-on-accent: #1c1408;
 
-  --font-display: "Cinzel", "DejaVu Serif", serif;
-  --font-body: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  --font-mono: "IBM Plex Mono", "SFMono-Regular", Menlo, monospace;
+  --success: #86a06f;
+  --success-dim: rgba(134, 160, 111, 0.16);
+  --success-border: rgba(134, 160, 111, 0.35);
+  --danger: #a5503e;
+
+  --font-display: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, "Times New Roman", serif;
+  --font-body: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-mono: ui-monospace, "SF Mono", "Cascadia Code", "Segoe UI Mono", Consolas, "Liberation Mono", monospace;
 
   --radius-sm: 6px;
   --radius-md: 12px;
@@ -39,6 +57,38 @@
 
   --nav-h: 64px;
   --topbar-h: 56px;
+}
+
+:root[data-theme="light"] {
+  --bg-void: #f2ede0;
+  --bg-panel: #fffdf7;
+  --bg-raised: #ece4d2;
+  --bg-raised-2: #e1d7c0;
+  --line: #ddd0b3;
+  --line-soft: #e8ddc2;
+
+  --gold: #8a5a22;
+  --gold-bright: #a9752f;
+  --gold-dim: rgba(138, 90, 34, 0.10);
+  --gold-border: rgba(138, 90, 34, 0.32);
+
+  --blood: #8a3d2c;
+  --blood-bright: #a34f3a;
+  --blood-dim: rgba(138, 61, 44, 0.13);
+  --blood-border: rgba(138, 61, 44, 0.4);
+
+  --parchment: #241f15;
+  --parchment-dim: #453d2e;
+  --ink: #6c6350;
+  --ink-dim: #948a72;
+
+  --success: #4c6b39;
+  --success-dim: rgba(76, 107, 57, 0.13);
+  --success-border: rgba(76, 107, 57, 0.38);
+  --danger: #8a3d2c;
+
+  --shadow-card: 0 2px 10px rgba(60, 50, 30, 0.16);
+  --shadow-raised: 0 8px 24px rgba(60, 50, 30, 0.22);
 }
 
 * {
@@ -58,7 +108,7 @@ body {
 
 body {
   background-image:
-    radial-gradient(ellipse 900px 500px at 50% -10%, rgba(201, 162, 39, 0.06), transparent 60%);
+    radial-gradient(ellipse 900px 500px at 50% -10%, var(--gold-dim), transparent 60%);
   background-attachment: fixed;
 }
 
@@ -123,7 +173,7 @@ img {
   align-items: center;
   gap: 12px;
   padding: 0 16px;
-  background: rgba(19, 18, 23, 0.92);
+  background: color-mix(in srgb, var(--bg-void) 92%, transparent);
   backdrop-filter: blur(8px);
   border-bottom: 1px solid var(--line-soft);
 }
@@ -237,7 +287,7 @@ main {
   left: 0;
   right: 0;
   height: var(--nav-h);
-  background: rgba(28, 26, 34, 0.96);
+  background: color-mix(in srgb, var(--bg-panel) 96%, transparent);
   backdrop-filter: blur(10px);
   border-top: 1px solid var(--line-soft);
   display: flex;
@@ -335,7 +385,7 @@ main {
   font-family: var(--font-mono);
   font-size: 10px;
   background: var(--gold);
-  color: #1a1608;
+  color: var(--ink-on-accent);
   border-radius: 999px;
   padding: 1px 6px;
 }
@@ -453,6 +503,29 @@ main {
 .continue-card:hover {
   border-color: var(--gold);
 }
+
+/* Faction emblem, medallion-mounted — a badge, not a flat icon on a flat
+   tile. --faction-color (already set per-element throughout the app for the
+   border-accent convention) tints the ring and glow here too; the ground
+   stays a neutral raised surface so 50-odd factions never turn the UI into
+   confetti. Sits inside whatever photo-capable container already exists
+   (continue-card__hero, recipe-card__hero, etc.) — swapped out entirely,
+   not fought with, once that container's .has-photo/.has-art class takes
+   over the background. */
+.emblem-badge {
+  border-radius: 50%;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: radial-gradient(circle at 32% 28%, color-mix(in srgb, var(--faction-color, var(--gold)) 26%, var(--bg-raised)), var(--bg-raised));
+  border: 1px solid color-mix(in srgb, var(--faction-color, var(--gold)) 45%, var(--line));
+  color: var(--faction-color, var(--gold));
+}
+.emblem-badge--sm { width: 34px; height: 34px; }
+.emblem-badge--md { width: 46px; height: 46px; }
+.emblem-badge--lg { width: 58px; height: 58px; }
+.emblem-badge--xl { width: 92px; height: 92px; }
 
 .continue-card__hero {
   width: 56px;
@@ -1035,10 +1108,10 @@ main {
 }
 
 /* A shared recipe's paint list marks which of its paints are already on
-   your own rack — same gold-tint treatment as an owned paint-library row. */
+   your own rack — sage, not brass: "owned" is a status, not the accent. */
 .paint-row.is-owned {
-  border-color: rgba(201, 162, 39, 0.4);
-  background: linear-gradient(180deg, rgba(201, 162, 39, 0.06), var(--bg-panel));
+  border-color: var(--success-border);
+  background: linear-gradient(180deg, var(--success-dim), var(--bg-panel));
 }
 
 .paint-row__swatch {
@@ -1125,7 +1198,7 @@ main {
 
 .btn-primary {
   background: linear-gradient(155deg, var(--gold-bright), var(--gold));
-  color: #1a1608;
+  color: var(--ink-on-accent);
 }
 
 .btn-primary:hover {
@@ -1357,7 +1430,7 @@ main {
 .difficulty-picker button.is-selected {
   background: var(--gold);
   border-color: var(--gold);
-  color: #1a1608;
+  color: var(--ink-on-accent);
 }
 
 /* Faction select pills in forms */
@@ -1562,7 +1635,7 @@ main {
 
 .lib-filter-seg button.is-active {
   background: var(--gold);
-  color: #1a1608;
+  color: var(--ink-on-accent);
 }
 
 .lib-filter-seg button.is-active .b {
@@ -1599,8 +1672,8 @@ main {
 }
 
 .lib-row.is-owned {
-  border-color: rgba(201, 162, 39, 0.4);
-  background: linear-gradient(180deg, rgba(201, 162, 39, 0.06), var(--bg-panel));
+  border-color: var(--success-border);
+  background: linear-gradient(180deg, var(--success-dim), var(--bg-panel));
 }
 
 .lib-row__info {
@@ -1629,16 +1702,14 @@ main {
   fill: none;
 }
 
-.lib-row__flag.is-wanted.is-on {
-  background: rgba(168, 50, 63, 0.18);
-  border-color: var(--blood-bright, #a8323f);
-  color: var(--blood-bright, #a8323f);
-}
-
+/* Wanted (don't own it yet) and needs-restock (own it, running low) are the
+   same "go buy this" status underneath, so they share rust — kept separate
+   from brass, which is reserved for the app's own accent/actions. */
+.lib-row__flag.is-wanted.is-on,
 .lib-row__flag.is-restock.is-on {
-  background: rgba(201, 162, 39, 0.18);
-  border-color: var(--gold);
-  color: var(--gold-bright);
+  background: var(--blood-dim);
+  border-color: var(--blood-bright);
+  color: var(--blood-bright);
 }
 
 .lib-row__ring {
@@ -1662,9 +1733,9 @@ main {
 
 .lib-row.is-owned .lib-row__ring,
 .lib-row__ring.is-owned {
-  background: var(--gold);
-  border-color: var(--gold);
-  color: #1a1608;
+  background: var(--success);
+  border-color: var(--success);
+  color: var(--ink-on-accent);
 }
 
 /* ============================================================
@@ -1700,6 +1771,30 @@ main {
   font-size: 12px;
   color: var(--ink);
   margin-top: 2px;
+}
+
+.theme-toggle {
+  display: inline-flex;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 3px;
+  gap: 2px;
+  flex-shrink: 0;
+}
+.theme-toggle__btn {
+  border: none;
+  background: transparent;
+  color: var(--ink);
+  font-family: var(--font-body);
+  font-size: 12.5px;
+  padding: 7px 14px;
+  border-radius: 999px;
+  cursor: pointer;
+}
+.theme-toggle__btn.is-active {
+  background: var(--bg-raised);
+  color: var(--gold-bright);
+  font-weight: 600;
 }
 
 /* toast */
@@ -1907,7 +2002,7 @@ main {
 
 .detail-hero.has-photo::before {
   /* keep a subtle bottom fade so the faction bar still reads */
-  background: linear-gradient(to top, rgba(19, 18, 23, 0.45), transparent 45%);
+  background: linear-gradient(to top, color-mix(in srgb, var(--bg-void) 45%, transparent), transparent 45%);
 }
 
 /* Pager under the detail hero */
@@ -2004,15 +2099,41 @@ main {
   margin-bottom: 6px;
 }
 
+/* A banner tile per army — textured ground, a metal-toned mark, corner
+   rivets, a dark nameplate. All procedural (CSS gradients, an inline SVG
+   noise filter, a per-tile gradient built from the faction's own colour) —
+   there's no photographic or licensed imagery in here, only this app's own
+   original marks. Swapped out entirely for custom faction art via
+   .has-art, same as the old flat-tile version did. */
 .faction-tile {
-  background: var(--bg-panel);
-  border: 1px solid var(--line);
+  position: relative;
+  aspect-ratio: 1.2;
   border-radius: var(--radius-md);
-  padding: 12px 8px 10px;
-  text-align: center;
+  overflow: hidden;
   cursor: pointer;
+  background:
+    radial-gradient(circle at 50% 32%, color-mix(in srgb, var(--faction-color, var(--gold)) 40%, var(--bg-raised-2)), color-mix(in srgb, var(--faction-color, var(--gold)) 16%, var(--bg-void)) 78%);
+  border: 1px solid color-mix(in srgb, var(--faction-color, var(--gold)) 55%, var(--line));
+  box-shadow: 0 6px 14px -6px rgba(0, 0, 0, 0.5);
   transition: transform 0.15s ease, border-color 0.15s ease;
-  border-bottom: 2px solid var(--faction-color, var(--line));
+  /* Per-alliance house style — same idea as a real army's own heraldic
+     "field" pattern, not just a colour swap. Overridden per .faction-tile--*
+     modifier below; a bare .faction-tile (no modifier) gets no pattern. */
+  --tile-pattern: none;
+  --tile-pattern-size: auto;
+}
+
+.faction-tile::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background-image:
+    var(--tile-pattern),
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='90' height='90'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  background-size: var(--tile-pattern-size), auto;
+  mix-blend-mode: overlay;
+  opacity: 0.5;
+  pointer-events: none;
 }
 
 .faction-tile:hover {
@@ -2020,33 +2141,78 @@ main {
   border-color: var(--faction-color, var(--gold));
 }
 
+/* Imperium: disciplined, orderly — a fine diagonal hatch */
+.faction-tile--imperium { --tile-pattern: repeating-linear-gradient(45deg, rgba(255,255,255,0.16) 0 1px, transparent 1px 9px); }
+/* Chaos: warped, crossing — a tight woven X */
+.faction-tile--chaos { --tile-pattern: repeating-linear-gradient(45deg, rgba(255,255,255,0.14) 0 1.5px, transparent 1.5px 7px), repeating-linear-gradient(-45deg, rgba(255,255,255,0.14) 0 1.5px, transparent 1.5px 7px); }
+/* Xenos: alien, organic — a scattered scale/dot texture */
+.faction-tile--xenos { --tile-pattern: radial-gradient(circle, rgba(255,255,255,0.22) 1.4px, transparent 1.6px); --tile-pattern-size: 9px 9px; }
+/* Order (AoS): radiant, clean — a crisp square lattice */
+.faction-tile--order { --tile-pattern: repeating-linear-gradient(0deg, rgba(255,255,255,0.15) 0 1px, transparent 1px 11px), repeating-linear-gradient(90deg, rgba(255,255,255,0.15) 0 1px, transparent 1px 11px); }
+/* Death (AoS): sparse, decayed — a wide, faint crossing weave */
+.faction-tile--death { --tile-pattern: repeating-linear-gradient(60deg, rgba(255,255,255,0.13) 0 1px, transparent 1px 13px), repeating-linear-gradient(-60deg, rgba(255,255,255,0.13) 0 1px, transparent 1px 13px); }
+/* Destruction (AoS): crude, blunt — coarse blotchy dots */
+.faction-tile--destruction { --tile-pattern: radial-gradient(circle, rgba(255,255,255,0.24) 2.2px, transparent 2.6px); --tile-pattern-size: 13px 13px; }
+
+.faction-tile__rivet {
+  position: absolute;
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--faction-color, var(--gold)) 55%, var(--ink-dim));
+  box-shadow: 0 1px 1px rgba(0, 0, 0, 0.5);
+  z-index: 1;
+}
+.faction-tile__rivet.tl { top: 5px; left: 5px; }
+.faction-tile__rivet.tr { top: 5px; right: 5px; }
+.faction-tile__rivet.bl { bottom: 5px; left: 5px; }
+.faction-tile__rivet.br { bottom: 5px; right: 5px; }
+
 .faction-tile__art {
-  height: 44px;
+  position: absolute;
+  inset: 0;
   display: flex;
   align-items: center;
   justify-content: center;
-  margin-bottom: 8px;
-  border-radius: var(--radius-sm);
 }
 
 .faction-tile__art.has-art {
-  background-size: cover;
+  background-size: contain;
+  background-repeat: no-repeat;
   background-position: center;
 }
 
-.faction-tile__name {
-  font-family: var(--font-display);
-  font-size: 12px;
-  line-height: 1.25;
-  color: var(--parchment);
+/* A larger, rotated, near-invisible echo of the same mark sat behind the
+   real one — the way an embossed or watermarked seal reads, not a sticker
+   flat on the surface. */
+.faction-tile__watermark {
+  position: absolute;
+  opacity: 0.16;
+  transform: rotate(-10deg) scale(1.15);
+  pointer-events: none;
 }
 
 .faction-tile__count {
+  position: absolute;
+  top: 5px;
+  right: 5px;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.55);
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
   font-family: var(--font-mono);
-  font-size: 10px;
-  color: var(--ink-dim);
-  margin-top: 4px;
+  font-size: 8px;
+  font-weight: 700;
+  color: #fff;
+  z-index: 1;
 }
+
 
 /* Faction detail banner */
 .faction-banner {
@@ -2063,7 +2229,8 @@ main {
 }
 
 .faction-banner.has-art {
-  background-size: cover;
+  background-size: contain;
+  background-repeat: no-repeat;
   background-position: center;
 }
 

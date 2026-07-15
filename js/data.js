@@ -10,30 +10,35 @@
 // stored on your device and never leaves it.
 // ============================================================
 
-// --- Emblems: original geometric marks, 24x24, stroked in the faction colour ---
+// --- Emblems: original heraldic marks, 24x24. Solid filled silhouettes, not
+// thin line-art — a real badge/crest reads as bold shape first, detail
+// second, so that's the priority here too. A couple (spiral, cog's teeth)
+// keep a bold stroke where a fill wouldn't make sense for the motif. Carried
+// through a medallion badge treatment wherever they're shown (see
+// .emblem-badge in styles.css). ---
 const EMBLEMS = {
-  helm: '<path d="M12 3c4 0 6 2.5 6 6v3l-2 2v4a2 2 0 0 1-2 2h-4a2 2 0 0 1-2-2v-4l-2-2V9c0-3.5 2-6 6-6z"/><path d="M9.5 10h1.5M13 10h1.5M12 14v4"/>',
-  chevrons: '<path d="M4 8l8-4 8 4"/><path d="M4 13l8-4 8 4"/><path d="M4 18l8-4 8 4"/>',
-  cog: '<circle cx="12" cy="12" r="4"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M5 5l2 2M17 17l2 2M19 5l-2 2M7 17l-2 2"/>',
-  wings: '<path d="M12 7v11"/><path d="M12 9L4 6l2 5-2 1 8 3"/><path d="M12 9l8-3-2 5 2 1-8 3"/>',
-  spiral: '<path d="M12 12a2 2 0 1 1 2-2 4 4 0 0 1-4 4 6 6 0 0 1-6-6 8 8 0 0 1 8-8"/>',
-  sunburst: '<circle cx="12" cy="12" r="3.5"/><path d="M12 2v4M12 18v4M2 12h4M18 12h4M5 5l3 3M16 16l3 3M19 5l-3 3M8 16l-3 3"/>',
-  fangs: '<path d="M3 7h18"/><path d="M5 7l2 6 2-6M11 7l1 8 1-8M15 7l2 6 2-6"/>',
-  shield: '<path d="M12 3l7 3v5c0 4.5-3 8-7 10-4-2-7-5.5-7-10V6z"/><path d="M12 8v7"/>',
-  crescent: '<path d="M15 3a9 9 0 1 0 5 12A7 7 0 0 1 15 3z"/><path d="M18 4l1.5 1.5L18 7l-1.5-1.5z"/>',
-  flame: '<path d="M12 21c-3.5 0-6-2.4-6-5.6 0-4.4 6-6.4 5-12.4 3 2 7 5 7 12.4 0 3.2-2.5 5.6-6 5.6z"/><path d="M12 21c-1.7 0-3-1.3-3-3 0-2.2 3-3 3-6 1.5 1.5 3 3.8 3 6 0 1.7-1.3 3-3 3z"/>',
-  trefoil: '<circle cx="12" cy="12" r="2"/><path d="M12 10V5M12 10L7 18M12 10l5 8"/><circle cx="12" cy="4.5" r="2.5"/><circle cx="6.5" cy="18.5" r="2.5"/><circle cx="17.5" cy="18.5" r="2.5"/>',
+  helm: '<path fill-rule="evenodd" d="M12 3C15.5 3 18 5.5 18 9V12C18 16.5 15.5 19.5 12 21C8.5 19.5 6 16.5 6 12V9C6 5.5 8.5 3 12 3Z M8.7 10.4H15.3V11.6H8.7Z"/><circle cx="7.4" cy="9.6" r="1"/><circle cx="16.6" cy="9.6" r="1"/>',
+  chevrons: '<path d="M12 3.5L21 7.5V9.5L12 5.5L3 9.5V7.5Z"/><path d="M12 9L21 13V15L12 11L3 15V13Z"/><path d="M12 14.5L21 18.5V20.5L12 16.5L3 20.5V18.5Z"/>',
+  cog: '<path fill-rule="evenodd" d="M12 5A7 7 0 1 0 12.01 5Z M12 9A3 3 0 1 0 12.01 9Z"/><circle cx="12" cy="12" r="1.1"/><path fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" d="M19 12H21M15.5 5.9L16.5 4.2M8.5 5.9L7.5 4.2M5 12H3M8.5 18.1L7.5 19.8M15.5 18.1L16.5 19.8"/>',
+  wings: '<path d="M12 9C12 9 8 6.5 4.5 6C2.5 5.7 1.5 6.3 1.5 6.3C1.5 6.3 2 9.5 4.5 12C6.5 14 9.5 14.5 11 13.8C11.8 13.4 12.2 12.3 12 11.5Z"/><path d="M12 9C12 9 16 6.5 19.5 6C21.5 5.7 22.5 6.3 22.5 6.3C22.5 6.3 22 9.5 19.5 12C17.5 14 14.5 14.5 13 13.8C12.2 13.4 11.8 12.3 12 11.5Z"/><path d="M11.3 20.5C11.3 20.5 10.5 18 12 16C13.5 18 12.7 20.5 12.7 20.5C12.7 20.5 12.4 21 12 21C11.6 21 11.3 20.5 11.3 20.5Z"/>',
+  spiral: '<path fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" d="M12 12L12 8L16 8L16 15L7 15L7 5"/><circle cx="12" cy="12" r="1.3"/>',
+  sunburst: '<path d="M12 2.5L13.1 9.2L16.6 7.4L14.8 10.9L21.5 12L14.8 13.1L16.6 16.6L13.1 14.8L12 21.5L10.9 14.8L7.4 16.6L9.2 13.1L2.5 12L9.2 10.9L7.4 7.4L10.9 9.2Z"/>',
+  fangs: '<path d="M4 6H20V9L18 16L16 9L14 15L12 9L10 16L8 9L6 15L4 9Z"/><path d="M5 9Q2 6 4 2Q6 5 6.5 8.5Z"/><path d="M19 9Q22 6 20 2Q18 5 17.5 8.5Z"/>',
+  shield: '<path fill-rule="evenodd" d="M12 3L18 5.5V11C18 16 15 19.5 12 21.5C9 19.5 6 16 6 11V5.5Z M11.2 7H12.8V10.3H15.4V13H12.8V17H11.2V13H8.6V10.3H11.2Z"/>',
+  crescent: '<path d="M12 2L16 7V17L12 22L8 17V7Z"/>',
+  flame: '<path d="M12 21c-4 0-7-2.6-7-6.2 0-4.8 6.5-7 5.5-13.8 3.5 2.2 8 5.5 8 13.8 0 3.6-2.5 6.2-6.5 6.2z"/>',
+  trefoil: '<circle cx="12" cy="7" r="4.3"/><circle cx="16.3" cy="14.5" r="4.3"/><circle cx="7.7" cy="14.5" r="4.3"/>',
   bolt: '<path d="M13 2L5 13h5l-1 9 8-11h-5z"/>',
-  leaf: '<path d="M12 21c0-8 2-13 8-16 1 8-2 14-8 16z"/><path d="M12 21c0-6-2-10-8-12 0 7 3 11 8 12z"/><path d="M12 21v-6"/>',
-  knot: '<path d="M8 6a4 4 0 0 0 0 8 4 4 0 0 1 0 8"/><path d="M16 6a4 4 0 0 1 0 8 4 4 0 0 0 0 8"/><path d="M4 10h16M4 18h16"/>',
-  hammer: '<path d="M6 5h9l3 3-3 3H6z"/><path d="M11 11v10"/><path d="M8 21h6"/>',
-  bones: '<path d="M6 6a2 2 0 1 1 3 3l6 6a2 2 0 1 1-3 3"/><path d="M18 6a2 2 0 1 0-3 3l-6 6a2 2 0 1 0 3 3"/>',
-  anvil: '<path d="M4 9h13a4 4 0 0 1-4 4H9v3h6v2H5v-2h2v-3a4 4 0 0 1-3-4z"/>',
-  crown: '<path d="M4 18h16"/><path d="M4 18l-1-9 5 4 4-7 4 7 5-4-1 9z"/>',
-  serpent: '<path d="M20 5c-4 0-4 5-8 5S4 5 4 5"/><path d="M4 12c4 0 4 5 8 5s4-5 8-5"/><circle cx="19" cy="19" r="1.5"/>',
-  eye: '<path d="M2 12s4-6 10-6 10 6 10 6-4 6-10 6-10-6-10-6z"/><circle cx="12" cy="12" r="3"/>',
-  tower: '<path d="M6 21V8l3-2V3h6v3l3 2v13z"/><path d="M10 21v-5h4v5"/>',
-  claw: '<path d="M5 3c1 6 3 10 7 12"/><path d="M10 3c0 6 1 10 4 12"/><path d="M15 4c-1 6-1 9 1 11"/><path d="M6 15c2 4 5 6 9 6"/>',
+  leaf: '<path d="M12 21c0-8 2-13 8-16 1 8-2 14-8 16z"/><path d="M12 21c0-6-2-10-8-12 0 7 3 11 8 12z"/>',
+  knot: '<path fill-rule="evenodd" d="M8 5A4.2 4.2 0 1 0 8.01 5Z M8 4A5.2 5.2 0 1 1 7.99 4Z"/><path fill-rule="evenodd" d="M16 12A4.2 4.2 0 1 0 16.01 12Z M16 11A5.2 5.2 0 1 1 15.99 11Z"/><path fill-rule="evenodd" d="M8 19A4.2 4.2 0 1 0 8.01 19Z M8 18A5.2 5.2 0 1 1 7.99 18Z"/>',
+  hammer: '<path d="M5 6L6 4H15L16 6V9L15 11H6L5 9Z"/><path d="M10 11H12.5V20H10Z"/><path d="M7.5 20H15V21.5H7.5Z"/>',
+  bones: '<path d="M4.5 5.2A2 2 0 1 1 6.8 8.2L15.8 17.2A2 2 0 1 1 17.2 18.6L18.8 19.5L19.5 18.8L18.6 17.2A2 2 0 1 1 17.2 15.8L8.2 6.8A2 2 0 1 1 5.2 4.5L4.5 5.2Z"/><path d="M19.5 5.2A2 2 0 1 0 17.2 8.2L8.2 17.2A2 2 0 1 0 6.8 18.6L5.2 19.5L4.5 18.8L5.4 17.2A2 2 0 1 0 6.8 15.8L15.8 6.8A2 2 0 1 0 18.8 4.5L19.5 5.2Z"/>',
+  anvil: '<path d="M4 9H16L20 10L16 11H4Z"/><path d="M9 11H14V15H9Z"/><path d="M6 17H18V18.5H6Z"/>',
+  crown: '<path d="M4 19h16v2H4Z"/><path d="M4 19l-1-9 5 4 4-7 4 7 5-4-1 9z"/>',
+  serpent: '<path d="M4 6C4 6 3.7 8.2 5 9.8C6.3 11.4 9 10.5 9 10.5C9 10.5 11 9.5 12 11C13 9.5 15 10.5 15 10.5C15 10.5 17.7 11.4 19 9.8C20.3 8.2 20 6 20 6C20 6 19.6 8 18 8C16.4 8 15.5 6.5 14 6.5C12.8 6.5 12 8 12 8C12 8 11.2 6.5 10 6.5C8.5 6.5 7.6 8 6 8C4.4 8 4 6 4 6Z"/><path d="M4 18C4 18 3.7 15.8 5 14.2C6.3 12.6 9 13.5 9 13.5C9 13.5 11 14.5 12 13C13 14.5 15 13.5 15 13.5C15 13.5 17.7 12.6 19 14.2C20.3 15.8 20 18 20 18C20 18 19.6 16 18 16C16.4 16 15.5 17.5 14 17.5C12.8 17.5 12 16 12 16C12 16 11.2 17.5 10 17.5C8.5 17.5 7.6 16 6 16C4.4 16 4 18 4 18Z"/>',
+  eye: '<path fill-rule="evenodd" d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7-10-7-10-7z M12 9a3 3 0 1 0 0.01 0Z"/>',
+  tower: '<path d="M6 21V9L6 6H8V9H10.5V6H13.5V9H16V6H18V9L18 21Z"/><path d="M10 21V15H14V21Z" fill="#14171a" fill-opacity="0.55"/>',
+  claw: '<path d="M7 3C6.3 3 5.7 3.6 5.9 4.4L8.5 15C8.7 15.7 9.6 15.9 10.1 15.3C10.4 15 10.5 14.5 10.4 14.1L8.1 3.9C8 3.4 7.5 3 7 3Z"/><path d="M12 3C11.3 3 10.7 3.6 10.8 4.3L12.5 16C12.6 16.7 13.5 17 14.1 16.4C14.4 16.1 14.5 15.6 14.4 15.2L13.1 3.9C13 3.4 12.5 3 12 3Z"/><path d="M17 3.5C16.3 3.7 15.9 4.4 16.2 5.1L19.4 13.6C19.7 14.3 20.6 14.4 21 13.7C21.2 13.4 21.2 12.9 21 12.5L17.9 4.1C17.7 3.6 17.2 3.3 17 3.5Z"/>',
 };
 
 // --- Factions currently in the Games Workshop range ---
@@ -115,7 +120,7 @@ const SYSTEMS = [
 
 const TECHNIQUES = ["Primer", "Base", "Shade", "Layer", "Highlight", "Edge Highlight", "Glaze", "Drybrush", "Wash", "Contrast", "Technical"];
 const PAINT_TYPES = ["Base", "Layer", "Shade", "Contrast", "Dry", "Technical", "Air", "Spray", "Other"];
-const PAINT_BRANDS = ["Citadel", "Vallejo", "Army Painter", "Scale75", "Pro Acryl", "Two Thin Coats", "AK", "Kimera", "Other"];
+const PAINT_BRANDS = ["Citadel", "Vallejo", "Army Painter", "Scale75", "Pro Acryl", "Two Thin Coats", "AK", "Kimera", "Colour Forge", "Other"];
 
 // ============================================================
 // Paint library — a browsable catalogue of real paints, separate from the
@@ -1087,6 +1092,32 @@ const PAINT_LIBRARY = [
   { name: "Scarlet", brand: "Kimera", type: "Kimera Kolors", hex: "#e8241e" },
   { name: "Permanent Yellow", brand: "Kimera", type: "Kimera Kolors", hex: "#f2c60e" },
   { name: "Emerald Green", brand: "Kimera", type: "Kimera Kolors", hex: "#0e7a4e" },
+
+  // --- Colour Forge — Primer Sprays (hex values read from product swatches, not
+  // official codes; the range itself has no further sub-division to preserve) ---
+  { name: "Matt Black", brand: "Colour Forge", type: "Colour Forge Sprays", hex: "#1c1c1c" },
+  { name: "Matt White", brand: "Colour Forge", type: "Colour Forge Sprays", hex: "#ede8dc" },
+  { name: "Standard Grey", brand: "Colour Forge", type: "Colour Forge Sprays", hex: "#8f8f8a" },
+  { name: "Ghoul Grey", brand: "Colour Forge", type: "Colour Forge Sprays", hex: "#a6a494" },
+  { name: "Raven Black", brand: "Colour Forge", type: "Colour Forge Sprays", hex: "#131313" },
+  { name: "Wight Bone", brand: "Colour Forge", type: "Colour Forge Sprays", hex: "#c7bb8e" },
+  { name: "Ossified Earth", brand: "Colour Forge", type: "Colour Forge Sprays", hex: "#b2a06e" },
+  { name: "Desert Sand", brand: "Colour Forge", type: "Colour Forge Sprays", hex: "#c2a565" },
+  { name: "Trench Brown", brand: "Colour Forge", type: "Colour Forge Sprays", hex: "#5a4830" },
+  { name: "Hyrax Brown", brand: "Colour Forge", type: "Colour Forge Sprays", hex: "#3c2e1e" },
+  { name: "Death Rattle Green", brand: "Colour Forge", type: "Colour Forge Sprays", hex: "#6b6a42" },
+  { name: "Salamander Green", brand: "Colour Forge", type: "Colour Forge Sprays", hex: "#2e6b3a" },
+  { name: "Governor Green", brand: "Colour Forge", type: "Colour Forge Sprays", hex: "#1f4a2e" },
+  { name: "Renegade Green", brand: "Colour Forge", type: "Colour Forge Sprays", hex: "#16301f" },
+  { name: "Wolfkin Grey", brand: "Colour Forge", type: "Colour Forge Sprays", hex: "#47526a" },
+  { name: "Republic Blue", brand: "Colour Forge", type: "Colour Forge Sprays", hex: "#2a4a8f" },
+  { name: "Tempest Blue", brand: "Colour Forge", type: "Colour Forge Sprays", hex: "#1c3564" },
+  { name: "Imperial Purple", brand: "Colour Forge", type: "Colour Forge Sprays", hex: "#4a2a68" },
+  { name: "Sanguine Red", brand: "Colour Forge", type: "Colour Forge Sprays", hex: "#7a1c22" },
+  { name: "Convict Orange", brand: "Colour Forge", type: "Colour Forge Sprays", hex: "#c46a28" },
+  { name: "Sunset Yellow", brand: "Colour Forge", type: "Colour Forge Sprays", hex: "#d4a428" },
+  { name: "Steelforge Silver", brand: "Colour Forge", type: "Colour Forge Sprays", hex: "#9a9a9a" },
+  { name: "Gauntlet Gold", brand: "Colour Forge", type: "Colour Forge Sprays", hex: "#a17f28" },
 ];
 
 const GENERAL_UNIT = "\u2014 General \u2014"; // label for faction-wide recipes
@@ -1217,6 +1248,10 @@ const KEYS = {
   paints: "forgebook.paints",
   recents: "forgebook.recents",
   art: "forgebook.factionArt",
+  // Admin-uploaded emblem overrides — shared across every user (see
+  // cloud.js fetchGlobalFactionEmblems), distinct from the per-device
+  // personal override above.
+  globalArt: "forgebook.globalFactionArt",
   schema: "forgebook.schema",
   guest: "forgebook.guest",
   wantToBuy: "forgebook.wantToBuy",
@@ -1226,6 +1261,7 @@ const KEYS = {
   sharedRecipes: "forgebook.sharedRecipes",
   sharedPaints: "forgebook.sharedPaints",
   profiles: "forgebook.profiles",
+  theme: "forgebook.theme", // "light" | absent (absent = dark, the app's default)
 };
 
 function readJSON(key, fallback) {

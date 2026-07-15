@@ -71,8 +71,26 @@ create table if not exists public.paint_wants (
 create table if not exists public.profiles (
   user_id      uuid        not null references auth.users (id) on delete cascade,
   display_name text        not null,
+  is_admin     boolean     not null default false,
   updated_at   timestamptz not null default now(),
   primary key (user_id)
+);
+
+-- Running this again on an existing database: adds the column without
+-- touching anything already there.
+alter table public.profiles add column if not exists is_admin boolean not null default false;
+
+-- ------------------------------------------------------------
+-- Faction emblems — an admin-uploaded image for an army that replaces the
+-- built-in mark for EVERYONE, not just the uploader's own device (unlike the
+-- personal "Change emblem" override, which stays local-only by design).
+-- ------------------------------------------------------------
+create table if not exists public.faction_emblems (
+  faction_id  text        not null,
+  image_path  text        not null,
+  updated_at  timestamptz not null default now(),
+  updated_by  uuid        references auth.users (id) on delete set null,
+  primary key (faction_id)
 );
 
 -- Sync pulls "everything changed since X", so index that.
@@ -141,6 +159,38 @@ create policy "manage own profile" on public.profiles
   using      (auth.uid() = user_id)
   with check (auth.uid() = user_id);
 
+-- RLS alone can't stop a column value being changed within a row you're
+-- otherwise allowed to touch — that needs a column-level grant. Nobody signs
+-- themselves up as admin through the app: is_admin can only ever be flipped
+-- by re-running the bootstrap block below directly in the SQL editor.
+revoke update on public.profiles from authenticated;
+grant update (display_name, updated_at) on public.profiles to authenticated;
+
+-- Faction emblems: readable by anyone signed in, writable only by an admin.
+alter table public.faction_emblems enable row level security;
+
+drop policy if exists "read faction emblems" on public.faction_emblems;
+create policy "read faction emblems" on public.faction_emblems
+  for select
+  using (auth.role() = 'authenticated');
+
+drop policy if exists "admin manage faction emblems" on public.faction_emblems;
+create policy "admin manage faction emblems" on public.faction_emblems
+  for all
+  using      (exists (select 1 from public.profiles p where p.user_id = auth.uid() and p.is_admin))
+  with check (exists (select 1 from public.profiles p where p.user_id = auth.uid() and p.is_admin));
+
+-- ------------------------------------------------------------
+-- Admin bootstrap — run this block (just this block) whenever you want to
+-- grant or move admin. Safe to re-run: it's a no-op if that person is
+-- already an admin, and it only ever touches the one row matched by email.
+-- ------------------------------------------------------------
+insert into public.profiles (user_id, display_name, is_admin)
+select id, split_part(email, '@', 1), true
+from auth.users
+where email = 'declan.coleman@designid.co.uk'
+on conflict (user_id) do update set is_admin = true;
+
 
 -- ============================================================
 -- Photo storage
@@ -182,3 +232,41 @@ drop policy if exists "photos readable" on storage.objects;
 create policy "photos readable" on storage.objects
   for select
   using (bucket_id = 'recipe-photos');
+
+-- ============================================================
+-- Faction emblem storage — same public-bucket approach as recipe photos,
+-- but the write side is admin-only rather than per-user-folder, since these
+-- are shared images meant to replace the built-in mark for every user.
+-- ============================================================
+insert into storage.buckets (id, name, public)
+values ('faction-emblems', 'faction-emblems', true)
+on conflict (id) do nothing;
+
+drop policy if exists "admin faction emblems upload" on storage.objects;
+create policy "admin faction emblems upload" on storage.objects
+  for insert to authenticated
+  with check (
+    bucket_id = 'faction-emblems'
+    and exists (select 1 from public.profiles p where p.user_id = auth.uid() and p.is_admin)
+  );
+
+drop policy if exists "admin faction emblems update" on storage.objects;
+create policy "admin faction emblems update" on storage.objects
+  for update to authenticated
+  using (
+    bucket_id = 'faction-emblems'
+    and exists (select 1 from public.profiles p where p.user_id = auth.uid() and p.is_admin)
+  );
+
+drop policy if exists "admin faction emblems delete" on storage.objects;
+create policy "admin faction emblems delete" on storage.objects
+  for delete to authenticated
+  using (
+    bucket_id = 'faction-emblems'
+    and exists (select 1 from public.profiles p where p.user_id = auth.uid() and p.is_admin)
+  );
+
+drop policy if exists "faction emblems readable" on storage.objects;
+create policy "faction emblems readable" on storage.objects
+  for select
+  using (bucket_id = 'faction-emblems');
