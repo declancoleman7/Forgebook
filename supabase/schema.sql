@@ -32,21 +32,40 @@ create table if not exists public.recipes (
 -- Paint rack
 -- ------------------------------------------------------------
 create table if not exists public.paints (
-  id          text        not null,
-  user_id     uuid        not null references auth.users (id) on delete cascade,
-  name        text        not null,
-  brand       text,
-  hex         text,
-  type        text,
-  updated_at  timestamptz not null default now(),
-  deleted     boolean     not null default false,
+  id            text        not null,
+  user_id       uuid        not null references auth.users (id) on delete cascade,
+  name          text        not null,
+  brand         text,
+  hex           text,
+  type          text,
+  needs_restock boolean     not null default false,
+  updated_at    timestamptz not null default now(),
+  deleted       boolean     not null default false,
   primary key (user_id, id)
 );
 
+-- Running this again on an existing database: adds the column without
+-- touching anything already there.
+alter table public.paints add column if not exists needs_restock boolean not null default false;
+
+-- ------------------------------------------------------------
+-- Paint shopping list (the paint-library "need to buy" flag) — deliberately
+-- separate from paints: these are library paints the user doesn't own yet,
+-- so they have no business in the rack or the recipe-step paint picker.
+-- ------------------------------------------------------------
+create table if not exists public.paint_wants (
+  paint_key   text        not null,
+  user_id     uuid        not null references auth.users (id) on delete cascade,
+  updated_at  timestamptz not null default now(),
+  deleted     boolean     not null default false,
+  primary key (user_id, paint_key)
+);
+
 -- Sync pulls "everything changed since X", so index that.
-create index if not exists recipes_user_updated_idx on public.recipes (user_id, updated_at);
-create index if not exists paints_user_updated_idx  on public.paints  (user_id, updated_at);
-create index if not exists recipes_published_idx    on public.recipes (published) where published;
+create index if not exists recipes_user_updated_idx     on public.recipes     (user_id, updated_at);
+create index if not exists paints_user_updated_idx      on public.paints      (user_id, updated_at);
+create index if not exists paint_wants_user_updated_idx on public.paint_wants (user_id, updated_at);
+create index if not exists recipes_published_idx        on public.recipes     (published) where published;
 
 -- ------------------------------------------------------------
 -- Row Level Security

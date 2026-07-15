@@ -129,15 +129,17 @@ function recipePaints(r) {
   const seen = new Set();
   const out = [];
   (r.steps || []).forEach((s) => {
-    if (seen.has(s.paintId)) return;
-    const p = findPaint(s.paintId);
-    if (p) { seen.add(s.paintId); out.push(p); }
+    [s.paintId, s.mixPaintId].forEach((pid) => {
+      if (!pid || seen.has(pid)) return;
+      const p = findPaint(pid);
+      if (p) { seen.add(pid); out.push(p); }
+    });
   });
   return out;
 }
 
 function paintUsageCount(paintId) {
-  return getRecipes().filter((r) => (r.steps || []).some((s) => s.paintId === paintId)).length;
+  return getRecipes().filter((r) => (r.steps || []).some((s) => s.paintId === paintId || s.mixPaintId === paintId)).length;
 }
 
 // ---------------------------------------------------------------
@@ -148,22 +150,37 @@ function ownedPaintFor(name, brand) {
   return getPaints().find((p) => paintKey(p.name, p.brand) === paintKey(name, brand));
 }
 
-// Device-local only — not part of the paints array, so it doesn't ride along
-// with cloud sync the way owned paints (and their needsRestock flag) do.
-// Keeping it local avoids adding a whole new synced table for what's really
-// just a personal shopping-list checkbox.
-function getWantToBuy() { return readJSON(KEYS.wantToBuy, []); }
+// Synced via its own paint_wants table (see cloud.js's syncWants) rather
+// than living in the paints array — a wanted-but-unowned paint has no
+// business in the rack or the recipe-step paint picker. Tombstoned like
+// recipes/paints so a "no longer want it" toggle propagates instead of the
+// old copy quietly reappearing on another device.
+function getAllWantRows() {
+  const raw = readJSON(KEYS.wantToBuy, []);
+  // Defensive migration: earlier versions stored this as a plain array of
+  // paint keys with no sync metadata. Upgrade any such entries in place.
+  let changed = false;
+  const rows = raw.map((w) => {
+    if (typeof w === "string") { changed = true; return stamp({ key: w, deleted: false }, null); }
+    return w;
+  });
+  if (changed) save(KEYS.wantToBuy, rows);
+  return rows;
+}
+function getWantToBuy() { return getAllWantRows().filter((w) => !w.deleted).map((w) => w.key); }
 function isWanted(name, brand) { return getWantToBuy().includes(paintKey(name, brand)); }
 function toggleWanted(name, brand) {
   const key = paintKey(name, brand);
-  const list = getWantToBuy();
-  const idx = list.indexOf(key);
-  if (idx > -1) list.splice(idx, 1); else list.push(key);
-  save(KEYS.wantToBuy, list);
+  const rows = getAllWantRows();
+  const existing = rows.find((w) => w.key === key);
+  if (existing) { existing.deleted = !existing.deleted; stamp(existing, existing.updatedAt); }
+  else rows.push(stamp({ key, deleted: false }, null));
+  save(KEYS.wantToBuy, rows);
+  queueSync();
 }
 
-// Restock is a flag on an owned paint itself, so — unlike wantToBuy — it
-// rides along with that paint's normal sync.
+// Restock is a flag on an owned paint itself, so it rides along with that
+// paint's normal sync (see toRemotePaint/fromRemotePaint in cloud.js).
 function toggleRestock(id) {
   const rows = getAllPaintRows();
   const p = rows.find((x) => x.id === id);
@@ -801,14 +818,21 @@ function viewRecipeDetail(id) {
         <div class="layer-stack">
           ${g.items.map(({ step: s, num }) => {
             const p = findPaint(s.paintId);
+            const mixP = s.mixPaintId ? findPaint(s.mixPaintId) : null;
+            const swatchBg = mixP
+              ? `linear-gradient(to bottom, ${p ? p.hex : f.color} 50%, ${mixP.hex} 50%)`
+              : (p ? p.hex : f.color);
+            const paintLabel = mixP
+              ? `${p ? escapeHtml(p.name) : "(paint deleted)"} + ${escapeHtml(mixP.name)}${s.mixRatio ? ` (${escapeHtml(s.mixRatio)})` : ""}`
+              : (p ? escapeHtml(p.name) : "(paint deleted)");
             return `
               <div class="layer-stack__row">
                 <div class="layer-stack__num">${num}</div>
-                <div class="layer-stack__swatch" style="background:${p ? p.hex : f.color}"></div>
+                <div class="layer-stack__swatch" style="background:${swatchBg}"></div>
                 <div class="layer-stack__content">
                   <div class="layer-stack__top">
                     <span class="layer-stack__technique">${escapeHtml(s.technique)}</span>
-                    <span class="layer-stack__paint">${p ? escapeHtml(p.name) : "(paint deleted)"}</span>
+                    <span class="layer-stack__paint">${paintLabel}</span>
                   </div>
                   ${s.notes ? `<div class="layer-stack__notes">${escapeHtml(s.notes)}</div>` : ""}
                 </div>
@@ -969,7 +993,11 @@ function viewPaintLibrary() {
   const wantCount = PAINT_LIBRARY.filter(isWantedEntry).length;
   const pct = totalCount ? Math.round((ownedCount / totalCount) * 100) : 0;
 
-  const groups = PAINT_TYPES.filter((t) => entries.some((p) => p.type === t));
+  // Group by each entry's own type/range label (brand-authentic, e.g. "Speedpaint
+  // 2.0" or "Model Color") rather than the fixed Citadel-only PAINT_TYPES list, so
+  // every brand's real ranges show up as their own section.
+  const groups = [];
+  entries.forEach((p) => { if (!groups.includes(p.type)) groups.push(p.type); });
 
   const row = (p) => {
     const owned = ownedPaintFor(p.name, p.brand);
@@ -1003,7 +1031,7 @@ function viewPaintLibrary() {
       <div class="detail-sub" style="margin-bottom:14px">
         Tap a paint to mark it on your rack. Flag ones you're missing for a buy list, or ones
         you own but are running low for a restock. Colours are close approximations, not
-        official swatches — Citadel doesn't publish exact codes.
+        official swatches — manufacturers don't publish exact codes.
       </div>
 
       <div class="lib-progress">
@@ -1114,7 +1142,10 @@ function bindPaintForm(root) {
 let recipeForm = null;
 
 function newStep() {
-  return { id: "ns" + Math.random().toString(36).slice(2, 9), technique: TECHNIQUES[0], paintId: "", notes: "", area: "" };
+  // mixPaintId is undefined (not "") when there's no mix at all — that's
+  // what tells the form whether to show the "+ Mix in a second paint"
+  // button or the expanded second-paint picker.
+  return { id: "ns" + Math.random().toString(36).slice(2, 9), technique: TECHNIQUES[0], paintId: "", notes: "", area: "", mixPaintId: undefined, mixRatio: "" };
 }
 
 function initRecipeForm(existing, presetFaction, presetUnit) {
@@ -1237,6 +1268,17 @@ function viewRecipeForm(isEdit) {
               <button type="button" class="btn btn-ghost btn-sm" data-action="quick-paint" data-step-id="${s.id}">+ New</button>
             </div>
           </div>
+          ${s.mixPaintId !== undefined ? `
+            <div class="field" style="margin-bottom:10px;">
+              <label>Mixed with <span class="label-hint">a second paint, blended with the one above</span></label>
+              <div class="paint-pick-row">
+                <span class="paint-pick-row__swatch" data-swatch-for="${s.id}-mix" style="background:${(findPaint(s.mixPaintId) || {}).hex || "transparent"}"></span>
+                <select data-step-field="mixPaintId" data-step-id="${s.id}">${paintOptionsHtml(s.mixPaintId)}</select>
+                <button type="button" class="btn btn-ghost btn-sm" data-action="remove-mix" data-step-id="${s.id}">Remove</button>
+              </div>
+              <input type="text" data-step-field="mixRatio" data-step-id="${s.id}" value="${escapeHtml(s.mixRatio || "")}" placeholder="Ratio, e.g. 1:1" style="margin-top:8px" />
+            </div>
+          ` : `<button type="button" class="repeater-add" style="margin:0 0 10px" data-action="add-mix" data-step-id="${s.id}">+ Mix in a second paint</button>`}
           <div class="field" style="margin-bottom:10px;">
             <label>Group <span class="label-hint">optional — e.g. Armour, Base, Trim</span></label>
             <input type="text" data-step-field="area" data-step-id="${s.id}" list="area-suggestions" value="${escapeHtml(s.area || "")}" placeholder="e.g. Armour" />
@@ -1280,10 +1322,11 @@ function bindRecipeForm(root) {
       const step = recipeForm.steps.find((s) => s.id === e.target.dataset.stepId);
       if (!step) return;
       step[e.target.dataset.stepField] = e.target.value;
-      if (e.target.dataset.stepField === "paintId") {
+      if (e.target.dataset.stepField === "paintId" || e.target.dataset.stepField === "mixPaintId") {
         // update the swatch beside the picker without a full re-render
-        const sw = root.querySelector(`[data-swatch-for="${step.id}"]`);
-        const p = findPaint(step.paintId);
+        const isMix = e.target.dataset.stepField === "mixPaintId";
+        const sw = root.querySelector(`[data-swatch-for="${step.id}${isMix ? "-mix" : ""}"]`);
+        const p = findPaint(isMix ? step.mixPaintId : step.paintId);
         if (sw) sw.style.background = p ? p.hex : "transparent";
       }
     };
@@ -1861,6 +1904,20 @@ document.addEventListener("click", async (e) => {
 
   const photoRemove = t("[data-action='photo-remove']");
   if (photoRemove) { recipeForm.photo = null; render(); return; }
+
+  const addMix = t("[data-action='add-mix']");
+  if (addMix) {
+    const step = recipeForm.steps.find((s) => s.id === addMix.dataset.stepId);
+    if (step) { step.mixPaintId = ""; step.mixRatio = step.mixRatio || "1:1"; render(); }
+    return;
+  }
+
+  const removeMix = t("[data-action='remove-mix']");
+  if (removeMix) {
+    const step = recipeForm.steps.find((s) => s.id === removeMix.dataset.stepId);
+    if (step) { step.mixPaintId = undefined; step.mixRatio = ""; render(); }
+    return;
+  }
 
   // Add a paint to the rack without losing the half-written recipe
   const quickPaint = t("[data-action='quick-paint']");
