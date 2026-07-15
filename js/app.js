@@ -47,6 +47,7 @@ let state = {
   searchQuery: "",
   paintLibFilter: "all", // "all" | "owned" | "want" — Paint Library ownership filter
   paintLibBrand: null, // null = all brands
+  includeShared: true, // whether other users' shared recipes appear in lists/browsing
 };
 
 // ---------------------------------------------------------------
@@ -61,6 +62,37 @@ function getRecipes() { return getAllRecipeRows().filter((r) => !r.deleted); }
 function getPaints() { return getAllPaintRows().filter((p) => !p.deleted); }
 function getRecents() { return readJSON(KEYS.recents, []); }
 function getFactionArt() { return readJSON(KEYS.art, {}); }
+
+// Other users' shared (published) recipes and the paints their steps
+// reference — a read-only cache (see cloud.js fetchSharedRecipes), never
+// merged into the local book and never pushed back up.
+function getSharedRecipes() { return readJSON(KEYS.sharedRecipes, []); }
+function getSharedPaints() { return readJSON(KEYS.sharedPaints, []); }
+function getProfiles() { return readJSON(KEYS.profiles, []); }
+
+function authorName(userId) {
+  const p = getProfiles().find((x) => x.userId === userId);
+  return (p && p.displayName) || "Someone";
+}
+
+// Own recipes plus (when the shared toggle is on) everyone else's shared
+// ones — this is what every browsing screen (Recipes list, Armies, Units)
+// reads from, so a shared recipe slots into the same faction/unit hierarchy
+// as your own. The Home screen deliberately does NOT use this — it's a
+// personal dashboard, not a browse screen.
+function getVisibleRecipes() {
+  return state.includeShared ? getRecipes().concat(getSharedRecipes()) : getRecipes();
+}
+
+// A recipe step's paintId is only unique within its own author's rack (two
+// users' paints can share an id, e.g. from identical seed data), so a shared
+// recipe's paints must always be looked up against that author's cache, never
+// the current user's own rack.
+function resolvePaintFor(recipe, paintId) {
+  if (!paintId) return null;
+  if (recipe.authorId) return getSharedPaints().find((p) => p.authorId === recipe.authorId && p.id === paintId) || null;
+  return findPaint(paintId) || null;
+}
 
 function save(key, value) {
   try {
@@ -121,7 +153,13 @@ function pushRecent(id) {
   save(KEYS.recents, recents.slice(0, 8));
 }
 
-function findRecipe(id) { return getRecipes().find((r) => r.id === id); }
+// authorId disambiguates a shared recipe from an own one with the same id —
+// recipe ids are only unique per-user, so two authors' seed data (or two
+// independently-created recipes) can collide on the same id string.
+function findRecipe(id, authorId) {
+  if (authorId) return getSharedRecipes().find((r) => r.id === id && r.authorId === authorId);
+  return getRecipes().find((r) => r.id === id);
+}
 function findPaint(id) { return getPaints().find((p) => p.id === id); }
 
 // Every distinct paint used by a recipe, in the order it's first used.
@@ -131,7 +169,7 @@ function recipePaints(r) {
   (r.steps || []).forEach((s) => {
     [s.paintId, s.mixPaintId].forEach((pid) => {
       if (!pid || seen.has(pid)) return;
-      const p = findPaint(pid);
+      const p = resolvePaintFor(r, pid);
       if (p) { seen.add(pid); out.push(p); }
     });
   });
@@ -191,8 +229,10 @@ function toggleRestock(id) {
 }
 
 // Units that actually have recipes in a faction, plus the General bucket.
+// Includes shared recipes (when the toggle is on) so someone else's recipe
+// for a unit you've never recorded still slots in as its own row.
 function unitsForFaction(facId) {
-  const recipes = getRecipes().filter((r) => r.faction === facId);
+  const recipes = getVisibleRecipes().filter((r) => r.faction === facId);
   const map = new Map();
   let general = 0;
   recipes.forEach((r) => {
@@ -205,9 +245,10 @@ function unitsForFaction(facId) {
   return { units, general };
 }
 
-// Every unit name the user has ever typed, for the form's autocomplete.
+// Every unit name anyone's typed (yours or a shared recipe's), for the
+// form's autocomplete.
 function allUnitNames() {
-  return [...new Set(getRecipes().map((r) => r.unit).filter(Boolean))].sort();
+  return [...new Set(getVisibleRecipes().map((r) => r.unit).filter(Boolean))].sort();
 }
 
 // ---------------------------------------------------------------
@@ -308,7 +349,10 @@ function navigate(route, params = {}) {
 }
 
 function buildHash(route, p) {
-  if (route === "recipe") return `#/recipe/${p.id}${p.edit ? "/edit" : ""}`;
+  // A shared recipe's id is only unique per-author, not globally, so its
+  // author has to ride along in the URL to disambiguate — never paired with
+  // /edit, since shared recipes are view-only.
+  if (route === "recipe") return `#/recipe/${p.id}${p.authorId ? "/by/" + encodeURIComponent(p.authorId) : ""}${p.edit ? "/edit" : ""}`;
   if (route === "faction") return `#/faction/${p.id}`;
   if (route === "unit") return `#/faction/${p.id}/unit/${p.unit === null ? "_general" : slug(p.unit)}`;
   if (route === "paint") return `#/paint/${p.id}`;
@@ -320,7 +364,11 @@ function parseHash() {
   if (!parts.length) return { route: "home", params: {} };
 
   if (parts[0] === "recipe" && parts[1]) {
-    return { route: "recipe", params: { id: decodeURIComponent(parts[1]), edit: parts[2] === "edit" } };
+    const id = decodeURIComponent(parts[1]);
+    if (parts[2] === "by" && parts[3]) {
+      return { route: "recipe", params: { id, authorId: decodeURIComponent(parts[3]), edit: false } };
+    }
+    return { route: "recipe", params: { id, edit: parts[2] === "edit" } };
   }
   if (parts[0] === "faction" && parts[1]) {
     const facId = decodeURIComponent(parts[1]);
@@ -358,7 +406,7 @@ window.addEventListener("hashchange", () => {
 // screen and the order you swipe through on a recipe page.
 // ---------------------------------------------------------------
 function getFilteredRecipes() {
-  let recipes = getRecipes();
+  let recipes = getVisibleRecipes();
   if (state.factionFilter) recipes = recipes.filter((r) => r.faction === state.factionFilter);
   if (state.unitFilter !== undefined) {
     recipes = recipes.filter((r) => (r.unit || null) === state.unitFilter);
@@ -400,12 +448,12 @@ let lastRenderKey = null;
 
 function swipeTo(dir) {
   const siblings = getFilteredRecipes();
-  const idx = siblings.findIndex((r) => r.id === state.params.id);
+  const idx = siblings.findIndex((r) => r.id === state.params.id && (r.authorId || null) === (state.params.authorId || null));
   if (idx === -1) return false;
   const target = siblings[idx + dir];
   if (!target) return false;
   swipeDirection = dir === 1 ? "left" : "right";
-  navigate("recipe", { id: target.id });
+  navigate("recipe", { id: target.id, authorId: target.authorId });
   return true;
 }
 
@@ -414,7 +462,7 @@ function swipeTo(dir) {
 // ---------------------------------------------------------------
 function viewHome() {
   const recipes = getRecipes();
-  const recents = getRecents().map(findRecipe).filter(Boolean);
+  const recents = getRecents().map((id) => findRecipe(id)).filter(Boolean);
   const cont = recents[0] || recipes[0];
   const recentList = recents.slice(0, 4);
   const armies = [...new Set(recipes.map((r) => r.faction))];
@@ -461,11 +509,11 @@ function viewHome() {
 function recipeCardHtml(r) {
   const fac = faction(r.faction);
   const stack = (r.steps || []).slice(0, 6).map((s) => {
-    const p = findPaint(s.paintId);
+    const p = resolvePaintFor(r, s.paintId);
     return p ? p.hex : fac.color;
   });
   return `
-    <div class="recipe-card" data-nav="recipe" data-id="${r.id}" style="--faction-color:${fac.color}">
+    <div class="recipe-card" data-nav="recipe" data-id="${r.id}" ${r.authorId ? `data-author="${escapeHtml(r.authorId)}"` : ""} style="--faction-color:${fac.color}">
       <div class="recipe-card__hero ${r.photo ? "has-photo" : ""}"${r.photo ? ` style="background-image:url('${r.photo}')"` : ""}>
         ${r.photo ? "" : `<span class="recipe-card__emblem" style="color:${fac.color}">${emblemSvg(fac.emblem, 34)}</span>`}
         <div class="recipe-card__stack">
@@ -479,6 +527,7 @@ function recipeCardHtml(r) {
           ${difficultyDots(r.difficulty || 1)}
           <span class="recipe-card__steps">${(r.steps || []).length} steps</span>
         </div>
+        ${r.authorId ? `<div class="recipe-card__author">${icon("book", 11)} ${escapeHtml(authorName(r.authorId))}</div>` : ""}
       </div>
     </div>
   `;
@@ -490,17 +539,17 @@ function recipeCardHtml(r) {
 function recipeCompactRowHtml(r, isActive) {
   const fac = faction(r.faction);
   const stack = (r.steps || []).slice(0, 5).map((s) => {
-    const p = findPaint(s.paintId);
+    const p = resolvePaintFor(r, s.paintId);
     return p ? p.hex : fac.color;
   });
   return `
-    <div class="compact-recipe-row ${isActive ? "is-active" : ""}" data-nav="recipe" data-id="${r.id}" style="--faction-color:${fac.color}">
+    <div class="compact-recipe-row ${isActive ? "is-active" : ""}" data-nav="recipe" data-id="${r.id}" ${r.authorId ? `data-author="${escapeHtml(r.authorId)}"` : ""} style="--faction-color:${fac.color}">
       <div class="compact-recipe-row__thumb ${r.photo ? "has-photo" : ""}"${r.photo ? ` style="background-image:url('${r.photo}')"` : ""}>
         ${r.photo ? "" : `<span style="color:${fac.color}">${emblemSvg(fac.emblem, 18)}</span>`}
       </div>
       <div class="compact-recipe-row__info">
         <div class="compact-recipe-row__name">${escapeHtml(r.name)}</div>
-        <div class="compact-recipe-row__meta">${escapeHtml(fac.label)}${r.unit ? " · " + escapeHtml(r.unit) : ""}</div>
+        <div class="compact-recipe-row__meta">${escapeHtml(fac.label)}${r.unit ? " · " + escapeHtml(r.unit) : ""}${r.authorId ? " · " + escapeHtml(authorName(r.authorId)) : ""}</div>
         <div class="compact-recipe-row__stack">${stack.map((c) => `<span style="background:${c}"></span>`).join("")}</div>
       </div>
     </div>`;
@@ -536,6 +585,14 @@ function recipeFilterOverlayHtml(used) {
           <button type="button" class="icon-btn" data-action="close-recipe-filters" aria-label="Close">${icon("back", 16)}</button>
         </div>
         <div class="filter-overlay__body">
+          ${getSharedRecipes().length ? `
+          <div class="section-label">Shared recipes</div>
+          <div class="filter-toggle-row">
+            <div class="faction-chip ${state.includeShared ? "is-active" : ""}" data-action="toggle-shared-filter">
+              ${icon("book", 13)} Show recipes shared by others
+            </div>
+          </div>
+          ` : ""}
           <div class="section-label">Army</div>
           <div class="filter-toggle-row">
             ${used.map((id) => {
@@ -577,7 +634,7 @@ function emptyStateHtml(iconName, title, sub) {
 // View: Factions (browse all armies)
 // ---------------------------------------------------------------
 function viewFactions() {
-  const recipes = getRecipes();
+  const recipes = getVisibleRecipes();
   const art = getFactionArt();
   const q = state.searchQuery.toLowerCase();
 
@@ -708,7 +765,7 @@ function viewUnit(facId, unit) {
 function viewRecipes() {
   state.unitFilter = undefined; // the all-recipes screen ignores unit scoping
   const recipes = getFilteredRecipes();
-  const used = [...new Set(getRecipes().map((r) => r.faction))];
+  const used = [...new Set(getVisibleRecipes().map((r) => r.faction))];
   const filterTrigger = recipeFilterTriggerHtml();
   const noMatch = emptyStateHtml("search", "No matches", "Try different filters or a different search term.");
 
@@ -745,25 +802,27 @@ function viewRecipes() {
 // ---------------------------------------------------------------
 // View: Recipe detail
 // ---------------------------------------------------------------
-function viewRecipeDetail(id) {
-  const r = findRecipe(id);
+function viewRecipeDetail(id, authorId) {
+  const r = findRecipe(id, authorId);
   if (!r) return emptyStateHtml("search", "Recipe not found", "It may have been deleted.");
-  pushRecent(id);
+  const isShared = !!r.authorId;
+  if (!isShared) pushRecent(id); // shared recipes are someone else's \u2014 not "recently painted" by you
   const f = faction(r.faction);
   const paints = recipePaints(r);
 
   const siblings = getFilteredRecipes();
-  const idx = siblings.findIndex((s) => s.id === r.id);
+  const idx = siblings.findIndex((s) => s.id === r.id && (s.authorId || null) === (r.authorId || null));
   const swipeCls = swipeDirection === "left" ? "swipe-in-left" : swipeDirection === "right" ? "swipe-in-right" : "";
 
   const detailHtml = `
     <div class="page-enter ${swipeCls}" data-swipe-page>
       <div class="detail-header">
         <button class="icon-btn" data-nav="recipes">${icon("back", 18)}</button>
+        ${isShared ? "" : `
         <div style="display:flex; gap:8px;">
           <button class="icon-btn" data-nav="recipe" data-id="${r.id}" data-edit="1">${icon("edit", 16)}</button>
           <button class="icon-btn" data-action="delete-recipe" data-id="${r.id}">${icon("trash", 16)}</button>
-        </div>
+        </div>`}
       </div>
 
       <div class="detail-hero ${r.photo ? "has-photo" : ""}" style="--faction-color:${f.color}${r.photo ? `;background-image:url('${r.photo}')` : ""}">
@@ -783,6 +842,7 @@ function viewRecipeDetail(id) {
         <span data-open-unit="${r.unit ? escapeHtml(r.unit) : "_general"}" data-faction="${f.id}">${escapeHtml(r.unit || "General")}</span>
       </div>
       <div class="detail-title">${escapeHtml(r.name)}</div>
+      ${isShared ? `<div class="shared-badge">${icon("book", 12)} Shared by ${escapeHtml(authorName(r.authorId))}</div>` : ""}
       <div class="metastrip">
         <div class="metastrip__cell">
           <div class="metastrip__n">${difficultyDots(r.difficulty || 1)}</div>
@@ -801,7 +861,7 @@ function viewRecipeDetail(id) {
       <div class="section-label">Paints Used</div>
       <div class="paint-list">
         ${paints.length ? paints.map((p) => `
-          <div class="paint-row" data-nav="paint" data-id="${p.id}">
+          <div class="paint-row" ${isShared ? "" : `data-nav="paint" data-id="${p.id}"`}>
             <div class="paint-row__swatch" style="background:${p.hex}"></div>
             <div>
               <div class="paint-row__name">${escapeHtml(p.name)}</div>
@@ -817,8 +877,8 @@ function viewRecipeDetail(id) {
         ${g.area ? `<div class="grouphead">${escapeHtml(g.area)}</div>` : ""}
         <div class="layer-stack">
           ${g.items.map(({ step: s, num }) => {
-            const p = findPaint(s.paintId);
-            const mixP = s.mixPaintId ? findPaint(s.mixPaintId) : null;
+            const p = resolvePaintFor(r, s.paintId);
+            const mixP = s.mixPaintId ? resolvePaintFor(r, s.mixPaintId) : null;
             const swatchBg = mixP
               ? `linear-gradient(to bottom, ${p ? p.hex : f.color} 50%, ${mixP.hex} 50%)`
               : (p ? p.hex : f.color);
@@ -856,7 +916,7 @@ function viewRecipeDetail(id) {
   return `
     <div class="recipe-master">
       <div class="recipe-master__list">
-        ${siblings.map((s) => recipeCompactRowHtml(s, s.id === r.id)).join("")}
+        ${siblings.map((s) => recipeCompactRowHtml(s, s.id === r.id && (s.authorId || null) === (r.authorId || null))).join("")}
       </div>
       <div class="recipe-master__detail">
         ${detailHtml}
@@ -1160,6 +1220,7 @@ function initRecipeForm(existing, presetFaction, presetUnit) {
         photo: null,
         steps: [newStep()],
         notes: "",
+        published: false,
       };
   if (recipeForm.unit === null) recipeForm.unit = "";
 }
@@ -1228,6 +1289,19 @@ function viewRecipeForm(isEdit) {
           ).join("")}
         </div>
       </div>
+
+      ${isSignedIn() ? `
+      <div class="field">
+        <label>Sharing</label>
+        <div class="share-toggle ${recipeForm.published ? "is-on" : ""}" data-action="toggle-published">
+          <div class="share-toggle__text">
+            <strong>Share this recipe</strong>
+            <span>Visible to everyone else in Forgebook, listed as by ${escapeHtml(authorName(currentUserId()))} under its army and unit.</span>
+          </div>
+          <div class="share-toggle__switch"><i></i></div>
+        </div>
+      </div>
+      ` : ""}
 
       <div class="field">
         <label>Photo of the finished mini <span class="label-hint">optional</span></label>
@@ -1338,7 +1412,45 @@ function bindRecipeForm(root) {
 // ---------------------------------------------------------------
 // Shared by the boot-time gate and this signed-out Settings block, so the
 // two never drift out of sync on copy or on which disclaimers get shown.
+// Three states: sign in, create an account, or "check your email" after a
+// signup \u2014 the last one replaces the fields entirely rather than sitting
+// alongside them, since there's nothing left to do here until that link is
+// clicked (email confirmation is required before the account can sign in).
 function authFormHtml() {
+  if (authSignupSent) {
+    return `
+      <div class="empty-state__sub" style="padding:0">
+        Check <strong>${escapeHtml(authSignupSent)}</strong> for a confirmation link. Once you click it,
+        come back here and sign in.
+      </div>
+      <button type="button" class="btn btn-ghost btn-sm" data-action="auth-mode-signin" style="margin-top:10px">Back to sign in</button>
+    `;
+  }
+
+  if (authMode === "signup") {
+    return `
+      <div class="field" style="margin-bottom:10px">
+        <label>Email</label>
+        <input type="email" id="signin-email" placeholder="you@example.com" autocomplete="email" />
+      </div>
+      <div class="field" style="margin-bottom:10px">
+        <label>Password</label>
+        <input type="password" id="new-password" placeholder="At least 8 characters" autocomplete="new-password" />
+      </div>
+      <div class="field" style="margin-bottom:10px">
+        <label>Confirm password</label>
+        <input type="password" id="new-password-confirm" placeholder="Type it again" autocomplete="new-password" />
+      </div>
+      <button class="btn btn-primary btn-block" data-action="sign-up" ${cloudAvailable() ? "" : "disabled"}>Create account</button>
+      <div class="settings-row__desc" style="margin-top:10px">
+        ${cloudAvailable()
+          ? "You'll get an email with a confirmation link \u2014 you can't sign in until you click it."
+          : "You're offline, so account creation isn't available right now."}
+      </div>
+      <button type="button" class="btn btn-ghost btn-sm" data-action="auth-mode-signin" style="margin-top:8px">Already have an account? Sign in</button>
+    `;
+  }
+
   return `
     <div class="field" style="margin-bottom:10px">
       <label>Email</label>
@@ -1352,8 +1464,9 @@ function authFormHtml() {
     <button type="button" class="btn btn-ghost btn-sm" data-action="forgot-password" style="margin-top:8px">Forgot password?</button>
     <div class="settings-row__desc" style="margin-top:10px">
       ${cloudAvailable()
-        ? "Forgebook is invite only \u2014 there's no sign-up form. If you've accepted an invite and set a password, sign in above."
+        ? "New here?"
         : "You're offline, so sign-in isn't available right now. The app works fine without it."}
+      ${cloudAvailable() ? `<button type="button" class="btn btn-ghost btn-sm" data-action="auth-mode-signup" style="margin-left:6px">Create an account</button>` : ""}
     </div>
   `;
 }
@@ -1372,6 +1485,14 @@ function viewSettings() {
               <div class="settings-row__desc">${escapeHtml(syncStatusLabel() || "")}</div>
             </div>
             <button class="btn btn-ghost btn-sm" data-action="sync-now" ${syncing ? "disabled" : ""}>Sync now</button>
+          </div>
+          <div class="settings-row" style="display:block">
+            <div class="settings-row__label">Display name</div>
+            <div class="settings-row__desc" style="margin-bottom:10px">Shown as the author on any recipe you share.</div>
+            <div class="field" style="display:flex; gap:8px; align-items:center; margin-bottom:0">
+              <input type="text" id="display-name-input" value="${escapeHtml(authorName(currentUserId()))}" placeholder="e.g. ${escapeHtml(defaultDisplayName(currentEmail()))}" />
+              <button class="btn btn-ghost btn-sm" data-action="save-display-name">Save</button>
+            </div>
           </div>
           <div class="settings-row">
             <div>
@@ -1559,7 +1680,7 @@ function render() {
     if (!recipeForm || recipeForm.id !== params.id) initRecipeForm(findRecipe(params.id));
     html = viewRecipeForm(true);
     showFab = false;
-  } else if (route === "recipe") { html = viewRecipeDetail(params.id); showFab = false; }
+  } else if (route === "recipe") { html = viewRecipeDetail(params.id, params.authorId); showFab = false; }
   else if (route === "recipe-new") {
     if (!recipeForm || recipeForm.id !== null) {
       // Tapped + while browsing a unit? Start the recipe already scoped to it.
@@ -1664,6 +1785,8 @@ let authEmail = "";
 let authPassword = "";
 let authNewPassword = "";
 let authNewPasswordConfirm = "";
+let authMode = "signin"; // "signin" | "signup" — which fields authFormHtml() shows
+let authSignupSent = null; // the email a confirmation link was just sent to, or null
 let passwordScreenMode = null; // "setup" | "recovery" while a password screen is showing
 let appBooted = false; // false while the boot splash, gate, or a password screen is showing
 
@@ -1706,6 +1829,29 @@ document.addEventListener("click", async (e) => {
     showToast("Sending\u2026");
     const res = await requestPasswordReset(email);
     showToast(res.message);
+    return;
+  }
+
+  if (t("[data-action='auth-mode-signup']")) { authMode = "signup"; authSignupSent = null; render(); return; }
+  if (t("[data-action='auth-mode-signin']")) {
+    authMode = "signin"; authSignupSent = null;
+    authNewPassword = ""; authNewPasswordConfirm = "";
+    render();
+    return;
+  }
+
+  if (t("[data-action='sign-up']")) {
+    const email = (authEmail || "").trim();
+    const pw = authNewPassword || "";
+    const pw2 = authNewPasswordConfirm || "";
+    if (!email || !email.includes("@")) { showToast("Enter your email"); return; }
+    if (pw.length < 8) { showToast("Use at least 8 characters"); return; }
+    if (pw !== pw2) { showToast("Passwords don't match"); return; }
+    const res = await signUp(email, pw);
+    if (!res.ok) { showToast(res.message); return; }
+    authNewPassword = ""; authNewPasswordConfirm = "";
+    authSignupSent = email;
+    render();
     return;
   }
 
@@ -1757,6 +1903,14 @@ document.addEventListener("click", async (e) => {
     return;
   }
 
+  if (t("[data-action='save-display-name']")) {
+    const input = document.getElementById("display-name-input");
+    const res = await updateDisplayName(input ? input.value : "");
+    showToast(res.ok ? "Display name saved" : res.message || "Couldn't save that");
+    if (res.ok) render();
+    return;
+  }
+
   if (t("[data-action='merge-accept']")) { await acceptMerge(); navigate("home"); return; }
   if (t("[data-action='merge-decline']")) { await declineMerge(); navigate("home"); return; }
 
@@ -1764,7 +1918,7 @@ document.addEventListener("click", async (e) => {
   if (navEl) {
     const route = navEl.dataset.nav;
     const id = navEl.dataset.id;
-    if (route === "recipe" && id) navigate("recipe", { id, edit: navEl.dataset.edit === "1" });
+    if (route === "recipe" && id) navigate("recipe", { id, authorId: navEl.dataset.author || undefined, edit: navEl.dataset.edit === "1" });
     else if (route === "faction" && id) navigate("faction", { id });
     else if (route === "paint" && id) navigate("paint", { id });
     else if (route === "paint-new") { initPaintForm(null); navigate("paint-new"); }
@@ -1803,6 +1957,9 @@ document.addEventListener("click", async (e) => {
     render();
     return;
   }
+
+  const toggleSharedFilter = t("[data-action='toggle-shared-filter']");
+  if (toggleSharedFilter) { state.includeShared = !state.includeShared; render(); return; }
 
   const toggleFacFilter = t("[data-toggle-faction-filter]");
   if (toggleFacFilter) {
@@ -1918,6 +2075,9 @@ document.addEventListener("click", async (e) => {
     if (step) { step.mixPaintId = undefined; step.mixRatio = ""; render(); }
     return;
   }
+
+  const togglePublished = t("[data-action='toggle-published']");
+  if (togglePublished) { recipeForm.published = !recipeForm.published; render(); return; }
 
   // Add a paint to the rack without losing the half-written recipe
   const quickPaint = t("[data-action='quick-paint']");
@@ -2314,10 +2474,11 @@ function buildShell() {
 // ---------------------------------------------------------------
 // Boot splash + sign-in gate
 // ---------------------------------------------------------------
-// Forgebook is invite only, but local-first: the book on this device is
-// never at risk, and offline use never blocks on the gate. So the gate is
-// soft — a sign-in screen with an always-available "continue without an
-// account" escape, remembered so it only has to be dismissed once.
+// Forgebook accounts need a confirmed email, but it's local-first regardless:
+// the book on this device is never at risk, and offline use never blocks on
+// the gate. So the gate is soft — a sign-in screen with an always-available
+// "continue without an account" escape, remembered so it only has to be
+// dismissed once.
 //
 // We can't decide gate-vs-app until we know whether a session is already
 // persisted, and that check is async (initCloud). Rendering the full app

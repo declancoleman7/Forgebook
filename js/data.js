@@ -1220,6 +1220,12 @@ const KEYS = {
   schema: "forgebook.schema",
   guest: "forgebook.guest",
   wantToBuy: "forgebook.wantToBuy",
+  // Other people's shared (published) recipes, and the author-owned paints
+  // their steps reference — a read-only cache, kept entirely separate from
+  // the user's own book so it's never merged in, edited, or pushed back up.
+  sharedRecipes: "forgebook.sharedRecipes",
+  sharedPaints: "forgebook.sharedPaints",
+  profiles: "forgebook.profiles",
 };
 
 function readJSON(key, fallback) {
