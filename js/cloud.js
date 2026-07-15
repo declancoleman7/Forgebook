@@ -165,6 +165,7 @@ function clearLocalBook() {
   localStorage.setItem(KEYS.recipes, JSON.stringify([]));
   localStorage.setItem(KEYS.paints, JSON.stringify([]));
   localStorage.setItem(KEYS.recents, JSON.stringify([]));
+  localStorage.setItem(KEYS.wantToBuy, JSON.stringify([]));
 }
 
 let pendingMerge = 0; // >0 when we're asking whether to upload a local book
@@ -230,15 +231,25 @@ function fromRemoteRecipe(row) {
 function toRemotePaint(p, userId) {
   return {
     id: p.id, user_id: userId, name: p.name, brand: p.brand,
-    hex: p.hex, type: p.type, updated_at: p.updatedAt, deleted: !!p.deleted,
+    hex: p.hex, type: p.type, needs_restock: !!p.needsRestock,
+    updated_at: p.updatedAt, deleted: !!p.deleted,
   };
 }
 
 function fromRemotePaint(row) {
   return {
     id: row.id, name: row.name, brand: row.brand, hex: row.hex,
-    type: row.type, updatedAt: row.updated_at, deleted: !!row.deleted,
+    type: row.type, needsRestock: !!row.needs_restock,
+    updatedAt: row.updated_at, deleted: !!row.deleted,
   };
+}
+
+function toRemoteWant(w, userId) {
+  return { paint_key: w.key, user_id: userId, updated_at: w.updatedAt, deleted: !!w.deleted };
+}
+
+function fromRemoteWant(row) {
+  return { key: row.paint_key, updatedAt: row.updated_at, deleted: !!row.deleted };
 }
 
 function photoUrl(path) {
@@ -269,8 +280,10 @@ async function uploadPendingPhotos(recipes, userId) {
 }
 
 // Merge one remote row into a local array. Last write wins, per record.
-function mergeRow(localArr, remote, keyFn) {
-  const idx = localArr.findIndex((x) => x.id === remote.id);
+// keyFn defaults to .id (recipes, paints); paint_wants has no synthetic id,
+// so it merges on its own natural key (the paint's name+brand) instead.
+function mergeRow(localArr, remote, keyFn = (x) => x.id) {
+  const idx = localArr.findIndex((x) => keyFn(x) === keyFn(remote));
   if (idx === -1) {
     localArr.push(remote);
     return true;
@@ -356,9 +369,41 @@ async function syncNow(opts = {}) {
     cloudError = "sync";
   }
 
+  // Deliberately kept separate from the block above: paint_wants is a newer,
+  // optional table. Until someone re-runs schema.sql to add it, this fails
+  // quietly and the want-list just stays device-local — it doesn't take the
+  // recipes/paints sync (the thing that actually matters) down with it.
+  try {
+    await syncWants(userId);
+  } catch (e) {
+    // swallowed on purpose — see comment above
+  }
+
   syncing = false;
   if (typeof render === "function") render();
   return { ok };
+}
+
+async function syncWants(userId) {
+  let wants = getAllWantRows();
+  const { data, error } = await sb.from("paint_wants").select("*").eq("user_id", userId);
+  if (error) throw error;
+
+  const remoteWants = (data || []).map(fromRemoteWant);
+  const remoteStamp = new Map();
+  remoteWants.forEach((w) => remoteStamp.set(w.key, w.updatedAt));
+  remoteWants.forEach((w) => mergeRow(wants, w, (x) => x.key));
+
+  const pushWants = wants.filter((w) => {
+    const remote = remoteStamp.get(w.key);
+    return !remote || (w.updatedAt && w.updatedAt > remote);
+  });
+  if (pushWants.length) {
+    const { error: upErr } = await sb.from("paint_wants").upsert(pushWants.map((w) => toRemoteWant(w, userId)));
+    if (upErr) throw upErr;
+  }
+
+  save(KEYS.wantToBuy, wants);
 }
 
 // Push in the background after any local change. Debounced so a burst of edits
