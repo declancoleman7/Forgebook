@@ -860,17 +860,40 @@ function viewRecipeDetail(id, authorId) {
 
       <div class="section-label">Paints Used</div>
       <div class="paint-list">
-        ${paints.length ? paints.map((p) => `
-          <div class="paint-row" ${isShared ? "" : `data-nav="paint" data-id="${p.id}"`}>
-            <div class="paint-row__swatch" style="background:${p.hex}"></div>
-            <div>
-              <div class="paint-row__name">${escapeHtml(p.name)}</div>
-              <div class="paint-row__brand">${escapeHtml(p.brand || "")}${p.type ? " \u00b7 " + escapeHtml(p.type) : ""}</div>
+        ${paints.length ? paints.map((p) => {
+          if (!isShared) {
+            return `
+              <div class="paint-row" data-nav="paint" data-id="${p.id}">
+                <div class="paint-row__swatch" style="background:${p.hex}"></div>
+                <div>
+                  <div class="paint-row__name">${escapeHtml(p.name)}</div>
+                  <div class="paint-row__brand">${escapeHtml(p.brand || "")}${p.type ? " \u00b7 " + escapeHtml(p.type) : ""}</div>
+                </div>
+                <div class="paint-row__hex">${escapeHtml(p.hex)}</div>
+              </div>
+            `;
+          }
+          // Shared recipe: a paint id only means something within its own
+          // author's rack, so ownership has to be re-checked here by
+          // name+brand against the viewer's own rack \u2014 same key the paint
+          // library's owned/want-to-buy tracking already uses.
+          const owned = !!ownedPaintFor(p.name, p.brand);
+          const wanted = !owned && isWanted(p.name, p.brand);
+          return `
+            <div class="paint-row ${owned ? "is-owned" : ""}">
+              <div class="paint-row__swatch" style="background:${p.hex}"></div>
+              <div>
+                <div class="paint-row__name">${escapeHtml(p.name)}</div>
+                <div class="paint-row__brand">${escapeHtml(p.brand || "")}${p.type ? " \u00b7 " + escapeHtml(p.type) : ""}</div>
+              </div>
+              ${owned
+                ? `<span class="lib-row__ring is-owned" style="margin-left:auto" title="On your rack">${icon("check", 13)}</span>`
+                : `<button class="lib-row__flag is-wanted ${wanted ? "is-on" : ""}" style="margin-left:auto" data-action="toggle-wanted" data-name="${escapeHtml(p.name)}" data-brand="${escapeHtml(p.brand)}" title="${wanted ? "On your buy list" : "Add to buy list"}">${icon("cart", 13)}</button>`}
             </div>
-            <div class="paint-row__hex">${escapeHtml(p.hex)}</div>
-          </div>
-        `).join("") : `<div class="empty-state__sub">No paints listed.</div>`}
+          `;
+        }).join("") : `<div class="empty-state__sub">No paints listed.</div>`}
       </div>
+      ${isShared && paints.length ? `<div class="fine-print" style="margin-top:6px">${paints.filter((p) => !ownedPaintFor(p.name, p.brand)).length} of ${paints.length} paints not on your rack \u2014 tap the cart to add them to your buy list.</div>` : ""}
 
       <div class="section-label">Method</div>
       ${(r.steps || []).length ? groupStepsByArea(r.steps).map((g) => `
