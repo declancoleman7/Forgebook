@@ -71,8 +71,8 @@ let state = {
   recipeFilterOpen: false,
   searchQuery: "",
   paintLibFilter: "all", // "all" | "owned" | "want" — Paint Library ownership filter
-  paintLibBrand: null, // null = all brands
-  paintLibCategory: "all", // "all" | paintCategory() key — Paint Library wash/contrast/metallic/primer filter
+  paintLibBrands: [], // multi-select — empty = all brands
+  paintLibCategories: [], // multi-select — paintCategory() keys; empty = all types
   includeShared: true, // whether other users' shared recipes appear in lists/browsing
 };
 
@@ -1482,8 +1482,8 @@ function computeColourMatches(hex, excludeKey, resultFilter, sourceBrand, source
 function viewPaintLibrary() {
   const q = state.searchQuery.toLowerCase();
   let entries = PAINT_LIBRARY;
-  if (state.paintLibBrand) entries = entries.filter((p) => p.brand === state.paintLibBrand);
-  if (state.paintLibCategory !== "all") entries = entries.filter((p) => paintCategory(p.type) === state.paintLibCategory);
+  if (state.paintLibBrands.length) entries = entries.filter((p) => state.paintLibBrands.includes(p.brand));
+  if (state.paintLibCategories.length) entries = entries.filter((p) => state.paintLibCategories.includes(paintCategory(p.type)));
   if (q) entries = entries.filter((p) => p.name.toLowerCase().includes(q) || p.type.toLowerCase().includes(q));
 
   const isOwnedEntry = (p) => !!ownedPaintFor(p.name, p.brand);
@@ -1573,14 +1573,14 @@ function viewPaintLibrary() {
 
       ${allBrands.length > 1 ? `
         <div class="faction-row" style="margin-bottom:10px">
-          <div class="faction-chip ${!state.paintLibBrand ? "is-active" : ""}" data-action="lib-brand" data-brand="">All brands</div>
-          ${allBrands.map((b) => `<div class="faction-chip ${state.paintLibBrand === b ? "is-active" : ""}" data-action="lib-brand" data-brand="${escapeHtml(b)}">${escapeHtml(b)}</div>`).join("")}
+          <div class="faction-chip ${!state.paintLibBrands.length ? "is-active" : ""}" data-action="lib-brand" data-brand="">All brands</div>
+          ${allBrands.map((b) => `<div class="faction-chip ${state.paintLibBrands.includes(b) ? "is-active" : ""}" data-action="lib-brand" data-brand="${escapeHtml(b)}">${escapeHtml(b)}</div>`).join("")}
         </div>
       ` : ""}
 
       <div class="faction-row" style="margin-bottom:10px">
-        <div class="faction-chip ${state.paintLibCategory === "all" ? "is-active" : ""}" data-action="lib-category" data-category="all">All types</div>
-        ${["base", "wash", "contrast", "metallic", "primer"].map((c) => `<div class="faction-chip ${state.paintLibCategory === c ? "is-active" : ""}" data-action="lib-category" data-category="${c}">${PAINT_CATEGORY_LABEL[c]}</div>`).join("")}
+        <div class="faction-chip ${!state.paintLibCategories.length ? "is-active" : ""}" data-action="lib-category" data-category="">All types</div>
+        ${["base", "wash", "contrast", "metallic", "primer"].map((c) => `<div class="faction-chip ${state.paintLibCategories.includes(c) ? "is-active" : ""}" data-action="lib-category" data-category="${c}">${PAINT_CATEGORY_LABEL[c]}</div>`).join("")}
       </div>
 
       ${entries.length ? groups.map((type) => {
@@ -2032,10 +2032,10 @@ function bindRecipeForm(root) {
 // a handful of entries. Self-contained: binds its own listeners directly
 // (like showConfirm) rather than going through the global click delegation.
 // ---------------------------------------------------------------
-let paintPicker = null; // { stepId, field, query, tab, brand, category } while open
+let paintPicker = null; // { stepId, field, query, tab, brands, categories } while open — brands/categories are multi-select, empty = any
 
 function openPaintPicker(stepId, field) {
-  paintPicker = { stepId, field, query: "", tab: getPaints().length ? "rack" : "library", brand: null, category: "all" };
+  paintPicker = { stepId, field, query: "", tab: getPaints().length ? "rack" : "library", brands: [], categories: [] };
   renderPaintPicker();
 }
 
@@ -2089,7 +2089,7 @@ function paintPickerRowHtml(entry, ownedEntry, isSelected) {
 }
 
 function renderPaintPicker() {
-  const { stepId, field, query, tab, brand, category } = paintPicker;
+  const { stepId, field, query, tab, brands: selectedBrands, categories: selectedCategories } = paintPicker;
   const step = recipeForm.steps.find((s) => s.id === stepId);
   const currentId = step ? step[field] : null;
   const currentWant = step ? step[field === "paintId" ? "wantPaint" : "mixWantPaint"] : null;
@@ -2107,13 +2107,13 @@ function renderPaintPicker() {
     rackList = rackList.filter((p) => p.name.toLowerCase().includes(q) || (p.brand || "").toLowerCase().includes(q));
     libList = libList.filter((p) => p.name.toLowerCase().includes(q) || p.brand.toLowerCase().includes(q) || p.type.toLowerCase().includes(q));
   }
-  if (brand) {
-    rackList = rackList.filter((p) => p.brand === brand);
-    libList = libList.filter((p) => p.brand === brand);
+  if (selectedBrands.length) {
+    rackList = rackList.filter((p) => selectedBrands.includes(p.brand));
+    libList = libList.filter((p) => selectedBrands.includes(p.brand));
   }
-  if (category !== "all") {
-    rackList = rackList.filter((p) => paintCategory(p.type) === category);
-    libList = libList.filter((p) => paintCategory(p.type) === category);
+  if (selectedCategories.length) {
+    rackList = rackList.filter((p) => selectedCategories.includes(paintCategory(p.type)));
+    libList = libList.filter((p) => selectedCategories.includes(paintCategory(p.type)));
   }
 
   const rows = tab === "rack"
@@ -2165,13 +2165,13 @@ function renderPaintPicker() {
       </div>
       ${brands.length > 1 ? `
         <div class="faction-row" style="margin:0 16px 8px; flex-shrink:0">
-          <div class="faction-chip ${!brand ? "is-active" : ""}" data-picker-brand="">All brands</div>
-          ${brands.map((b) => `<div class="faction-chip ${brand === b ? "is-active" : ""}" data-picker-brand="${escapeHtml(b)}">${escapeHtml(b)}</div>`).join("")}
+          <div class="faction-chip ${!selectedBrands.length ? "is-active" : ""}" data-picker-brand="">All brands</div>
+          ${brands.map((b) => `<div class="faction-chip ${selectedBrands.includes(b) ? "is-active" : ""}" data-picker-brand="${escapeHtml(b)}">${escapeHtml(b)}</div>`).join("")}
         </div>
       ` : ""}
       <div class="faction-row" style="margin:0 16px 10px; flex-shrink:0">
-        <div class="faction-chip ${category === "all" ? "is-active" : ""}" data-picker-category="all">All types</div>
-        ${["base", "wash", "contrast", "metallic", "primer"].map((c) => `<div class="faction-chip ${category === c ? "is-active" : ""}" data-picker-category="${c}">${PAINT_CATEGORY_LABEL[c]}</div>`).join("")}
+        <div class="faction-chip ${!selectedCategories.length ? "is-active" : ""}" data-picker-category="">All types</div>
+        ${["base", "wash", "contrast", "metallic", "primer"].map((c) => `<div class="faction-chip ${selectedCategories.includes(c) ? "is-active" : ""}" data-picker-category="${c}">${PAINT_CATEGORY_LABEL[c]}</div>`).join("")}
       </div>
       <div class="paint-picker__body">${rows}</div>
     </div>
@@ -2182,13 +2182,29 @@ function renderPaintPicker() {
     // Reset the brand filter too -- it's scoped to whichever pool is showing
     // (see `brands` above), so carrying a brand selection across tabs could
     // leave it active against a pool that doesn't have that brand at all.
-    el.onclick = () => { paintPicker.tab = el.dataset.pickerTab; paintPicker.query = ""; paintPicker.brand = null; renderPaintPicker(); };
+    el.onclick = () => { paintPicker.tab = el.dataset.pickerTab; paintPicker.query = ""; paintPicker.brands = []; renderPaintPicker(); };
   });
   wrap.querySelectorAll("[data-picker-brand]").forEach((el) => {
-    el.onclick = () => { paintPicker.brand = el.dataset.pickerBrand || null; renderPaintPicker(); };
+    el.onclick = () => {
+      const b = el.dataset.pickerBrand;
+      if (!b) paintPicker.brands = [];
+      else {
+        const idx = paintPicker.brands.indexOf(b);
+        if (idx > -1) paintPicker.brands.splice(idx, 1); else paintPicker.brands.push(b);
+      }
+      renderPaintPicker();
+    };
   });
   wrap.querySelectorAll("[data-picker-category]").forEach((el) => {
-    el.onclick = () => { paintPicker.category = el.dataset.pickerCategory; renderPaintPicker(); };
+    el.onclick = () => {
+      const c = el.dataset.pickerCategory;
+      if (!c) paintPicker.categories = [];
+      else {
+        const idx = paintPicker.categories.indexOf(c);
+        if (idx > -1) paintPicker.categories.splice(idx, 1); else paintPicker.categories.push(c);
+      }
+      renderPaintPicker();
+    };
   });
 
   const searchInput = wrap.querySelector("#paint-picker-search");
@@ -3054,10 +3070,28 @@ document.addEventListener("click", async (e) => {
   if (libFilter) { state.paintLibFilter = libFilter.dataset.filter; render(); return; }
 
   const libBrand = t("[data-action='lib-brand']");
-  if (libBrand) { state.paintLibBrand = libBrand.dataset.brand || null; render(); return; }
+  if (libBrand) {
+    const brand = libBrand.dataset.brand;
+    if (!brand) state.paintLibBrands = [];
+    else {
+      const idx = state.paintLibBrands.indexOf(brand);
+      if (idx > -1) state.paintLibBrands.splice(idx, 1); else state.paintLibBrands.push(brand);
+    }
+    render();
+    return;
+  }
 
   const libCategory = t("[data-action='lib-category']");
-  if (libCategory) { state.paintLibCategory = libCategory.dataset.category; render(); return; }
+  if (libCategory) {
+    const cat = libCategory.dataset.category;
+    if (!cat) state.paintLibCategories = [];
+    else {
+      const idx = state.paintLibCategories.indexOf(cat);
+      if (idx > -1) state.paintLibCategories.splice(idx, 1); else state.paintLibCategories.push(cat);
+    }
+    render();
+    return;
+  }
 
   const similarFilter = t("[data-action='similar-filter']");
   if (similarFilter) {
