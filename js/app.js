@@ -1486,14 +1486,23 @@ function viewPaintLibrary() {
 
   const isOwnedEntry = (p) => !!ownedPaintFor(p.name, p.brand);
   const isWantedEntry = (p) => !isOwnedEntry(p) && isWanted(p.name, p.brand);
+  // "To buy" covers both flavours of "go get this next time you're
+  // shopping" -- a paint you don't own yet and a paint you own but flagged
+  // as running low -- even though they're mutually exclusive per-paint and
+  // use separate flag buttons (toggle-wanted vs toggle-restock).
+  const needsPurchaseEntry = (p) => {
+    if (isWantedEntry(p)) return true;
+    const owned = ownedPaintFor(p.name, p.brand);
+    return !!owned && owned.needsRestock;
+  };
 
   if (state.paintLibFilter === "owned") entries = entries.filter(isOwnedEntry);
-  else if (state.paintLibFilter === "want") entries = entries.filter(isWantedEntry);
+  else if (state.paintLibFilter === "want") entries = entries.filter(needsPurchaseEntry);
 
   const allBrands = [...new Set(PAINT_LIBRARY.map((p) => p.brand))];
   const totalCount = PAINT_LIBRARY.length;
   const ownedCount = PAINT_LIBRARY.filter(isOwnedEntry).length;
-  const wantCount = PAINT_LIBRARY.filter(isWantedEntry).length;
+  const wantCount = PAINT_LIBRARY.filter(needsPurchaseEntry).length;
   const pct = totalCount ? Math.round((ownedCount / totalCount) * 100) : 0;
 
   // Group by each entry's own type/range label (brand-authentic, e.g. "Speedpaint
