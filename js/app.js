@@ -143,10 +143,14 @@ function resolveStepPaint(recipe, step, field) {
   if (id) return resolvePaintFor(recipe, id);
   const want = step[field === "paintId" ? "wantPaint" : "mixWantPaint"];
   if (!want) return null;
-  if (!recipe.authorId) {
-    const owned = ownedPaintFor(want.name, want.brand);
-    if (owned) return owned;
-  }
+  // A want snapshot is just a name/brand/hex, regardless of whose recipe
+  // it's attached to — so it's checked against the viewer's own rack either
+  // way, not just on their own recipes. Without this, adding a shared
+  // recipe's not-yet-owned paint straight to your rack (see
+  // paint-add-to-rack) left that recipe's own row still showing "not
+  // owned," even though My Rack already had it.
+  const owned = ownedPaintFor(want.name, want.brand);
+  if (owned) return owned;
   return { ...want, isWant: true };
 }
 
