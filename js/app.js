@@ -72,6 +72,7 @@ let state = {
   searchQuery: "",
   paintLibFilter: "all", // "all" | "owned" | "want" — Paint Library ownership filter
   paintLibBrand: null, // null = all brands
+  paintLibCategory: "all", // "all" | paintCategory() key — Paint Library wash/contrast/metallic/primer filter
   includeShared: true, // whether other users' shared recipes appear in lists/browsing
 };
 
@@ -1482,6 +1483,7 @@ function viewPaintLibrary() {
   const q = state.searchQuery.toLowerCase();
   let entries = PAINT_LIBRARY;
   if (state.paintLibBrand) entries = entries.filter((p) => p.brand === state.paintLibBrand);
+  if (state.paintLibCategory !== "all") entries = entries.filter((p) => paintCategory(p.type) === state.paintLibCategory);
   if (q) entries = entries.filter((p) => p.name.toLowerCase().includes(q) || p.type.toLowerCase().includes(q));
 
   const isOwnedEntry = (p) => !!ownedPaintFor(p.name, p.brand);
@@ -1575,6 +1577,11 @@ function viewPaintLibrary() {
           ${allBrands.map((b) => `<div class="faction-chip ${state.paintLibBrand === b ? "is-active" : ""}" data-action="lib-brand" data-brand="${escapeHtml(b)}">${escapeHtml(b)}</div>`).join("")}
         </div>
       ` : ""}
+
+      <div class="faction-row" style="margin-bottom:10px">
+        <div class="faction-chip ${state.paintLibCategory === "all" ? "is-active" : ""}" data-action="lib-category" data-category="all">All types</div>
+        ${["base", "wash", "contrast", "metallic", "primer"].map((c) => `<div class="faction-chip ${state.paintLibCategory === c ? "is-active" : ""}" data-action="lib-category" data-category="${c}">${PAINT_CATEGORY_LABEL[c]}</div>`).join("")}
+      </div>
 
       ${entries.length ? groups.map((type) => {
         const inType = entries.filter((p) => p.type === type);
@@ -3048,6 +3055,9 @@ document.addEventListener("click", async (e) => {
 
   const libBrand = t("[data-action='lib-brand']");
   if (libBrand) { state.paintLibBrand = libBrand.dataset.brand || null; render(); return; }
+
+  const libCategory = t("[data-action='lib-category']");
+  if (libCategory) { state.paintLibCategory = libCategory.dataset.category; render(); return; }
 
   const similarFilter = t("[data-action='similar-filter']");
   if (similarFilter) {
