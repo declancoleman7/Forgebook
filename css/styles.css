@@ -2659,6 +2659,30 @@ main {
    more than a handful of entries. Reuses the filter-overlay bottom-sheet
    shell and the paint library's row/segmented-control look.
    ============================================================ */
+/* A fixed height, not content-driven (max-height + shrink-wrap): as the
+   search narrows the row count, a height that tracks content would move the
+   panel's top edge — and the search box right along with it — up and down
+   with every keystroke. Fixed height + an internally-scrolling body keeps
+   the search box pinned in place regardless of how many rows match. */
+.paint-picker__panel {
+  position: relative;
+  width: 100%;
+  max-width: 480px;
+  height: 80vh;
+  background: var(--bg-panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+  display: flex;
+  flex-direction: column;
+  box-shadow: var(--shadow-raised);
+}
+
+@media (min-width: 860px) {
+  .paint-picker__panel {
+    border-radius: var(--radius-lg);
+  }
+}
+
 .paint-picker__header {
   display: flex;
   align-items: center;
@@ -2717,6 +2741,10 @@ main {
 }
 
 .paint-picker__body {
+  flex: 1;
+  min-height: 0; /* a flex item's min-height defaults to auto, not 0 -- without
+    this it would refuse to shrink below its content's height, defeating the
+    fixed-height panel above and letting it grow again anyway */
   padding: 4px 16px 16px;
   overflow-y: auto;
 }

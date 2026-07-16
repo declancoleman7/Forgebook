@@ -1689,7 +1689,7 @@ function renderPaintPicker() {
 
   wrap.innerHTML = `
     <div class="filter-overlay__backdrop" data-picker-close="1"></div>
-    <div class="filter-overlay__panel">
+    <div class="paint-picker__panel">
       <div class="paint-picker__header">
         <div class="paint-picker__title">Choose a paint</div>
         <button type="button" class="icon-btn" data-picker-close="1" aria-label="Close">${icon("back", 18)}</button>
