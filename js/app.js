@@ -624,6 +624,13 @@ function findUnitByslug(facId, unitSlug) {
 
 window.addEventListener("hashchange", () => {
   const { route, params } = parseHash();
+  // A public share link opened while the app is already running (an
+  // installed PWA reusing its existing window, or just an in-page link) is
+  // a same-document navigation — DOMContentLoaded/init() never re-fires, so
+  // this is the only other place that ever sees the hash change. Without
+  // this, render()'s route dispatch has no case for "public-recipe" and
+  // silently falls back to the home screen instead.
+  if (route === "public-recipe") { renderPublicRecipe(params); return; }
   state.route = route;
   state.params = params;
   render();
