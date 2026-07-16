@@ -216,6 +216,80 @@ function paintUsageCount(paintId) {
 }
 
 // ---------------------------------------------------------------
+// Colour matching — "similar colours": rank the whole library against a
+// source colour so a paint used in a recipe (or any colour you set
+// directly) can be substituted with something else on the rack, or from a
+// brand you don't have.
+// ---------------------------------------------------------------
+function hexToRgb(hex) {
+  const n = parseInt(hex.replace("#", ""), 16);
+  return { r: (n >> 16) & 255, g: (n >> 8) & 255, b: n & 255 };
+}
+
+function rgbToHex(r, g, b) {
+  return "#" + [r, g, b].map((v) => Math.max(0, Math.min(255, Math.round(v))).toString(16).padStart(2, "0")).join("");
+}
+
+// Redmean weighted-Euclidean distance — a well-known low-cost stand-in for
+// full perceptual (Lab/CIEDE2000) colour distance, good enough to rank
+// "which of these reads as basically the same colour" without pulling a
+// colour-science library into a client-side paint catalogue.
+function colourDistance(hexA, hexB) {
+  const a = hexToRgb(hexA), b = hexToRgb(hexB);
+  const rmean = (a.r + b.r) / 2;
+  const dr = a.r - b.r, dg = a.g - b.g, db = a.b - b.b;
+  return Math.sqrt((2 + rmean / 256) * dr * dr + 4 * dg * dg + (2 + (255 - rmean) / 256) * db * db);
+}
+
+// Calibrated so a near-identical swatch reads high-90s% and a
+// different-but-plausibly-confused colour lands in the 60-80% band —
+// distances above this are different colour families entirely.
+const COLOUR_MAX_DISTANCE = 210;
+function colourSimilarity(hexA, hexB) {
+  const d = colourDistance(hexA, hexB);
+  return Math.max(0, Math.round(100 - (d / COLOUR_MAX_DISTANCE) * 100));
+}
+
+function hsvToRgb(h, s, v) {
+  h = ((h % 360) + 360) % 360;
+  const c = v * s;
+  const x = c * (1 - Math.abs(((h / 60) % 2) - 1));
+  const m = v - c;
+  let r, g, b;
+  if (h < 60) { r = c; g = x; b = 0; }
+  else if (h < 120) { r = x; g = c; b = 0; }
+  else if (h < 180) { r = 0; g = c; b = x; }
+  else if (h < 240) { r = 0; g = x; b = c; }
+  else if (h < 300) { r = x; g = 0; b = c; }
+  else { r = c; g = 0; b = x; }
+  return { r: (r + m) * 255, g: (g + m) * 255, b: (b + m) * 255 };
+}
+
+function hsvToHex(h, s, v) {
+  const { r, g, b } = hsvToRgb(h, s, v);
+  return rgbToHex(r, g, b);
+}
+
+function rgbToHsv(r, g, b) {
+  r /= 255; g /= 255; b /= 255;
+  const max = Math.max(r, g, b), min = Math.min(r, g, b), d = max - min;
+  let h = 0;
+  if (d !== 0) {
+    if (max === r) h = ((g - b) / d) % 6;
+    else if (max === g) h = (b - r) / d + 2;
+    else h = (r - g) / d + 4;
+    h *= 60;
+    if (h < 0) h += 360;
+  }
+  return { h, s: max === 0 ? 0 : d / max, v: max };
+}
+
+function hexToHsv(hex) {
+  const { r, g, b } = hexToRgb(hex);
+  return rgbToHsv(r, g, b);
+}
+
+// ---------------------------------------------------------------
 // Paint library — browsing a real catalogue (PAINT_LIBRARY, in data.js) and
 // tracking which entries the rack already has, or still needs to buy.
 // ---------------------------------------------------------------
@@ -441,6 +515,10 @@ function buildHash(route, p) {
   if (route === "faction") return `#/faction/${p.id}`;
   if (route === "unit") return `#/faction/${p.id}/unit/${p.unit === null ? "_general" : slug(p.unit)}`;
   if (route === "paint") return `#/paint/${p.id}`;
+  // A source paint's own name+brand ride along so refreshing or sharing the
+  // URL keeps the same "similar to X" context; with neither, it's the
+  // pick-a-colour tool instead.
+  if (route === "similar") return `#/similar${p.name ? "/" + encodeURIComponent(p.name) + "/" + encodeURIComponent(p.brand || "") : ""}`;
   return `#/${route}`;
 }
 
@@ -466,6 +544,10 @@ function parseHash() {
   }
   if (parts[0] === "paint" && parts[1]) {
     return { route: "paint", params: { id: decodeURIComponent(parts[1]) } };
+  }
+  if (parts[0] === "similar") {
+    if (parts[1]) return { route: "similar", params: { name: decodeURIComponent(parts[1]), brand: decodeURIComponent(parts[2] || "") } };
+    return { route: "similar", params: {} };
   }
   if (parts[0] === "recipe-new" || parts[0] === "paint-new") {
     return { route: parts[0], params: {} };
@@ -987,7 +1069,7 @@ function viewRecipeDetail(id, authorId) {
           if (!isShared && !p.isWant) {
             return `
               <div class="paint-row" data-nav="paint" data-id="${p.id}">
-                <div class="paint-row__swatch" style="background:${p.hex}"></div>
+                <div class="paint-row__swatch" data-action="find-similar-colour" data-name="${escapeHtml(p.name)}" data-brand="${escapeHtml(p.brand || "")}" data-hex="${p.hex}" title="Find similar colours" style="background:${p.hex}"></div>
                 <div>
                   <div class="paint-row__name">${escapeHtml(p.name)}</div>
                   <div class="paint-row__brand">${escapeHtml(p.brand || "")}${p.type ? " \u00b7 " + escapeHtml(p.type) : ""}</div>
@@ -1006,7 +1088,7 @@ function viewRecipeDetail(id, authorId) {
           const wanted = !owned && isWanted(p.name, p.brand);
           return `
             <div class="paint-row ${owned ? "is-owned" : ""}">
-              <div class="paint-row__swatch" style="background:${p.hex}"></div>
+              <div class="paint-row__swatch" data-action="find-similar-colour" data-name="${escapeHtml(p.name)}" data-brand="${escapeHtml(p.brand || "")}" data-hex="${p.hex}" title="Find similar colours" style="background:${p.hex}"></div>
               <div>
                 <div class="paint-row__name">${escapeHtml(p.name)}</div>
                 <div class="paint-row__brand">${escapeHtml(p.brand || "")}${p.type ? " \u00b7 " + escapeHtml(p.type) : ""}</div>
@@ -1160,6 +1242,13 @@ function viewPaint(id) {
             ${p.needsRestock ? "Flagged" : "Flag it"}
           </button>
         </div>
+        <div class="settings-row">
+          <div>
+            <div class="settings-row__label">Similar colours</div>
+            <div class="settings-row__desc">See who else makes something close, across every brand.</div>
+          </div>
+          <button class="btn btn-ghost btn-sm" data-action="find-similar-colour" data-name="${escapeHtml(p.name)}" data-brand="${escapeHtml(p.brand || "")}" data-hex="${p.hex}">Find</button>
+        </div>
       </div>
 
       <div class="section-label">Used In</div>
@@ -1168,6 +1257,149 @@ function viewPaint(id) {
         : `<div class="empty-state__sub">Not used in any recipe yet.</div>`}
     </div>
   `;
+}
+
+// ---------------------------------------------------------------
+// View: Similar colours — either from a specific paint ("what else is
+// close to this") or from a colour picked directly ("what's this called").
+// A real route (not a modal like the recipe-step paint picker) since
+// there's no in-progress form to preserve underneath it, and a shareable
+// URL for "similar to X" is genuinely useful.
+// ---------------------------------------------------------------
+function resolveSourceHex(name, brand) {
+  const owned = ownedPaintFor(name, brand);
+  if (owned) return owned.hex;
+  const lib = PAINT_LIBRARY.find((p) => paintKey(p.name, p.brand) === paintKey(name, brand));
+  return lib ? lib.hex : null;
+}
+
+let similarColours = { entryMode: "colour", sourceName: null, sourceBrand: null, hex: "#b8863f", resultFilter: "all" };
+// The params signature similarColours was last built from — lets
+// viewSimilarColours tell "the route was navigated to fresh" (reinitialise)
+// apart from "the entry-switch/filter tabs were clicked" (leave it alone),
+// even though both end up calling render() the same way.
+let similarColoursSeenSig = null;
+
+function openSimilarColours(name, brand, hex) {
+  similarColoursSeenSig = name + "|" + brand;
+  similarColours = { entryMode: "paint", sourceName: name, sourceBrand: brand, hex: hex || resolveSourceHex(name, brand) || "#b8863f", resultFilter: "other" };
+  navigate("similar", { name, brand });
+}
+
+function viewSimilarColours(params) {
+  const sig = params.name ? params.name + "|" + params.brand : "__colour__";
+  if (sig !== similarColoursSeenSig) {
+    similarColoursSeenSig = sig;
+    similarColours = params.name
+      ? { entryMode: "paint", sourceName: params.name, sourceBrand: params.brand, hex: resolveSourceHex(params.name, params.brand) || "#b8863f", resultFilter: "other" }
+      : { entryMode: "colour", sourceName: null, sourceBrand: null, hex: similarColours.hex || "#b8863f", resultFilter: "all" };
+  }
+  const st = similarColours;
+  const activeHex = st.hex;
+  const excludeKey = st.entryMode === "paint" ? paintKey(st.sourceName, st.sourceBrand) : "__none__";
+  const matches = computeColourMatches(activeHex, excludeKey, st.resultFilter, st.entryMode === "paint" ? st.sourceBrand : null);
+
+  return `
+    <div class="page-enter">
+      <div class="detail-header">
+        <button class="icon-btn" data-nav="paint-library">${icon("back", 18)}</button>
+        <div class="page-title" style="margin:0">Similar Colours</div>
+        <div style="width:36px"></div>
+      </div>
+
+      <div class="entry-switch">
+        <button data-action="similar-mode" data-mode="paint" class="${st.entryMode === "paint" ? "is-active" : ""}" ${!st.sourceName ? "disabled style=\"opacity:.4\"" : ""}>From a paint</button>
+        <button data-action="similar-mode" data-mode="colour" class="${st.entryMode === "colour" ? "is-active" : ""}">Pick a colour</button>
+      </div>
+      <div class="detail-sub" style="margin:10px 2px 4px">
+        ${st.entryMode === "paint"
+          ? "Tap ≈ next to any paint — in the library, your rack, or a recipe — to see who else makes something close."
+          : "Not sure what it's called? Set a colour directly and match it against every brand Forgebook knows."}
+      </div>
+
+      ${st.entryMode === "colour" ? `
+        <div class="colour-match-card">
+          <div class="wheel-wrap">
+            <canvas id="wheel-canvas" width="180" height="180"></canvas>
+            <div class="wheel-indicator" id="wheel-indicator"></div>
+          </div>
+          <div class="brightness-row">
+            <span class="brightness-row__label">Bright</span>
+            <input type="range" id="brightness-input" min="0" max="100" />
+          </div>
+          <div class="colour-match-card__row">
+            <div class="picker-swatch" id="colour-preview" style="background:${st.hex}"></div>
+            <div class="picker-fields">
+              <div class="hex-field">
+                <span>#</span>
+                <input type="text" id="hex-input" value="${st.hex.replace("#", "").toUpperCase()}" maxlength="6" />
+              </div>
+              <div class="swatch-row">
+                ${["#7e1b1b", "#c2591c", "#c99a2e", "#3c5c29", "#1b4b6b", "#4b2e63", "#3b2a22", "#4a4d52"]
+                  .map((h) => `<button type="button" data-swatch="${h}" style="background:${h}"></button>`).join("")}
+              </div>
+            </div>
+          </div>
+          <div class="label-hint" style="margin-top:10px">Drag the wheel for hue and saturation, or type a hex code.</div>
+        </div>
+      ` : ""}
+
+      <div class="colour-match-source">
+        <div class="paint-row__swatch" id="results-source-swatch" style="background:${activeHex}"></div>
+        <div>
+          <div class="results-source__name">${st.entryMode === "paint" ? escapeHtml(st.sourceName) : "Your colour"}</div>
+          <div class="results-source__meta" id="results-source-meta">${st.entryMode === "paint" ? escapeHtml(st.sourceBrand) : activeHex.toUpperCase()}</div>
+        </div>
+      </div>
+
+      <div class="lib-filter-seg">
+        <button data-action="similar-filter" data-filter="all" class="${st.resultFilter === "all" ? "is-active" : ""}">All brands</button>
+        <button data-action="similar-filter" data-filter="other" class="${st.resultFilter === "other" ? "is-active" : ""}" ${st.entryMode === "colour" ? "disabled style=\"opacity:.4\"" : ""}>Other brands</button>
+        <button data-action="similar-filter" data-filter="owned" class="${st.resultFilter === "owned" ? "is-active" : ""}">On my rack</button>
+      </div>
+
+      <div id="matches-container">${colourMatchListHtml(matches)}</div>
+    </div>
+  `;
+}
+
+function colourMatchListHtml(matches) {
+  return matches.length ? matches.map(colourMatchRowHtml).join("") : `<div class="empty-state__sub">No matches.</div>`;
+}
+
+function colourMatchRowHtml(m) {
+  const owned = ownedPaintFor(m.paint.name, m.paint.brand);
+  return `
+    <div class="colour-match-row">
+      <div class="paint-row__swatch" style="background:${m.paint.hex}"></div>
+      <div class="colour-match-row__info">
+        <div class="paint-row__name">${escapeHtml(m.paint.name)}</div>
+        <div class="paint-row__brand">${escapeHtml(m.paint.brand)} · ${escapeHtml(m.paint.type)}</div>
+      </div>
+      <div class="colour-match-row__score">
+        <span>${m.score}%</span>
+        <div class="colour-match-row__bar"><i style="width:${m.score}%"></i></div>
+      </div>
+      ${owned
+        ? `<span class="lib-row__ring is-owned" title="On your rack">${icon("check", 13)}</span>`
+        : `<button class="lib-row__flag is-wanted ${isWanted(m.paint.name, m.paint.brand) ? "is-on" : ""}" data-action="toggle-wanted" data-name="${escapeHtml(m.paint.name)}" data-brand="${escapeHtml(m.paint.brand)}" title="${isWanted(m.paint.name, m.paint.brand) ? "On your buy list" : "Add to buy list"}">${icon("cart", 13)}</button>`}
+    </div>
+  `;
+}
+
+// Shared by the full render() and applyLiveColour()'s lightweight live
+// update, so the two can never drift into ranking results differently.
+function computeColourMatches(hex, excludeKey, resultFilter, sourceBrand) {
+  let matches = PAINT_LIBRARY
+    .filter((p) => paintKey(p.name, p.brand) !== excludeKey)
+    .map((p) => ({ paint: p, score: colourSimilarity(hex, p.hex) }))
+    .sort((a, b) => b.score - a.score);
+  if (resultFilter === "other" && sourceBrand) {
+    matches = matches.filter((m) => m.paint.brand !== sourceBrand);
+  } else if (resultFilter === "owned") {
+    matches = matches.filter((m) => ownedPaintFor(m.paint.name, m.paint.brand));
+  }
+  return matches.slice(0, 20);
 }
 
 // ---------------------------------------------------------------
@@ -1227,7 +1459,7 @@ function viewPaintLibrary() {
         data-name="${escapeHtml(p.name)}" data-brand="${escapeHtml(p.brand)}"
         data-hex="${p.hex}" data-type="${escapeHtml(p.type)}"
       >
-        <div class="paint-row__swatch" style="background:${p.hex}"></div>
+        <div class="paint-row__swatch" data-action="find-similar-colour" data-name="${escapeHtml(p.name)}" data-brand="${escapeHtml(p.brand)}" data-hex="${p.hex}" title="Find similar colours" style="background:${p.hex}"></div>
         <div class="lib-row__info">
           <div class="paint-row__name">${escapeHtml(p.name)}</div>
           <div class="paint-row__brand">${escapeHtml(p.brand)} · ${escapeHtml(p.type)}</div>
@@ -1242,13 +1474,13 @@ function viewPaintLibrary() {
       <div class="detail-header">
         <button class="icon-btn" data-nav="paints">${icon("back", 18)}</button>
         <div class="page-title" style="margin:0">Paint Library</div>
-        <div style="width:36px"></div>
+        <button class="icon-btn" data-nav="similar" title="Match a colour">${icon("search", 16)}</button>
       </div>
       <div class="detail-sub" style="margin-bottom:14px">
-        Tap a paint to add it to your rack; tap the trash icon on an owned paint to remove it.
-        Flag ones you're missing for a buy list, or ones you own but are running low for a
-        restock. Colours are close approximations, not official swatches — manufacturers
-        don't publish exact codes.
+        Tap a paint's swatch to find similar colours from other brands. Tap the row to add it to
+        your rack, or the trash icon on an owned paint to remove it. Flag ones you're missing for
+        a buy list, or ones you own but are running low for a restock. Colours are close
+        approximations, not official swatches — manufacturers don't publish exact codes.
       </div>
 
       <div class="lib-progress">
@@ -1282,6 +1514,142 @@ function viewPaintLibrary() {
       }).join("") : emptyStateHtml("search", "No matches", "Try a different search or filter.")}
     </div>
   `;
+}
+
+// The colour wheel's canvas gradient is static (hue/sat only, always at full
+// brightness) so it only needs drawing once per full render(); dragging it
+// (or the brightness slider) only ever moves the indicator and recolours the
+// live bits below — never rebuilding the view, since a full render() mid-drag
+// would replace the canvas out from under an in-progress pointer capture and
+// silently kill the drag.
+function bindSimilarColours(root) {
+  const canvas = root.querySelector("#wheel-canvas");
+  if (!canvas) return;
+
+  const wheel = hexToHsv(similarColours.hex);
+  drawColourWheel(canvas);
+  positionWheelIndicator(canvas, wheel);
+
+  const brightnessInput = root.querySelector("#brightness-input");
+  if (brightnessInput) {
+    brightnessInput.value = Math.round(wheel.v * 100);
+    brightnessInput.style.background = `linear-gradient(to right, #000, ${hsvToHex(wheel.h, wheel.s, 1)})`;
+    brightnessInput.oninput = (e) => {
+      const w = hexToHsv(similarColours.hex);
+      applyLiveColour(hsvToHex(w.h, w.s, Number(e.target.value) / 100));
+    };
+    brightnessInput.onchange = () => render(); // full resync once the gesture ends
+  }
+
+  const hexInput = root.querySelector("#hex-input");
+  if (hexInput) {
+    hexInput.oninput = (e) => {
+      const v = e.target.value.replace(/[^0-9a-fA-F]/g, "").slice(0, 6);
+      e.target.value = v;
+      if (v.length === 6) { similarColours.hex = "#" + v; render(); }
+    };
+  }
+  root.querySelectorAll("[data-swatch]").forEach((el) => {
+    el.onclick = () => { similarColours.hex = el.dataset.swatch; render(); };
+  });
+
+  let dragging = false;
+  const R = canvas.width / 2;
+  function updateFromEvent(e) {
+    const rect = canvas.getBoundingClientRect();
+    const scale = canvas.width / rect.width;
+    const x = (e.clientX - rect.left) * scale - R;
+    const y = (e.clientY - rect.top) * scale - R;
+    const dist = Math.sqrt(x * x + y * y);
+    let angle = Math.atan2(x, -y);
+    if (angle < 0) angle += Math.PI * 2;
+    const w = hexToHsv(similarColours.hex);
+    applyLiveColour(hsvToHex((angle / (Math.PI * 2)) * 360, Math.min(1, dist / R), w.v));
+  }
+  canvas.onpointerdown = (e) => { dragging = true; canvas.setPointerCapture(e.pointerId); updateFromEvent(e); };
+  canvas.onpointermove = (e) => { if (dragging) updateFromEvent(e); };
+  const endDrag = (e) => {
+    if (!dragging) return;
+    dragging = false;
+    try { canvas.releasePointerCapture(e.pointerId); } catch (err) {}
+    render(); // full resync once the gesture ends
+  };
+  canvas.onpointerup = endDrag;
+  canvas.onpointercancel = endDrag;
+}
+
+function drawColourWheel(canvas) {
+  const ctx = canvas.getContext("2d");
+  const size = canvas.width;
+  const cx = size / 2, cy = size / 2, radius = size / 2;
+  ctx.clearRect(0, 0, size, size);
+  ctx.save();
+  ctx.beginPath();
+  ctx.arc(cx, cy, radius, 0, Math.PI * 2);
+  ctx.closePath();
+  ctx.clip();
+
+  const conic = ctx.createConicGradient(-Math.PI / 2, cx, cy);
+  for (let i = 0; i <= 360; i += 15) conic.addColorStop(i / 360, hsvToHex(i, 1, 1));
+  ctx.fillStyle = conic;
+  ctx.fillRect(0, 0, size, size);
+
+  // White at centre fading to transparent at the rim desaturates toward the
+  // middle -- the usual "hue ring, white core" wheel look.
+  const radial = ctx.createRadialGradient(cx, cy, 0, cx, cy, radius);
+  radial.addColorStop(0, "rgba(255,255,255,1)");
+  radial.addColorStop(1, "rgba(255,255,255,0)");
+  ctx.fillStyle = radial;
+  ctx.fillRect(0, 0, size, size);
+  ctx.restore();
+}
+
+function positionWheelIndicator(canvas, wheel) {
+  const indicator = document.getElementById("wheel-indicator");
+  if (!indicator) return;
+  const R = canvas.width / 2;
+  const angle = (wheel.h / 360) * Math.PI * 2;
+  const dist = wheel.s * R;
+  const x = R + dist * Math.sin(angle);
+  const y = R - dist * Math.cos(angle);
+  indicator.style.left = ((x / canvas.width) * 100) + "%";
+  indicator.style.top = ((y / canvas.height) * 100) + "%";
+  indicator.style.background = hsvToHex(wheel.h, wheel.s, wheel.v);
+}
+
+// The lightweight path for anything that fires many times per second (wheel
+// drag, brightness drag): touches only the DOM that actually needs to
+// change, so a fast drag never fights a full render() over the canvas or
+// drops pointer capture mid-gesture.
+function applyLiveColour(hex) {
+  similarColours.hex = hex;
+  const canvas = document.getElementById("wheel-canvas");
+  if (canvas) positionWheelIndicator(canvas, hexToHsv(hex));
+
+  const preview = document.getElementById("colour-preview");
+  if (preview) preview.style.background = hex;
+
+  const hexInput = document.getElementById("hex-input");
+  if (hexInput && document.activeElement !== hexInput) hexInput.value = hex.replace("#", "").toUpperCase();
+
+  const brightnessInput = document.getElementById("brightness-input");
+  if (brightnessInput && document.activeElement !== brightnessInput) {
+    const w = hexToHsv(hex);
+    brightnessInput.value = Math.round(w.v * 100);
+    brightnessInput.style.background = `linear-gradient(to right, #000, ${hsvToHex(w.h, w.s, 1)})`;
+  }
+
+  const srcSwatch = document.getElementById("results-source-swatch");
+  if (srcSwatch) srcSwatch.style.background = hex;
+  const srcMeta = document.getElementById("results-source-meta");
+  if (srcMeta) srcMeta.textContent = hex.toUpperCase();
+
+  const container = document.getElementById("matches-container");
+  if (container) {
+    const excludeKey = similarColours.entryMode === "paint" ? paintKey(similarColours.sourceName, similarColours.sourceBrand) : "__none__";
+    const matches = computeColourMatches(hex, excludeKey, similarColours.resultFilter, similarColours.entryMode === "paint" ? similarColours.sourceBrand : null);
+    container.innerHTML = colourMatchListHtml(matches);
+  }
 }
 
 // ---------------------------------------------------------------
@@ -1992,6 +2360,7 @@ function render() {
     html = viewPaintForm(!!paintForm.id);
     showFab = false;
   } else if (route === "paint-library") { html = viewPaintLibrary(); showFab = false; }
+  else if (route === "similar") { html = viewSimilarColours(params); showFab = false; }
   else if (route === "settings") { html = viewSettings(); showFab = false; }
   else if (route === "change-password") {
     if (!isSignedIn()) { navigate("settings"); return; }
@@ -2046,6 +2415,7 @@ function render() {
   swipeDirection = null; // one-shot: only a swipe-driven render animates directionally
   bindRecipeForm(root);
   bindPaintForm(root);
+  bindSimilarColours(root);
 
   const recipeListSearch = root.querySelector("#recipe-list-search");
   if (recipeListSearch) recipeListSearch.oninput = (e) => { state.searchQuery = e.target.value; render(); };
@@ -2218,6 +2588,14 @@ document.addEventListener("click", async (e) => {
     return;
   }
 
+  // Checked ahead of data-nav below: this sits nested inside rows that are
+  // themselves a data-nav link (e.g. a recipe's own paint row), so it has to
+  // win the closest() race or the row's own navigation would fire instead.
+  const findSimilar = t("[data-action='find-similar-colour']");
+  if (findSimilar) {
+    openSimilarColours(findSimilar.dataset.name, findSimilar.dataset.brand, findSimilar.dataset.hex);
+    return;
+  }
 
   const navEl = t("[data-nav]");
   if (navEl) {
@@ -2565,6 +2943,23 @@ document.addEventListener("click", async (e) => {
 
   const libBrand = t("[data-action='lib-brand']");
   if (libBrand) { state.paintLibBrand = libBrand.dataset.brand || null; render(); return; }
+
+  const similarMode = t("[data-action='similar-mode']");
+  if (similarMode) {
+    if (!similarMode.disabled) {
+      similarColours.entryMode = similarMode.dataset.mode;
+      if (similarColours.entryMode === "colour") similarColours.resultFilter = "all";
+      else if (similarColours.resultFilter === "all") similarColours.resultFilter = "other";
+      render();
+    }
+    return;
+  }
+
+  const similarFilter = t("[data-action='similar-filter']");
+  if (similarFilter) {
+    if (!similarFilter.disabled) { similarColours.resultFilter = similarFilter.dataset.filter; render(); }
+    return;
+  }
 
   const paintCancel = t("[data-action='paint-cancel']");
   if (paintCancel) {

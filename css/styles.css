@@ -44,6 +44,13 @@
   --success-border: rgba(134, 160, 111, 0.35);
   --danger: #a5503e;
 
+  /* Colour-closeness (similar colours' match score) — deliberately a third
+     hue, never confused with brand gold or the owned/buy semantics above. */
+  --kinship: #5f8f8b;
+  --kinship-bright: #8fc9c3;
+  --kinship-dim: rgba(95, 143, 139, 0.16);
+  --kinship-border: rgba(95, 143, 139, 0.4);
+
   --font-display: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, "Times New Roman", serif;
   --font-body: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   --font-mono: ui-monospace, "SF Mono", "Cascadia Code", "Segoe UI Mono", Consolas, "Liberation Mono", monospace;
@@ -86,6 +93,11 @@
   --success-dim: rgba(76, 107, 57, 0.13);
   --success-border: rgba(76, 107, 57, 0.38);
   --danger: #8a3d2c;
+
+  --kinship: #3f6d69;
+  --kinship-bright: #2f5551;
+  --kinship-dim: rgba(63, 109, 105, 0.13);
+  --kinship-border: rgba(63, 109, 105, 0.4);
 
   --shadow-card: 0 2px 10px rgba(60, 50, 30, 0.16);
   --shadow-raised: 0 8px 24px rgba(60, 50, 30, 0.22);
@@ -2871,5 +2883,249 @@ main {
   display: flex;
   align-items: center;
   justify-content: center;
+  cursor: pointer;
+}
+
+/* ============================================================
+   SIMILAR COLOURS
+   ============================================================ */
+.entry-switch {
+  display: flex;
+  background: var(--bg-panel);
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  padding: 3px;
+  gap: 2px;
+}
+
+.entry-switch button {
+  flex: 1;
+  border: 0;
+  background: transparent;
+  color: var(--parchment-dim);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.02em;
+  padding: 11px 6px;
+  border-radius: 7px;
+  cursor: pointer;
+}
+
+.entry-switch button.is-active {
+  background: var(--gold);
+  color: var(--ink-on-accent);
+}
+
+/* HSV colour wheel: hue around the ring, saturation from centre to edge, at
+   a fixed brightness of 100% -- brightness is the separate slider below. */
+.colour-match-card {
+  background: var(--bg-panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  padding: 16px;
+  margin-bottom: 4px;
+}
+
+.wheel-wrap {
+  position: relative;
+  width: 180px;
+  height: 180px;
+  margin: 2px auto 16px;
+}
+
+#wheel-canvas {
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  display: block;
+  touch-action: none; /* stop the page trying to scroll while dragging */
+  cursor: crosshair;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.35), var(--shadow-raised);
+}
+
+.wheel-indicator {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 20px;
+  height: 20px;
+  margin: -10px 0 0 -10px;
+  border-radius: 50%;
+  border: 3px solid #fff;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.45), 0 2px 6px rgba(0, 0, 0, 0.45);
+  pointer-events: none; /* the canvas beneath handles the actual drag */
+}
+
+.brightness-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 16px;
+}
+
+.brightness-row__label {
+  flex-shrink: 0;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink-dim);
+}
+
+.brightness-row input[type="range"] {
+  flex: 1;
+  -webkit-appearance: none;
+  appearance: none;
+  height: 12px;
+  border-radius: 999px;
+  outline: none;
+  border: 1px solid rgba(0, 0, 0, 0.3);
+}
+
+.brightness-row input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: #fff;
+  border: 2px solid rgba(0, 0, 0, 0.35);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.4);
+  cursor: pointer;
+  margin-top: -1px;
+}
+
+.brightness-row input[type="range"]::-moz-range-thumb {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: #fff;
+  border: 2px solid rgba(0, 0, 0, 0.35);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.4);
+  cursor: pointer;
+}
+
+.brightness-row input[type="range"]::-moz-range-track {
+  height: 12px;
+  border-radius: 999px;
+  border: none;
+}
+
+.colour-match-card__row {
+  display: flex;
+  gap: 14px;
+  align-items: center;
+}
+
+.picker-swatch {
+  width: 64px;
+  height: 64px;
+  border-radius: 14px;
+  border: 1px solid rgba(0, 0, 0, 0.3);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.06), var(--shadow-raised);
+  flex-shrink: 0;
+}
+
+.picker-fields { flex: 1; display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+
+.hex-field {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--bg-raised);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  padding: 8px 10px;
+}
+
+.hex-field span { font-family: var(--font-mono); font-size: 11px; color: var(--ink-dim); }
+
+.hex-field input {
+  flex: 1;
+  min-width: 0;
+  background: transparent;
+  border: none;
+  color: var(--parchment);
+  font-family: var(--font-mono);
+  font-size: 16px; /* iOS zooms the whole page in on focus for any input below 16px */
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+
+.hex-field input:focus { outline: none; }
+
+.swatch-row { display: flex; gap: 6px; }
+
+.swatch-row button {
+  width: 28px;
+  height: 28px;
+  border-radius: 7px;
+  border: 1px solid rgba(0, 0, 0, 0.3);
+  cursor: pointer;
+  padding: 0;
+}
+
+.colour-match-source {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: var(--bg-panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  padding: 12px;
+  margin: 14px 0 4px;
+}
+
+.colour-match-source .paint-row__swatch { width: 44px; height: 44px; border-radius: 10px; flex-shrink: 0; }
+
+.results-source__name { font-family: var(--font-display); font-size: 16px; color: var(--parchment); }
+.results-source__meta { font-size: 11.5px; color: var(--ink); font-family: var(--font-mono); margin-top: 2px; }
+
+.colour-match-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: var(--bg-panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  padding: 10px 12px;
+  margin-bottom: 8px;
+}
+
+.colour-match-row__info { flex: 1; min-width: 0; }
+
+.colour-match-row__score {
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+  width: 60px;
+}
+
+.colour-match-row__score span {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  color: var(--kinship-bright);
+}
+
+.colour-match-row__bar {
+  width: 100%;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--line-soft);
+  overflow: hidden;
+}
+
+.colour-match-row__bar i {
+  display: block;
+  height: 100%;
+  background: var(--kinship);
+  border-radius: 2px;
+}
+
+/* The paint-library row's swatch and a recipe's Paints-Used swatch both
+   double as the "find similar colours" trigger. */
+.paint-row__swatch[data-action="find-similar-colour"] {
   cursor: pointer;
 }
