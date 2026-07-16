@@ -130,11 +130,23 @@ function resolvePaintFor(recipe, paintId) {
 // shopping-list placeholder (wantPaint/mixWantPaint — see newStep). This
 // resolves whichever is set into one shape for rendering, tagging the
 // latter so callers can show it differently.
+//
+// A want snapshot is checked against the rack every time, rather than once
+// at pick time: the paint might get bought later (from the Paint Library, or
+// any other recipe), and nothing else ever goes back to update the steps
+// that reference it by name+brand — this is what makes it read as owned
+// again the moment it shows up on the rack, instead of staying stuck showing
+// "not on rack" forever.
 function resolveStepPaint(recipe, step, field) {
   const id = step[field];
   if (id) return resolvePaintFor(recipe, id);
   const want = step[field === "paintId" ? "wantPaint" : "mixWantPaint"];
-  return want ? { ...want, isWant: true } : null;
+  if (!want) return null;
+  if (!recipe.authorId) {
+    const owned = ownedPaintFor(want.name, want.brand);
+    if (owned) return owned;
+  }
+  return { ...want, isWant: true };
 }
 
 function save(key, value) {
@@ -187,8 +199,20 @@ function recipePaints(r) {
   return out;
 }
 
+// Recipes referencing this paint — whether by real ownership (paintId) or
+// by a want-list snapshot that now matches its name+brand (see
+// resolveStepPaint): a step planned around this paint before it was bought
+// still counts once it's on the rack.
+function recipesUsingPaint(p) {
+  const wantMatches = (want) => !!want && paintKey(want.name, want.brand) === paintKey(p.name, p.brand);
+  return getRecipes().filter((r) => (r.steps || []).some((s) =>
+    s.paintId === p.id || s.mixPaintId === p.id || wantMatches(s.wantPaint) || wantMatches(s.mixWantPaint)
+  ));
+}
+
 function paintUsageCount(paintId) {
-  return getRecipes().filter((r) => (r.steps || []).some((s) => s.paintId === paintId || s.mixPaintId === paintId)).length;
+  const p = findPaint(paintId);
+  return p ? recipesUsingPaint(p).length : 0;
 }
 
 // ---------------------------------------------------------------
@@ -1110,7 +1134,7 @@ function viewPaints() {
 function viewPaint(id) {
   const p = findPaint(id);
   if (!p) return emptyStateHtml("palette", "Paint not found", "It may have been removed from the rack.");
-  const used = getRecipes().filter((r) => (r.steps || []).some((s) => s.paintId === p.id));
+  const used = recipesUsingPaint(p);
 
   return `
     <div class="page-enter">
