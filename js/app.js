@@ -1308,7 +1308,7 @@ function viewSimilarColours(params) {
       </div>
 
       <div class="entry-switch">
-        <button data-action="similar-mode" data-mode="paint" class="${st.entryMode === "paint" ? "is-active" : ""}" ${!st.sourceName ? "disabled style=\"opacity:.4\"" : ""}>From a paint</button>
+        <button data-action="similar-mode" data-mode="paint" class="${st.entryMode === "paint" ? "is-active" : ""}">From a paint</button>
         <button data-action="similar-mode" data-mode="colour" class="${st.entryMode === "colour" ? "is-active" : ""}">Pick a colour</button>
       </div>
       <div class="detail-sub" style="margin:10px 2px 4px">
@@ -1316,6 +1316,21 @@ function viewSimilarColours(params) {
           ? "Tap ≈ next to any paint — in the library, your rack, or a recipe — to see who else makes something close."
           : "Not sure what it's called? Set a colour directly and match it against every brand Forgebook knows."}
       </div>
+
+      ${st.entryMode === "paint" && !st.sourceName ? `
+        ${getPaints().length ? `
+          <div class="section-label">Your rack</div>
+          ${getPaints().map((p) => `
+            <div class="colour-match-row">
+              <div class="paint-row__swatch" data-action="find-similar-colour" data-name="${escapeHtml(p.name)}" data-brand="${escapeHtml(p.brand || "")}" data-hex="${p.hex}" title="Find similar colours" style="background:${p.hex}"></div>
+              <div class="colour-match-row__info">
+                <div class="paint-row__name">${escapeHtml(p.name)}</div>
+                <div class="paint-row__brand">${escapeHtml(p.brand || "")}${p.type ? " · " + escapeHtml(p.type) : ""}</div>
+              </div>
+            </div>
+          `).join("")}
+        ` : `<div class="empty-state__sub">Nothing on your rack yet — try Pick a colour instead.</div>`}
+      ` : ""}
 
       ${st.entryMode === "colour" ? `
         <div class="colour-match-card">
@@ -1344,21 +1359,23 @@ function viewSimilarColours(params) {
         </div>
       ` : ""}
 
-      <div class="colour-match-source">
-        <div class="paint-row__swatch" id="results-source-swatch" style="background:${activeHex}"></div>
-        <div>
-          <div class="results-source__name">${st.entryMode === "paint" ? escapeHtml(st.sourceName) : "Your colour"}</div>
-          <div class="results-source__meta" id="results-source-meta">${st.entryMode === "paint" ? escapeHtml(st.sourceBrand) : activeHex.toUpperCase()}</div>
+      ${st.entryMode === "colour" || st.sourceName ? `
+        <div class="colour-match-source">
+          <div class="paint-row__swatch" id="results-source-swatch" style="background:${activeHex}"></div>
+          <div>
+            <div class="results-source__name">${st.entryMode === "paint" ? escapeHtml(st.sourceName) : "Your colour"}</div>
+            <div class="results-source__meta" id="results-source-meta">${st.entryMode === "paint" ? escapeHtml(st.sourceBrand) : activeHex.toUpperCase()}</div>
+          </div>
         </div>
-      </div>
 
-      <div class="lib-filter-seg">
-        <button data-action="similar-filter" data-filter="all" class="${st.resultFilter === "all" ? "is-active" : ""}">All brands</button>
-        <button data-action="similar-filter" data-filter="other" class="${st.resultFilter === "other" ? "is-active" : ""}" ${st.entryMode === "colour" ? "disabled style=\"opacity:.4\"" : ""}>Other brands</button>
-        <button data-action="similar-filter" data-filter="owned" class="${st.resultFilter === "owned" ? "is-active" : ""}">On my rack</button>
-      </div>
+        <div class="lib-filter-seg">
+          <button data-action="similar-filter" data-filter="all" class="${st.resultFilter === "all" ? "is-active" : ""}">All brands</button>
+          <button data-action="similar-filter" data-filter="other" class="${st.resultFilter === "other" ? "is-active" : ""}" ${st.entryMode === "colour" ? "disabled style=\"opacity:.4\"" : ""}>Other brands</button>
+          <button data-action="similar-filter" data-filter="owned" class="${st.resultFilter === "owned" ? "is-active" : ""}">On my rack</button>
+        </div>
 
-      <div id="matches-container">${colourMatchListHtml(matches)}</div>
+        <div id="matches-container">${colourMatchListHtml(matches)}</div>
+      ` : ""}
     </div>
   `;
 }
