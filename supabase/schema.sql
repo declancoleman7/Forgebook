@@ -118,13 +118,14 @@ create policy "own paints" on public.paints
   using      (auth.uid() = user_id)
   with check (auth.uid() = user_id);
 
--- Shared recipes. Published recipes are readable by any SIGNED-IN user (i.e.
--- anyone you've invited) — not by the whole internet. To make published
--- schemes truly public later, change `auth.role() = 'authenticated'` to `true`.
+-- Shared recipes. Published recipes are public — readable by anyone,
+-- signed in or not — so a share link works for someone with no Forgebook
+-- account at all. Only the published/deleted flags gate this; nothing about
+-- the author's identity or their other (unpublished) recipes is exposed.
 drop policy if exists "read published recipes" on public.recipes;
 create policy "read published recipes" on public.recipes
   for select
-  using (published = true and deleted = false and auth.role() = 'authenticated');
+  using (published = true and deleted = false);
 
 -- A shared recipe's steps reference the author's own paint ids, so those
 -- specific paints need to be readable too (not the author's whole rack —
@@ -146,12 +147,21 @@ create policy "read paints used in published recipes" on public.paints
   );
 
 -- Anyone signed in can see anyone else's display name (that's the whole
--- point — it's what shows as the author on a shared recipe). Only the owner
--- can change their own.
+-- point — it's what shows as the author on a shared recipe). Anyone at all
+-- (signed in or not) can see the display name of someone who has at least
+-- one published recipe, since that name shows up on that recipe's public
+-- share page too — everyone else's name stays behind the sign-in wall. Only
+-- the owner can change their own.
 drop policy if exists "read all profiles" on public.profiles;
 create policy "read all profiles" on public.profiles
   for select
-  using (auth.role() = 'authenticated');
+  using (
+    auth.role() = 'authenticated'
+    or exists (
+      select 1 from public.recipes r
+      where r.user_id = profiles.user_id and r.published = true and r.deleted = false
+    )
+  );
 
 drop policy if exists "manage own profile" on public.profiles;
 create policy "manage own profile" on public.profiles

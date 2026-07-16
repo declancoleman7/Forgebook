@@ -549,6 +549,10 @@ function buildHash(route, p) {
   // author has to ride along in the URL to disambiguate — never paired with
   // /edit, since shared recipes are view-only.
   if (route === "recipe") return `#/recipe/${p.id}${p.authorId ? "/by/" + encodeURIComponent(p.authorId) : ""}${p.edit ? "/edit" : ""}`;
+  // The public share link — no sign-in required to resolve it (see
+  // fetchPublicRecipe/init()) — deliberately a different shape (/r/, not
+  // /recipe/) so it's unambiguous at a glance which kind of link this is.
+  if (route === "public-recipe") return `#/r/${encodeURIComponent(p.authorId)}/${encodeURIComponent(p.id)}`;
   if (route === "faction") return `#/faction/${p.id}`;
   if (route === "unit") return `#/faction/${p.id}/unit/${p.unit === null ? "_general" : slug(p.unit)}`;
   if (route === "paint") return `#/paint/${p.id}`;
@@ -563,6 +567,9 @@ function parseHash() {
   const parts = location.hash.replace(/^#\/?/, "").split("/").filter(Boolean);
   if (!parts.length) return { route: "home", params: {} };
 
+  if (parts[0] === "r" && parts[1] && parts[2]) {
+    return { route: "public-recipe", params: { authorId: decodeURIComponent(parts[1]), id: decodeURIComponent(parts[2]) } };
+  }
   if (parts[0] === "recipe" && parts[1]) {
     const id = decodeURIComponent(parts[1]);
     if (parts[2] === "by" && parts[3]) {
@@ -1173,7 +1180,10 @@ function viewRecipeDetail(id, authorId) {
       ${r.notes ? `<div class="section-label">Notes</div><div class="notes-block">${escapeHtml(r.notes)}</div>` : ""}
 
       <div class="detail-actions">
-        <button class="btn btn-ghost btn-block" data-action="print">Print Recipe</button>
+        <button class="btn btn-ghost btn-block" style="flex:1" data-action="print">Print Recipe</button>
+        <button class="btn btn-primary btn-block" style="flex:1" data-action="share-recipe" data-id="${r.id}" ${isShared ? `data-author-id="${r.authorId}"` : ""}>
+          ${icon("upload", 15)} Share
+        </button>
       </div>
     </div>
   `;
@@ -1193,6 +1203,368 @@ function viewRecipeDetail(id, authorId) {
     </div>
   `;
 }
+
+// ---------------------------------------------------------------
+// Public recipe share page — the #/r/<authorId>/<id> route. Entirely
+// separate from the signed-in app: no shell, no bottom nav, no state/render
+// cycle, no localStorage. It's rendered once, directly into #app, by
+// init() bypassing decideBootState() entirely (see below) so it works for a
+// visitor with no Forgebook account and no session at all.
+// ---------------------------------------------------------------
+function resolvePublicStepPaint(paints, step, field) {
+  const id = step[field];
+  if (id) return paints.find((p) => p.id === id) || null;
+  const want = step[field === "paintId" ? "wantPaint" : "mixWantPaint"];
+  return want ? { ...want, isWant: true } : null;
+}
+
+function publicRecipeShellHtml(inner) {
+  return `
+    <div class="gate public-recipe">
+      <div class="gate__card public-recipe__card">
+        ${inner}
+      </div>
+      <div class="toast" id="toast"></div>
+    </div>
+  `;
+}
+
+async function renderPublicRecipe(params) {
+  document.getElementById("app").innerHTML = publicRecipeShellHtml(`
+    <div class="gate__brand">${icon("book", 26)} Forgebook</div>
+    <div class="detail-sub" style="margin-top:14px">Loading recipe…</div>
+  `);
+
+  const result = await fetchPublicRecipe(params.authorId, params.id);
+
+  if (!result || !result.recipe.published || result.recipe.deleted) {
+    document.getElementById("app").innerHTML = publicRecipeShellHtml(`
+      <div class="gate__brand">${icon("book", 26)} Forgebook</div>
+      <div class="gate__tagline">This recipe isn't available — it may have been unpublished or removed.</div>
+      <a class="btn btn-primary btn-block" style="margin-top:20px" href="./">Open Forgebook</a>
+    `);
+    return;
+  }
+
+  const { recipe: r, paints, authorName: author } = result;
+  const f = faction(r.faction);
+  const steps = r.steps || [];
+
+  const usedPaints = [];
+  const seenPaintKeys = new Set();
+  steps.forEach((s) => {
+    [["paintId", "wantPaint"], ["mixPaintId", "mixWantPaint"]].forEach(([idField, wantField]) => {
+      const p = resolvePublicStepPaint(paints, s, idField);
+      if (!p) return;
+      const key = p.id || ("want:" + (p.name || "") + "|" + (p.brand || ""));
+      if (seenPaintKeys.has(key)) return;
+      seenPaintKeys.add(key);
+      usedPaints.push(p);
+    });
+  });
+
+  document.getElementById("app").innerHTML = publicRecipeShellHtml(`
+    <div class="public-recipe__banner">
+      <span>${icon("book", 15)} Made with Forgebook</span>
+      <a href="./">Get the app</a>
+    </div>
+
+    <div class="detail-hero ${r.photo ? "has-photo" : ""}" style="--faction-color:${f.color}${r.photo ? `;background-image:url('${escapeHtml(r.photo)}')` : ""}">
+      ${r.photo ? "" : `<span class="emblem-badge emblem-badge--xl">${emblemSvg(f.emblem, 40)}</span>`}
+    </div>
+
+    <div class="detail-crumbs">
+      <span style="color:${f.color}">${escapeHtml(f.label)}</span>
+      <span class="sep">/</span>
+      <span>${escapeHtml(r.unit || "General")}</span>
+    </div>
+    <div class="detail-title">${escapeHtml(r.name)}</div>
+    <div class="shared-badge">${icon("book", 12)} Shared by ${escapeHtml(author)}</div>
+
+    <div class="metastrip">
+      <div class="metastrip__cell">
+        <div class="metastrip__n">${difficultyDots(r.difficulty || 1)}</div>
+        <div class="metastrip__l">Difficulty</div>
+      </div>
+      <div class="metastrip__cell">
+        <div class="metastrip__n">${steps.length}</div>
+        <div class="metastrip__l">Steps</div>
+      </div>
+      <div class="metastrip__cell">
+        <div class="metastrip__n">${formatDuration(estimatedMinutes(r))}</div>
+        <div class="metastrip__l">Est. time</div>
+      </div>
+    </div>
+
+    <div class="section-label">Paints Used</div>
+    <div class="paint-list">
+      ${usedPaints.length ? usedPaints.map((p) => `
+        <div class="paint-row">
+          <div class="paint-row__swatch" style="background:${p.hex}">${paintTypeBadgeHtml(p.type)}</div>
+          <div>
+            <div class="paint-row__name">${escapeHtml(p.name)}</div>
+            <div class="paint-row__brand">${escapeHtml(p.brand || "")}${p.type ? " · " + escapeHtml(p.type) : ""}</div>
+          </div>
+          <div class="paint-row__hex">${escapeHtml(p.hex)}</div>
+        </div>
+      `).join("") : `<div class="empty-state__sub">No paints listed.</div>`}
+    </div>
+
+    <div class="section-label">Method</div>
+    ${steps.length ? groupStepsByArea(steps).map((g) => `
+      ${g.area ? `<div class="grouphead">${escapeHtml(g.area)}</div>` : ""}
+      <div class="layer-stack">
+        ${g.items.map(({ step: s, num }) => {
+          const p = resolvePublicStepPaint(paints, s, "paintId");
+          const mixP = (s.mixPaintId || s.mixWantPaint) ? resolvePublicStepPaint(paints, s, "mixPaintId") : null;
+          const swatchBg = mixP
+            ? `linear-gradient(to bottom, ${p ? p.hex : f.color} 50%, ${mixP.hex} 50%)`
+            : (p ? p.hex : f.color);
+          const paintLabel = mixP
+            ? `${p ? escapeHtml(p.name) : "(paint deleted)"} + ${escapeHtml(mixP.name)}${s.mixRatio ? ` (${escapeHtml(s.mixRatio)})` : ""}`
+            : (p ? escapeHtml(p.name) : "(paint deleted)");
+          return `
+            <div class="layer-stack__row">
+              <div class="layer-stack__num">${num}</div>
+              <div class="layer-stack__swatch" style="background:${swatchBg}"></div>
+              <div class="layer-stack__content">
+                <div class="layer-stack__top">
+                  <span class="layer-stack__technique">${escapeHtml(s.technique)}</span>
+                  <span class="layer-stack__paint">${paintLabel}</span>
+                </div>
+                ${s.notes ? `<div class="layer-stack__notes">${escapeHtml(s.notes)}</div>` : ""}
+              </div>
+            </div>`;
+        }).join("")}
+      </div>
+    `).join("") : `<div class="empty-state__sub">No steps recorded.</div>`}
+
+    ${r.notes ? `<div class="section-label">Notes</div><div class="notes-block">${escapeHtml(r.notes)}</div>` : ""}
+
+    <a class="btn btn-primary btn-block" style="margin-top:24px" href="./">
+      ${icon("book", 16)} Track your own recipes with Forgebook
+    </a>
+  `);
+}
+
+// ---------------------------------------------------------------
+// Share card — a portrait (1080x1350, the safe Instagram feed crop) PNG
+// summarising a recipe, generated client-side on a canvas and handed to the
+// Web Share API (or downloaded, where that's unavailable). Deliberately not
+// a screenshot of any in-app view: social platforms recompress/crop shared
+// images unpredictably, so this is drawn at a fixed size built for that,
+// rather than reusing the responsive HTML layout.
+// ---------------------------------------------------------------
+function wrapCanvasText(ctx, text, maxWidth) {
+  const words = text.split(/\s+/);
+  const lines = [];
+  let line = "";
+  words.forEach((w) => {
+    const attempt = line ? line + " " + w : w;
+    if (ctx.measureText(attempt).width > maxWidth && line) {
+      lines.push(line);
+      line = w;
+    } else {
+      line = attempt;
+    }
+  });
+  if (line) lines.push(line);
+  return lines;
+}
+
+// usedPaints: recipePaints(r)'s own shape ({name, hex, ...}). steps: pre-
+// resolved to {technique, paintName, hex} by the caller — this function only
+// draws, it doesn't know how to resolve a step's paint from a rack/id.
+function drawShareCardCanvas(r, f, usedPaints, steps) {
+  const W = 1080, H = 1350;
+  const canvas = document.createElement("canvas");
+  canvas.width = W;
+  canvas.height = H;
+  const ctx = canvas.getContext("2d");
+  const pad = 80;
+
+  // --- Background: graphite ground + a faction-coloured glow, same idea as
+  // the app's own dark theme but fixed values (no CSS variables in canvas). ---
+  ctx.fillStyle = "#14171a";
+  ctx.fillRect(0, 0, W, H);
+  const { r: fr, g: fg, b: fb } = hexToRgb(f.color);
+  const glow = ctx.createRadialGradient(W * 0.3, 0, 0, W * 0.3, 0, W * 0.75);
+  glow.addColorStop(0, `rgba(${fr},${fg},${fb},0.35)`);
+  glow.addColorStop(1, `rgba(${fr},${fg},${fb},0)`);
+  ctx.fillStyle = glow;
+  ctx.fillRect(0, 0, W, H);
+
+  const gold = "#dcae67";
+  const parchment = "#e9e3d4";
+  const parchmentDim = "#c2bcaa";
+  const ink = "#9c9587";
+  const line = "rgba(255,255,255,0.08)";
+
+  let y = pad + 10;
+
+  // --- Faction row: emblem + label ---
+  ctx.save();
+  ctx.translate(pad, y - 28);
+  ctx.fillStyle = f.color;
+  ctx.scale(1.4, 1.4);
+  // emblemPaths() returns SVG markup (<path d="...">), not raw path data --
+  // Path2D only accepts the latter, so each d="..." attribute is pulled out
+  // and filled as its own subpath.
+  const emblemDs = emblemPaths(f.emblem).match(/d="([^"]+)"/g) || [];
+  emblemDs.forEach((m) => {
+    const d = m.slice(3, -1);
+    try { ctx.fill(new Path2D(d)); } catch (e) {}
+  });
+  ctx.restore();
+  ctx.fillStyle = f.color;
+  ctx.font = "600 30px " + FONT_MONO;
+  ctx.textBaseline = "middle";
+  ctx.fillText(f.label.toUpperCase(), pad + 56, y);
+  y += 70;
+
+  // --- Title (up to 2 lines) ---
+  ctx.fillStyle = parchment;
+  ctx.font = "600 72px " + FONT_DISPLAY;
+  ctx.textBaseline = "alphabetic";
+  const titleLines = wrapCanvasText(ctx, r.name, W - pad * 2).slice(0, 2);
+  titleLines.forEach((l) => { y += 74; ctx.fillText(l, pad, y); });
+  y += 20;
+
+  // --- Subtitle ---
+  ctx.fillStyle = ink;
+  ctx.font = "30px " + FONT_BODY;
+  y += 38;
+  ctx.fillText(`${r.unit || "General"} · Made with Forgebook`, pad, y);
+  y += 44;
+
+  // --- Meta row (difficulty / steps / est. time) ---
+  ctx.strokeStyle = line;
+  ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(pad, y); ctx.lineTo(W - pad, y); ctx.stroke();
+  const metaY = y + 56;
+  const cellW = (W - pad * 2) / 3;
+  const metas = [
+    [difficultyDotsText(r.difficulty || 1), "DIFFICULTY"],
+    [String(steps.length), "STEPS"],
+    [formatDuration(estimatedMinutes(r)), "EST. TIME"],
+  ];
+  metas.forEach(([val, label], i) => {
+    const cx = pad + cellW * i + cellW / 2;
+    ctx.fillStyle = parchment;
+    ctx.font = "600 34px " + FONT_MONO;
+    ctx.textAlign = "center";
+    ctx.fillText(val, cx, metaY);
+    ctx.fillStyle = ink;
+    ctx.font = "22px " + FONT_MONO;
+    ctx.fillText(label, cx, metaY + 34);
+  });
+  ctx.textAlign = "left";
+  y = metaY + 66;
+  ctx.beginPath(); ctx.moveTo(pad, y); ctx.lineTo(W - pad, y); ctx.stroke();
+  y += 54;
+
+  // --- Paints: swatches + name, capped with an overflow chip. Fixed
+  // six-column grid (five swatches + an overflow chip once there's more
+  // than six paints) so labels always get the same width to wrap into,
+  // rather than however much space happens to be left. ---
+  ctx.fillStyle = gold;
+  ctx.font = "600 24px " + FONT_MONO;
+  ctx.fillText("PAINTS", pad, y);
+  y += 50;
+  const TOTAL_SLOTS = 6;
+  const needsOverflow = usedPaints.length > TOTAL_SLOTS;
+  const shown = usedPaints.slice(0, needsOverflow ? TOTAL_SLOTS - 1 : TOTAL_SLOTS);
+  const overflow = usedPaints.length - shown.length;
+  const colW = (W - pad * 2) / TOTAL_SLOTS;
+  const swatchR = 42;
+  const labelMaxWidth = colW - 14;
+  shown.forEach((p, i) => {
+    const cx = pad + colW * i + colW / 2;
+    const cy = y + swatchR;
+    ctx.beginPath();
+    ctx.arc(cx, cy, swatchR, 0, Math.PI * 2);
+    ctx.fillStyle = p.hex;
+    ctx.fill();
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = "rgba(255,255,255,0.15)";
+    ctx.stroke();
+    ctx.fillStyle = ink;
+    ctx.font = "17px " + FONT_MONO;
+    ctx.textAlign = "center";
+    const labelLines = wrapCanvasText(ctx, p.name, labelMaxWidth).slice(0, 2);
+    labelLines.forEach((l, li) => ctx.fillText(l, cx, cy + swatchR + 26 + li * 20));
+  });
+  if (overflow > 0) {
+    const cx = pad + colW * shown.length + colW / 2;
+    const cy = y + swatchR;
+    ctx.beginPath();
+    ctx.arc(cx, cy, swatchR, 0, Math.PI * 2);
+    ctx.setLineDash([5, 5]);
+    ctx.strokeStyle = "rgba(255,255,255,0.3)";
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.fillStyle = ink;
+    ctx.font = "26px " + FONT_MONO;
+    ctx.textAlign = "center";
+    ctx.fillText("+" + overflow, cx, cy + 8);
+  }
+  ctx.textAlign = "left";
+  y += swatchR * 2 + 66;
+
+  // --- Steps: first few, condensed ---
+  ctx.fillStyle = gold;
+  ctx.font = "600 24px " + FONT_MONO;
+  ctx.fillText("HOW IT'S BUILT", pad, y);
+  y += 50;
+  const MAX_STEPS = 3;
+  steps.slice(0, MAX_STEPS).forEach((s) => {
+    ctx.beginPath();
+    ctx.arc(pad + 10, y - 9, 10, 0, Math.PI * 2);
+    ctx.fillStyle = s.hex || f.color;
+    ctx.fill();
+    ctx.fillStyle = parchmentDim;
+    ctx.font = "30px " + FONT_BODY;
+    ctx.fillText(s.technique, pad + 34, y);
+    const techW = ctx.measureText(s.technique + " ").width;
+    ctx.font = "700 30px " + FONT_BODY;
+    ctx.fillStyle = parchment;
+    ctx.fillText(s.paintName, pad + 34 + techW, y);
+    y += 46;
+  });
+  if (steps.length > MAX_STEPS) {
+    ctx.fillStyle = ink;
+    ctx.font = "24px " + FONT_MONO;
+    ctx.fillText(`+ ${steps.length - MAX_STEPS} more steps in the app`, pad + 34, y);
+    y += 20;
+  }
+
+  // --- Footer ---
+  const footerY = H - pad + 4;
+  ctx.strokeStyle = line;
+  ctx.beginPath(); ctx.moveTo(pad, footerY - 44); ctx.lineTo(W - pad, footerY - 44); ctx.stroke();
+  ctx.fillStyle = gold;
+  ctx.font = "600 34px " + FONT_DISPLAY;
+  ctx.textAlign = "left";
+  ctx.fillText("Forgebook", pad, footerY);
+  ctx.fillStyle = ink;
+  ctx.font = "24px " + FONT_MONO;
+  ctx.textAlign = "right";
+  ctx.fillText("forgebook.co.uk", W - pad, footerY);
+  ctx.textAlign = "left";
+
+  return canvas;
+}
+
+// Plain solid-dot difficulty text for canvas (no HTML spans available there).
+function difficultyDotsText(level, max = 5) {
+  let out = "";
+  for (let i = 1; i <= max; i++) out += i <= level ? "●" : "○";
+  return out;
+}
+
+const FONT_DISPLAY = '"Iowan Old Style", "Palatino Linotype", Palatino, Georgia, "Times New Roman", serif';
+const FONT_BODY = '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif';
+const FONT_MONO = 'ui-monospace, "SF Mono", "Cascadia Code", "Segoe UI Mono", Consolas, "Liberation Mono", monospace';
 
 // ---------------------------------------------------------------
 // View: Paint rack (the user's own paints)
@@ -3173,6 +3545,72 @@ document.addEventListener("click", async (e) => {
   // --- settings ---
   if (t("[data-action='print']")) { window.print(); return; }
 
+  const shareRecipe = t("[data-action='share-recipe']");
+  if (shareRecipe) {
+    const foreignAuthorId = shareRecipe.dataset.authorId || null;
+    const r = findRecipe(shareRecipe.dataset.id, foreignAuthorId);
+    if (!r) return;
+    const authorId = foreignAuthorId || currentUserId();
+
+    // Only an own, not-yet-published recipe needs this — a shared recipe is
+    // published by definition (that's the only way it could be showing here
+    // at all), so there's nothing to flip for someone else's row.
+    if (!foreignAuthorId && !r.published) {
+      showToast("Publishing recipe…");
+      r.published = true;
+      stamp(r);
+      const res = await pushRecipe(r);
+      if (!res.ok) { r.published = false; showToast(res.message); return; }
+      const rows = getAllRecipeRows();
+      const idx = rows.findIndex((x) => x.id === r.id);
+      if (idx > -1) rows[idx] = r;
+      save(KEYS.recipes, rows);
+    }
+
+    const f = faction(r.faction);
+    const usedPaints = recipePaints(r);
+    const cardSteps = (r.steps || []).map((s) => {
+      const p = resolveStepPaint(r, s, "paintId");
+      return { technique: s.technique, paintName: p ? p.name : "(paint deleted)", hex: p ? p.hex : f.color };
+    });
+    const canvas = drawShareCardCanvas(r, f, usedPaints, cardSteps);
+    const shareUrl = `https://forgebook.co.uk/#/r/${encodeURIComponent(authorId)}/${encodeURIComponent(r.id)}`;
+
+    canvas.toBlob(async (blob) => {
+      if (!blob) { showToast("Couldn't generate the share image — try again."); return; }
+      const fileName = `${slug(r.name)}.png`;
+      const shareText = `${r.name} — a Forgebook paint recipe. ${shareUrl}`;
+      const file = new File([blob], fileName, { type: "image/png" });
+
+      if (navigator.canShare && navigator.canShare({ files: [file] })) {
+        try {
+          await navigator.share({ files: [file], title: r.name, text: shareText });
+          return;
+        } catch (e) {
+          if (e && e.name === "AbortError") return; // user backed out of the share sheet
+          // anything else: fall through to the download fallback below
+        }
+      }
+
+      const objUrl = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = objUrl;
+      a.download = fileName;
+      a.click();
+      URL.revokeObjectURL(objUrl);
+
+      try {
+        await navigator.clipboard.writeText(shareUrl);
+        showToast("Image saved, link copied — paste both into your post");
+      } catch (e) {
+        showToast("Image saved — copy the link from the recipe page to include it");
+      }
+    }, "image/png");
+
+    render();
+    return;
+  }
+
   if (t("[data-action='export']")) {
     const payload = {
       forgebook: BACKUP_FORMAT_VERSION,
@@ -3545,6 +3983,12 @@ async function init() {
   // it rather than guessing, since guessing wrong is exactly the flash we're
   // trying to avoid.
   await initCloud();
+
+  // A public share link bypasses the sign-in gate entirely — see
+  // renderPublicRecipe/fetchPublicRecipe — since the whole point is that a
+  // visitor with no Forgebook account can open it.
+  const { route, params } = parseHash();
+  if (route === "public-recipe") { renderPublicRecipe(params); return; }
 
   decideBootState();
 }

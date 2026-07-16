@@ -2642,6 +2642,39 @@ main {
   background: var(--line);
 }
 
+/* Public recipe share page (#/r/<authorId>/<id>) -- same centred-card shell
+   as the sign-in gate, but wide enough for real recipe content (paint list,
+   method steps) and left-aligned rather than the gate's centred form. */
+.public-recipe__card {
+  max-width: 640px;
+  text-align: left;
+}
+
+.public-recipe__banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: var(--gold-dim);
+  border: 1px solid var(--gold-border);
+  border-radius: var(--radius-sm);
+  padding: 10px 14px;
+  margin-bottom: 18px;
+  font-size: 12.5px;
+  color: var(--gold-bright);
+}
+
+.public-recipe__banner span {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.public-recipe__banner a {
+  color: var(--gold-bright);
+  font-weight: 600;
+  text-decoration: underline;
+}
+
 /* ============================================================
    CONFIRM DIALOG — an in-app "are you sure?" replacing the browser's own
    confirm(), so it looks like the rest of Forgebook instead of the OS chrome.
@@ -3158,4 +3191,125 @@ main {
    double as the "find similar colours" trigger. */
 .paint-row__swatch[data-action="find-similar-colour"] {
   cursor: pointer;
+}
+
+/* ============================================================
+   PRINT — a recipe printed from its detail page. Only that page's own
+   content prints; everything else (nav, search, the sidebar recipe list on
+   desktop, every interactive control) is hidden outright. Rather than
+   overriding component CSS one rule at a time, this redefines the same
+   design tokens every component already reads from — dark ink on a warm
+   paper ground instead of parchment on graphite — so the whole page
+   repaints correctly for free. Modelled on [data-theme="light"] above,
+   tuned further toward "cheap to print" (near-white ground, no heavy
+   shadows) since light mode still has to work as a screen theme too.
+   ============================================================ */
+@media print {
+  :root {
+    --bg-void: #fdfbf6;
+    --bg-panel: #ffffff;
+    --bg-raised: #f5f1e6;
+    --bg-raised-2: #ede6d4;
+    --line: #d8cfc0;
+    --line-soft: #e6ddc9;
+
+    --gold: #8a6a35;
+    --gold-bright: #6e5427;
+    --gold-dim: transparent;
+    --gold-border: #d8cfc0;
+
+    --parchment: #1c1912;
+    --parchment-dim: #4a4436;
+    --ink: #8a8375;
+    --ink-dim: #a39c8a;
+
+    --success: #4c6b39;
+    --success-dim: transparent;
+    --success-border: #d8cfc0;
+
+    --shadow-card: none;
+    --shadow-raised: none;
+  }
+
+  /* Printers strip background colours/images by default to save ink unless
+     told otherwise -- without this, every paint swatch and the recipe photo
+     hero print as blank white boxes, which is most of the point of a
+     painting reference sheet gone. */
+  * {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  html {
+    background: none;
+  }
+
+  /* App chrome: none of it belongs on paper. */
+  .side-nav, .topbar, .fab, .bottom-nav, .toast,
+  .recipe-master__list, .detail-pager, .detail-actions {
+    display: none !important;
+  }
+
+  /* Back/edit/delete icons in the header, and every per-row action button
+     (buy-list flag, restock flag, remove-from-rack, the swatch's own
+     "find similar" affordance) -- all of them are things to click, and
+     paper can't click anything. The paint's own colour/name/hex still
+     shows; only the controls around it disappear. */
+  .detail-header button,
+  .lib-row__flag, .lib-row__ring,
+  [data-action="toggle-wanted"], [data-action="toggle-restock"],
+  [data-action="lib-remove"] {
+    display: none !important;
+  }
+
+  .recipe-master {
+    display: block;
+  }
+
+  /* Undo the fixed sidebar's reserved space and the topbar's height, both
+     hidden above but still budgeted for by main's own margin/max-width at
+     desktop widths -- without this the printed page keeps a blank 220px
+     gutter down the left where the sidebar used to be. */
+  main {
+    margin-left: 0;
+    margin-top: 0;
+    max-width: none;
+    padding: 0;
+  }
+
+  /* A masthead and footer line, generated rather than injected into the
+     markup -- print is the only place they're needed, so they're print-only
+     content rather than DOM the live app has to carry around. */
+  .recipe-master__detail::before {
+    content: "Forgebook";
+    display: block;
+    font-family: var(--font-display);
+    font-size: 13px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--gold);
+    border-bottom: 1px solid var(--line);
+    padding-bottom: 12px;
+    margin-bottom: 20px;
+  }
+
+  .recipe-master__detail::after {
+    content: "forgebook.co.uk";
+    display: block;
+    font-family: var(--font-mono);
+    font-size: 10px;
+    color: var(--ink);
+    border-top: 1px solid var(--line);
+    margin-top: 24px;
+    padding-top: 12px;
+  }
+
+  .detail-hero {
+    border: 1px solid var(--line);
+    border-bottom: 3px solid var(--faction-color, var(--gold));
+  }
+
+  .layer-stack, .paint-row, .notes-block {
+    break-inside: avoid;
+  }
 }

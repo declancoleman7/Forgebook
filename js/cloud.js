@@ -367,6 +367,36 @@ async function fetchSharedRecipes(userId) {
   save(KEYS.profiles, profiles);
 }
 
+// The public share page's one query — deliberately separate from
+// fetchSharedRecipes above: this runs with no session at all (a stranger
+// with no Forgebook account), scoped to exactly one recipe rather than
+// every published recipe on the site, and never touches localStorage/KEYS
+// since there's no "book" to speak of for a visitor who isn't signed in.
+// RLS is what actually enforces "only if published" here — this only ever
+// asks for one specific (authorId, id) pair, but a row simply won't come
+// back if it isn't published (see schema.sql's "read published recipes").
+async function fetchPublicRecipe(authorId, id) {
+  if (!sb) return null;
+  const { data: row, error: rErr } = await sb
+    .from("recipes")
+    .select("*")
+    .eq("user_id", authorId)
+    .eq("id", id)
+    .maybeSingle();
+  if (rErr || !row) return null;
+
+  const recipe = fromRemoteSharedRecipe(row);
+
+  const [pRes, profRes] = await Promise.all([
+    sb.from("paints").select("*").eq("user_id", authorId),
+    sb.from("profiles").select("display_name").eq("user_id", authorId).maybeSingle(),
+  ]);
+  const paints = (pRes.data || []).map(fromRemoteSharedPaint);
+  const authorDisplayName = (profRes.data && profRes.data.display_name) || "Someone";
+
+  return { recipe, paints, authorName: authorDisplayName };
+}
+
 function photoUrl(path) {
   return `${CONFIG.supabaseUrl}/storage/v1/object/public/${CONFIG.photoBucket}/${path}`;
 }
