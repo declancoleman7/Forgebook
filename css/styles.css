@@ -1187,6 +1187,42 @@ main {
   filter: blur(1px);
 }
 
+/* Small corner chip marking paint type (wash/contrast/metallic/primer) --
+   sits on the swatch's edge rather than over its face, so the paint's own
+   colour still reads at a glance. */
+.paint-type-badge {
+  position: absolute;
+  bottom: -2px;
+  right: -2px;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(18, 14, 10, 0.8);
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.22);
+  color: rgba(255, 255, 255, 0.85);
+  pointer-events: none;
+}
+
+.paint-type-badge svg {
+  width: 7px;
+  height: 7px;
+}
+
+.colour-match-source .paint-type-badge {
+  width: 16px;
+  height: 16px;
+  bottom: -3px;
+  right: -3px;
+}
+
+.colour-match-source .paint-type-badge svg {
+  width: 9px;
+  height: 9px;
+}
+
 .paint-row__name {
   font-size: 13.5px;
   color: var(--parchment);
@@ -2889,32 +2925,26 @@ main {
 /* ============================================================
    SIMILAR COLOURS
    ============================================================ */
-.entry-switch {
+.colour-match-cta {
   display: flex;
-  background: var(--bg-panel);
-  border: 1px solid var(--line);
-  border-radius: 9px;
-  padding: 3px;
-  gap: 2px;
-}
-
-.entry-switch button {
-  flex: 1;
-  border: 0;
-  background: transparent;
-  color: var(--parchment-dim);
-  font-family: var(--font-mono);
-  font-size: 11px;
-  letter-spacing: 0.02em;
-  padding: 11px 6px;
-  border-radius: 7px;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  padding: 13px;
+  margin-bottom: 14px;
+  background: var(--kinship-dim);
+  border: 1px solid var(--kinship-border);
+  color: var(--kinship-bright);
+  border-radius: var(--radius-md);
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 600;
   cursor: pointer;
 }
 
-.entry-switch button.is-active {
-  background: var(--gold);
-  color: var(--ink-on-accent);
-}
+.colour-match-cta:hover { background: var(--kinship-border); }
+.colour-match-cta svg { width: 18px; height: 18px; stroke: currentColor; fill: none; stroke-width: 2; flex-shrink: 0; }
 
 /* HSV colour wheel: hue around the ring, saturation from centre to edge, at
    a fixed brightness of 100% -- brightness is the separate slider below. */

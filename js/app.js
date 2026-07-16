@@ -289,6 +289,42 @@ function hexToHsv(hex) {
   return rgbToHsv(r, g, b);
 }
 
+// A wash and a base coat can share a hex and still not be interchangeable —
+// one pools in recesses, the other doesn't. Grouping every brand's range
+// name into a working-behaviour bucket lets "similar colours" (and the
+// swatch badges below) prefer a substitute that behaves the same way, not
+// just one that happens to look the same in the pot. Matched by keyword
+// rather than an exact lookup table so it generalises across every brand's
+// own naming (Citadel "Shade", Army Painter "Warpaints Fanatic: Wash", Pro
+// Acryl "Standard (Washes)" all land on "wash" the same way).
+function paintCategory(type) {
+  const t = (type || "").toLowerCase();
+  if (t.includes("wash") || t.includes("shade")) return "wash";
+  if (t.includes("contrast") || t.includes("speedpaint")) return "contrast";
+  if (t.includes("metal")) return "metallic";
+  if (t.includes("primer") || t.includes("spray")) return "primer";
+  return "base";
+}
+
+const PAINT_CATEGORY_LABEL = { wash: "Wash", contrast: "Contrast/Speedpaint", metallic: "Metallic", primer: "Primer/Spray" };
+const PAINT_CATEGORY_GLYPH = {
+  wash: '<path d="M12 3C12 3 6 10 6 14.5C6 18.09 8.69 21 12 21C15.31 21 18 18.09 18 14.5C18 10 12 3 12 3Z"/>',
+  contrast: '<circle cx="12" cy="12" r="9"/>',
+  metallic: '<path d="M12 2L14 9L21 9L15.5 13.5L17.5 21L12 16.5L6.5 21L8.5 13.5L3 9L10 9Z"/>',
+  primer: '<circle cx="12" cy="7" r="2.4"/><circle cx="7" cy="16" r="2.4"/><circle cx="17" cy="16" r="2.4"/>',
+};
+
+// A small corner badge for a swatch, signalling how the paint behaves at a
+// glance rather than just its colour. Base/Layer paints — the common case —
+// get no badge at all, so the badge only ever draws the eye to the paints
+// worth treating differently.
+function paintTypeBadgeHtml(type) {
+  const cat = paintCategory(type);
+  const glyph = PAINT_CATEGORY_GLYPH[cat];
+  if (!glyph) return "";
+  return `<span class="paint-type-badge" title="${PAINT_CATEGORY_LABEL[cat]}"><svg viewBox="0 0 24 24" fill="currentColor" stroke="none">${glyph}</svg></span>`;
+}
+
 // ---------------------------------------------------------------
 // Paint library — browsing a real catalogue (PAINT_LIBRARY, in data.js) and
 // tracking which entries the rack already has, or still needs to buy.
@@ -1069,7 +1105,7 @@ function viewRecipeDetail(id, authorId) {
           if (!isShared && !p.isWant) {
             return `
               <div class="paint-row" data-nav="paint" data-id="${p.id}">
-                <div class="paint-row__swatch" data-action="find-similar-colour" data-name="${escapeHtml(p.name)}" data-brand="${escapeHtml(p.brand || "")}" data-hex="${p.hex}" title="Find similar colours" style="background:${p.hex}"></div>
+                <div class="paint-row__swatch" data-action="find-similar-colour" data-name="${escapeHtml(p.name)}" data-brand="${escapeHtml(p.brand || "")}" data-hex="${p.hex}" title="Find similar colours" style="background:${p.hex}">${paintTypeBadgeHtml(p.type)}</div>
                 <div>
                   <div class="paint-row__name">${escapeHtml(p.name)}</div>
                   <div class="paint-row__brand">${escapeHtml(p.brand || "")}${p.type ? " \u00b7 " + escapeHtml(p.type) : ""}</div>
@@ -1088,7 +1124,7 @@ function viewRecipeDetail(id, authorId) {
           const wanted = !owned && isWanted(p.name, p.brand);
           return `
             <div class="paint-row ${owned ? "is-owned" : ""}">
-              <div class="paint-row__swatch" data-action="find-similar-colour" data-name="${escapeHtml(p.name)}" data-brand="${escapeHtml(p.brand || "")}" data-hex="${p.hex}" title="Find similar colours" style="background:${p.hex}"></div>
+              <div class="paint-row__swatch" data-action="find-similar-colour" data-name="${escapeHtml(p.name)}" data-brand="${escapeHtml(p.brand || "")}" data-hex="${p.hex}" title="Find similar colours" style="background:${p.hex}">${paintTypeBadgeHtml(p.type)}</div>
               <div>
                 <div class="paint-row__name">${escapeHtml(p.name)}</div>
                 <div class="paint-row__brand">${escapeHtml(p.brand || "")}${p.type ? " \u00b7 " + escapeHtml(p.type) : ""}</div>
@@ -1195,7 +1231,7 @@ function viewPaints() {
           const n = paintUsageCount(p.id);
           return `
             <div class="paint-lib-row" data-nav="paint" data-id="${p.id}">
-              <div class="paint-row__swatch" style="background:${p.hex}"></div>
+              <div class="paint-row__swatch" style="background:${p.hex}">${paintTypeBadgeHtml(p.type)}</div>
               <div>
                 <div class="paint-row__name">${escapeHtml(p.name)}</div>
                 <div class="paint-row__brand">${escapeHtml(p.type || "Other")}</div>
@@ -1273,16 +1309,23 @@ function resolveSourceHex(name, brand) {
   return lib ? lib.hex : null;
 }
 
-let similarColours = { entryMode: "colour", sourceName: null, sourceBrand: null, hex: "#b8863f", resultFilter: "all" };
+function resolveSourceType(name, brand) {
+  const owned = ownedPaintFor(name, brand);
+  if (owned) return owned.type;
+  const lib = PAINT_LIBRARY.find((p) => paintKey(p.name, p.brand) === paintKey(name, brand));
+  return lib ? lib.type : null;
+}
+
+let similarColours = { sourceName: null, sourceBrand: null, hex: "#b8863f", resultFilter: "all" };
 // The params signature similarColours was last built from — lets
 // viewSimilarColours tell "the route was navigated to fresh" (reinitialise)
-// apart from "the entry-switch/filter tabs were clicked" (leave it alone),
-// even though both end up calling render() the same way.
+// apart from "the filter tabs were clicked" (leave it alone), even though
+// both end up calling render() the same way.
 let similarColoursSeenSig = null;
 
 function openSimilarColours(name, brand, hex) {
   similarColoursSeenSig = name + "|" + brand;
-  similarColours = { entryMode: "paint", sourceName: name, sourceBrand: brand, hex: hex || resolveSourceHex(name, brand) || "#b8863f", resultFilter: "other" };
+  similarColours = { sourceName: name, sourceBrand: brand, hex: hex || resolveSourceHex(name, brand) || "#b8863f", resultFilter: "other" };
   navigate("similar", { name, brand });
 }
 
@@ -1291,13 +1334,19 @@ function viewSimilarColours(params) {
   if (sig !== similarColoursSeenSig) {
     similarColoursSeenSig = sig;
     similarColours = params.name
-      ? { entryMode: "paint", sourceName: params.name, sourceBrand: params.brand, hex: resolveSourceHex(params.name, params.brand) || "#b8863f", resultFilter: "other" }
-      : { entryMode: "colour", sourceName: null, sourceBrand: null, hex: similarColours.hex || "#b8863f", resultFilter: "all" };
+      ? { sourceName: params.name, sourceBrand: params.brand, hex: resolveSourceHex(params.name, params.brand) || "#b8863f", resultFilter: "other" }
+      : { sourceName: null, sourceBrand: null, hex: similarColours.hex || "#b8863f", resultFilter: "all" };
   }
   const st = similarColours;
+  // Whether this screen is anchored to a specific paint (tapped a swatch
+  // somewhere) or is the free-standing colour-picker tool — every swatch
+  // app-wide can trigger the former directly now, so there's no manual
+  // mode switch left to drive this off of.
+  const isColourMode = !st.sourceName;
   const activeHex = st.hex;
-  const excludeKey = st.entryMode === "paint" ? paintKey(st.sourceName, st.sourceBrand) : "__none__";
-  const matches = computeColourMatches(activeHex, excludeKey, st.resultFilter, st.entryMode === "paint" ? st.sourceBrand : null);
+  const sourceType = !isColourMode ? resolveSourceType(st.sourceName, st.sourceBrand) : null;
+  const excludeKey = !isColourMode ? paintKey(st.sourceName, st.sourceBrand) : "__none__";
+  const matches = computeColourMatches(activeHex, excludeKey, st.resultFilter, !isColourMode ? st.sourceBrand : null, sourceType);
 
   return `
     <div class="page-enter">
@@ -1307,32 +1356,13 @@ function viewSimilarColours(params) {
         <div style="width:36px"></div>
       </div>
 
-      <div class="entry-switch">
-        <button data-action="similar-mode" data-mode="paint" class="${st.entryMode === "paint" ? "is-active" : ""}">From a paint</button>
-        <button data-action="similar-mode" data-mode="colour" class="${st.entryMode === "colour" ? "is-active" : ""}">Pick a colour</button>
-      </div>
-      <div class="detail-sub" style="margin:10px 2px 4px">
-        ${st.entryMode === "paint"
-          ? "Tap ≈ next to any paint — in the library, your rack, or a recipe — to see who else makes something close."
-          : "Not sure what it's called? Set a colour directly and match it against every brand Forgebook knows."}
+      <div class="detail-sub" style="margin:4px 2px">
+        ${isColourMode
+          ? "Not sure what it's called? Set a colour directly and match it against every brand Forgebook knows."
+          : "Tap ≈ on any swatch below to explore further, or use the filters to narrow these down."}
       </div>
 
-      ${st.entryMode === "paint" && !st.sourceName ? `
-        ${getPaints().length ? `
-          <div class="section-label">Your rack</div>
-          ${getPaints().map((p) => `
-            <div class="colour-match-row">
-              <div class="paint-row__swatch" data-action="find-similar-colour" data-name="${escapeHtml(p.name)}" data-brand="${escapeHtml(p.brand || "")}" data-hex="${p.hex}" title="Find similar colours" style="background:${p.hex}"></div>
-              <div class="colour-match-row__info">
-                <div class="paint-row__name">${escapeHtml(p.name)}</div>
-                <div class="paint-row__brand">${escapeHtml(p.brand || "")}${p.type ? " · " + escapeHtml(p.type) : ""}</div>
-              </div>
-            </div>
-          `).join("")}
-        ` : `<div class="empty-state__sub">Nothing on your rack yet — try Pick a colour instead.</div>`}
-      ` : ""}
-
-      ${st.entryMode === "colour" ? `
+      ${isColourMode ? `
         <div class="colour-match-card">
           <div class="wheel-wrap">
             <canvas id="wheel-canvas" width="180" height="180"></canvas>
@@ -1359,36 +1389,46 @@ function viewSimilarColours(params) {
         </div>
       ` : ""}
 
-      ${st.entryMode === "colour" || st.sourceName ? `
-        <div class="colour-match-source">
-          <div class="paint-row__swatch" id="results-source-swatch" style="background:${activeHex}"></div>
-          <div>
-            <div class="results-source__name">${st.entryMode === "paint" ? escapeHtml(st.sourceName) : "Your colour"}</div>
-            <div class="results-source__meta" id="results-source-meta">${st.entryMode === "paint" ? escapeHtml(st.sourceBrand) : activeHex.toUpperCase()}</div>
-          </div>
+      <div class="colour-match-source">
+        <div class="paint-row__swatch" id="results-source-swatch" style="background:${activeHex}">${!isColourMode ? paintTypeBadgeHtml(sourceType) : ""}</div>
+        <div>
+          <div class="results-source__name">${isColourMode ? "Your colour" : escapeHtml(st.sourceName)}</div>
+          <div class="results-source__meta" id="results-source-meta">${isColourMode ? activeHex.toUpperCase() : escapeHtml(st.sourceBrand)}</div>
         </div>
+      </div>
 
-        <div class="lib-filter-seg">
-          <button data-action="similar-filter" data-filter="all" class="${st.resultFilter === "all" ? "is-active" : ""}">All brands</button>
-          <button data-action="similar-filter" data-filter="other" class="${st.resultFilter === "other" ? "is-active" : ""}" ${st.entryMode === "colour" ? "disabled style=\"opacity:.4\"" : ""}>Other brands</button>
-          <button data-action="similar-filter" data-filter="owned" class="${st.resultFilter === "owned" ? "is-active" : ""}">On my rack</button>
-        </div>
+      <div class="lib-filter-seg">
+        <button data-action="similar-filter" data-filter="all" class="${st.resultFilter === "all" ? "is-active" : ""}">All brands</button>
+        <button data-action="similar-filter" data-filter="other" class="${st.resultFilter === "other" ? "is-active" : ""}" ${isColourMode ? "disabled style=\"opacity:.4\"" : ""}>Other brands</button>
+        <button data-action="similar-filter" data-filter="owned" class="${st.resultFilter === "owned" ? "is-active" : ""}">On my rack</button>
+      </div>
 
-        <div id="matches-container">${colourMatchListHtml(matches)}</div>
-      ` : ""}
+      <div id="matches-container">${colourMatchListHtml(matches)}</div>
     </div>
   `;
 }
 
+// Only worth splitting into sections when the list is actually mixed —
+// colour-picker mode (no source category to compare against) and an
+// all-same-category result both just read as one flat list.
 function colourMatchListHtml(matches) {
-  return matches.length ? matches.map(colourMatchRowHtml).join("") : `<div class="empty-state__sub">No matches.</div>`;
+  if (!matches.length) return `<div class="empty-state__sub">No matches.</div>`;
+  const same = matches.filter((m) => m.sameCategory);
+  const other = matches.filter((m) => !m.sameCategory);
+  if (!same.length || !other.length) return matches.map(colourMatchRowHtml).join("");
+  return `
+    <div class="section-label">Same kind of paint</div>
+    ${same.map(colourMatchRowHtml).join("")}
+    <div class="section-label">Other paints</div>
+    ${other.map(colourMatchRowHtml).join("")}
+  `;
 }
 
 function colourMatchRowHtml(m) {
   const owned = ownedPaintFor(m.paint.name, m.paint.brand);
   return `
     <div class="colour-match-row">
-      <div class="paint-row__swatch" style="background:${m.paint.hex}"></div>
+      <div class="paint-row__swatch" data-action="find-similar-colour" data-name="${escapeHtml(m.paint.name)}" data-brand="${escapeHtml(m.paint.brand)}" data-hex="${m.paint.hex}" title="Find similar colours" style="background:${m.paint.hex}">${paintTypeBadgeHtml(m.paint.type)}</div>
       <div class="colour-match-row__info">
         <div class="paint-row__name">${escapeHtml(m.paint.name)}</div>
         <div class="paint-row__brand">${escapeHtml(m.paint.brand)} · ${escapeHtml(m.paint.type)}</div>
@@ -1406,16 +1446,20 @@ function colourMatchRowHtml(m) {
 
 // Shared by the full render() and applyLiveColour()'s lightweight live
 // update, so the two can never drift into ranking results differently.
-function computeColourMatches(hex, excludeKey, resultFilter, sourceBrand) {
+// sourceType groups same-behaviour paints (a wash next to other washes, not
+// a base coat that happens to share a hex) ahead of everything else, still
+// ranked by colour closeness within each group.
+function computeColourMatches(hex, excludeKey, resultFilter, sourceBrand, sourceType) {
+  const sourceCat = sourceType ? paintCategory(sourceType) : null;
   let matches = PAINT_LIBRARY
     .filter((p) => paintKey(p.name, p.brand) !== excludeKey)
-    .map((p) => ({ paint: p, score: colourSimilarity(hex, p.hex) }))
-    .sort((a, b) => b.score - a.score);
+    .map((p) => ({ paint: p, score: colourSimilarity(hex, p.hex), sameCategory: !sourceCat || paintCategory(p.type) === sourceCat }));
   if (resultFilter === "other" && sourceBrand) {
     matches = matches.filter((m) => m.paint.brand !== sourceBrand);
   } else if (resultFilter === "owned") {
     matches = matches.filter((m) => ownedPaintFor(m.paint.name, m.paint.brand));
   }
+  matches.sort((a, b) => (b.sameCategory - a.sameCategory) || (b.score - a.score));
   return matches.slice(0, 20);
 }
 
@@ -1476,7 +1520,7 @@ function viewPaintLibrary() {
         data-name="${escapeHtml(p.name)}" data-brand="${escapeHtml(p.brand)}"
         data-hex="${p.hex}" data-type="${escapeHtml(p.type)}"
       >
-        <div class="paint-row__swatch" data-action="find-similar-colour" data-name="${escapeHtml(p.name)}" data-brand="${escapeHtml(p.brand)}" data-hex="${p.hex}" title="Find similar colours" style="background:${p.hex}"></div>
+        <div class="paint-row__swatch" data-action="find-similar-colour" data-name="${escapeHtml(p.name)}" data-brand="${escapeHtml(p.brand)}" data-hex="${p.hex}" title="Find similar colours" style="background:${p.hex}">${paintTypeBadgeHtml(p.type)}</div>
         <div class="lib-row__info">
           <div class="paint-row__name">${escapeHtml(p.name)}</div>
           <div class="paint-row__brand">${escapeHtml(p.brand)} · ${escapeHtml(p.type)}</div>
@@ -1491,7 +1535,7 @@ function viewPaintLibrary() {
       <div class="detail-header">
         <button class="icon-btn" data-nav="paints">${icon("back", 18)}</button>
         <div class="page-title" style="margin:0">Paint Library</div>
-        <button class="icon-btn" data-nav="similar" title="Match a colour">${icon("search", 16)}</button>
+        <div style="width:36px"></div>
       </div>
       <div class="detail-sub" style="margin-bottom:14px">
         Tap a paint's swatch to find similar colours from other brands. Tap the row to add it to
@@ -1499,6 +1543,8 @@ function viewPaintLibrary() {
         a buy list, or ones you own but are running low for a restock. Colours are close
         approximations, not official swatches — manufacturers don't publish exact codes.
       </div>
+
+      <button class="colour-match-cta" data-nav="similar">${icon("search", 18)} Match a colour you have in mind</button>
 
       <div class="lib-progress">
         <div class="lib-progress__stats">
@@ -1663,8 +1709,8 @@ function applyLiveColour(hex) {
 
   const container = document.getElementById("matches-container");
   if (container) {
-    const excludeKey = similarColours.entryMode === "paint" ? paintKey(similarColours.sourceName, similarColours.sourceBrand) : "__none__";
-    const matches = computeColourMatches(hex, excludeKey, similarColours.resultFilter, similarColours.entryMode === "paint" ? similarColours.sourceBrand : null);
+    const excludeKey = similarColours.sourceName ? paintKey(similarColours.sourceName, similarColours.sourceBrand) : "__none__";
+    const matches = computeColourMatches(hex, excludeKey, similarColours.resultFilter, similarColours.sourceName ? similarColours.sourceBrand : null);
     container.innerHTML = colourMatchListHtml(matches);
   }
 }
@@ -2960,17 +3006,6 @@ document.addEventListener("click", async (e) => {
 
   const libBrand = t("[data-action='lib-brand']");
   if (libBrand) { state.paintLibBrand = libBrand.dataset.brand || null; render(); return; }
-
-  const similarMode = t("[data-action='similar-mode']");
-  if (similarMode) {
-    if (!similarMode.disabled) {
-      similarColours.entryMode = similarMode.dataset.mode;
-      if (similarColours.entryMode === "colour") similarColours.resultFilter = "all";
-      else if (similarColours.resultFilter === "all") similarColours.resultFilter = "other";
-      render();
-    }
-    return;
-  }
 
   const similarFilter = t("[data-action='similar-filter']");
   if (similarFilter) {
