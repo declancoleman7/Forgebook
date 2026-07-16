@@ -306,7 +306,7 @@ function paintCategory(type) {
   return "base";
 }
 
-const PAINT_CATEGORY_LABEL = { wash: "Wash", contrast: "Contrast/Speedpaint", metallic: "Metallic", primer: "Primer/Spray" };
+const PAINT_CATEGORY_LABEL = { base: "Base/Layer", wash: "Wash", contrast: "Contrast/Speedpaint", metallic: "Metallic", primer: "Primer/Spray" };
 const PAINT_CATEGORY_GLYPH = {
   wash: '<path d="M12 3C12 3 6 10 6 14.5C6 18.09 8.69 21 12 21C15.31 21 18 18.09 18 14.5C18 10 12 3 12 3Z"/>',
   contrast: '<circle cx="12" cy="12" r="9"/>',
@@ -2025,10 +2025,10 @@ function bindRecipeForm(root) {
 // a handful of entries. Self-contained: binds its own listeners directly
 // (like showConfirm) rather than going through the global click delegation.
 // ---------------------------------------------------------------
-let paintPicker = null; // { stepId, field, query, tab } while open
+let paintPicker = null; // { stepId, field, query, tab, brand, category } while open
 
 function openPaintPicker(stepId, field) {
-  paintPicker = { stepId, field, query: "", tab: getPaints().length ? "rack" : "library" };
+  paintPicker = { stepId, field, query: "", tab: getPaints().length ? "rack" : "library", brand: null, category: "all" };
   renderPaintPicker();
 }
 
@@ -2082,10 +2082,16 @@ function paintPickerRowHtml(entry, ownedEntry, isSelected) {
 }
 
 function renderPaintPicker() {
-  const { stepId, field, query, tab } = paintPicker;
+  const { stepId, field, query, tab, brand, category } = paintPicker;
   const step = recipeForm.steps.find((s) => s.id === stepId);
   const currentId = step ? step[field] : null;
   const currentWant = step ? step[field === "paintId" ? "wantPaint" : "mixWantPaint"] : null;
+
+  // Brand chips reflect whichever pool (rack or full library) is currently
+  // showing, so switching tabs never leaves a brand selected that has no
+  // paints in the new pool.
+  const pool = tab === "rack" ? getPaints() : PAINT_LIBRARY;
+  const brands = [...new Set(pool.map((p) => p.brand).filter(Boolean))].sort();
 
   const q = query.trim().toLowerCase();
   let rackList = getPaints().slice().sort((a, b) => a.name.localeCompare(b.name));
@@ -2093,6 +2099,14 @@ function renderPaintPicker() {
   if (q) {
     rackList = rackList.filter((p) => p.name.toLowerCase().includes(q) || (p.brand || "").toLowerCase().includes(q));
     libList = libList.filter((p) => p.name.toLowerCase().includes(q) || p.brand.toLowerCase().includes(q) || p.type.toLowerCase().includes(q));
+  }
+  if (brand) {
+    rackList = rackList.filter((p) => p.brand === brand);
+    libList = libList.filter((p) => p.brand === brand);
+  }
+  if (category !== "all") {
+    rackList = rackList.filter((p) => paintCategory(p.type) === category);
+    libList = libList.filter((p) => paintCategory(p.type) === category);
   }
 
   const rows = tab === "rack"
@@ -2142,13 +2156,32 @@ function renderPaintPicker() {
         <button type="button" class="${tab === "rack" ? "is-active" : ""}" data-picker-tab="rack">On rack <span class="b">${getPaints().length}</span></button>
         <button type="button" class="${tab === "library" ? "is-active" : ""}" data-picker-tab="library">Full library <span class="b">${PAINT_LIBRARY.length}</span></button>
       </div>
+      ${brands.length > 1 ? `
+        <div class="faction-row" style="margin:0 16px 8px; flex-shrink:0">
+          <div class="faction-chip ${!brand ? "is-active" : ""}" data-picker-brand="">All brands</div>
+          ${brands.map((b) => `<div class="faction-chip ${brand === b ? "is-active" : ""}" data-picker-brand="${escapeHtml(b)}">${escapeHtml(b)}</div>`).join("")}
+        </div>
+      ` : ""}
+      <div class="faction-row" style="margin:0 16px 10px; flex-shrink:0">
+        <div class="faction-chip ${category === "all" ? "is-active" : ""}" data-picker-category="all">All types</div>
+        ${["base", "wash", "contrast", "metallic", "primer"].map((c) => `<div class="faction-chip ${category === c ? "is-active" : ""}" data-picker-category="${c}">${PAINT_CATEGORY_LABEL[c]}</div>`).join("")}
+      </div>
       <div class="paint-picker__body">${rows}</div>
     </div>
   `;
 
   wrap.querySelectorAll("[data-picker-close]").forEach((el) => { el.onclick = () => closePaintPicker(); });
   wrap.querySelectorAll("[data-picker-tab]").forEach((el) => {
-    el.onclick = () => { paintPicker.tab = el.dataset.pickerTab; paintPicker.query = ""; renderPaintPicker(); };
+    // Reset the brand filter too -- it's scoped to whichever pool is showing
+    // (see `brands` above), so carrying a brand selection across tabs could
+    // leave it active against a pool that doesn't have that brand at all.
+    el.onclick = () => { paintPicker.tab = el.dataset.pickerTab; paintPicker.query = ""; paintPicker.brand = null; renderPaintPicker(); };
+  });
+  wrap.querySelectorAll("[data-picker-brand]").forEach((el) => {
+    el.onclick = () => { paintPicker.brand = el.dataset.pickerBrand || null; renderPaintPicker(); };
+  });
+  wrap.querySelectorAll("[data-picker-category]").forEach((el) => {
+    el.onclick = () => { paintPicker.category = el.dataset.pickerCategory; renderPaintPicker(); };
   });
 
   const searchInput = wrap.querySelector("#paint-picker-search");
