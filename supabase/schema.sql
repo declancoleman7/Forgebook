@@ -39,6 +39,7 @@ create table if not exists public.paints (
   hex           text,
   type          text,
   needs_restock boolean     not null default false,
+  quantity      int         not null default 1,
   updated_at    timestamptz not null default now(),
   deleted       boolean     not null default false,
   primary key (user_id, id)
@@ -47,6 +48,7 @@ create table if not exists public.paints (
 -- Running this again on an existing database: adds the column without
 -- touching anything already there.
 alter table public.paints add column if not exists needs_restock boolean not null default false;
+alter table public.paints add column if not exists quantity int not null default 1;
 
 -- ------------------------------------------------------------
 -- Paint shopping list (the paint-library "need to buy" flag) — deliberately

@@ -1629,6 +1629,19 @@ main {
   flex-shrink: 0;
 }
 
+/* A neutral "how many you own" chip on My Rack -- same shape as
+   .restock-badge, deliberately not its red (that means "buy/low"). */
+.qty-badge {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--parchment-dim);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 3px 8px;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
 /* Paint library — browsing rows: swatch + name, a trailing flag button
    (meaning depends on owned state — buy vs. restock), and a ring that shows
    owned status. The whole row is the "mark as owned" tap target; the flag
@@ -1820,6 +1833,64 @@ main {
   background: var(--success);
   border-color: var(--success);
   color: var(--ink-on-accent);
+}
+
+/* Not-owned rows show a filled "+" rather than an empty ring -- the row is
+   still a single tap to add (data-action="toggle-have" on the row itself),
+   this is just a clearer visual cue than a blank placeholder. */
+.lib-row__ring--add {
+  background: var(--gold-dim);
+  border-color: var(--gold-border);
+  color: var(--gold-bright);
+}
+
+.lib-row__ring--add svg {
+  width: 14px;
+  height: 14px;
+  stroke: currentColor;
+  fill: none;
+}
+
+/* Quantity stepper -- replaces the single "remove" button once a paint is
+   owned, so how many pots you have is visible (and adjustable) at a glance
+   without opening the paint's own detail page. */
+.lib-row__qty {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex-shrink: 0;
+  background: var(--bg-void);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 3px;
+}
+
+.lib-row__qty-btn {
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
+  border: none;
+  background: transparent;
+  color: var(--ink);
+  font-size: 15px;
+  line-height: 1;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.lib-row__qty-btn:hover {
+  background: var(--bg-raised-2);
+  color: var(--gold-bright);
+}
+
+.lib-row__qty-n {
+  min-width: 20px;
+  text-align: center;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  color: var(--parchment);
 }
 
 /* ============================================================

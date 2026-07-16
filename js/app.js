@@ -334,6 +334,23 @@ function ownedPaintFor(name, brand) {
   return getPaints().find((p) => paintKey(p.name, p.brand) === paintKey(name, brand));
 }
 
+// Shared by every "add this paint to my rack" entry point (the Paint
+// Library's tap-to-add, and a recipe's "add straight to rack" button on a
+// paint it doesn't have yet) so a new rack row is always built the same way.
+async function addPaintToRack(entry, quantity) {
+  const id = "lib-" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+  const row = stamp({ id, name: entry.name, brand: entry.brand, hex: entry.hex, type: entry.type, quantity: quantity || 1 });
+  const res = await pushPaint(row);
+  if (!res.ok) return res;
+  const rows = getAllPaintRows();
+  rows.push(row);
+  save(KEYS.paints, rows);
+  // Owned and "need to buy" are mutually exclusive — clear the wishlist
+  // flag now that it's moot.
+  if (isWanted(entry.name, entry.brand)) toggleWanted(entry.name, entry.brand);
+  return { ok: true, row };
+}
+
 // Lives in its own paint_wants table (see cloud.js) rather than in the
 // paints array -- a wanted-but-unowned paint has no business in the rack or
 // the recipe-step paint picker.
@@ -1139,7 +1156,10 @@ function viewRecipeDetail(id, authorId) {
               </div>
               ${owned
                 ? `<span class="lib-row__ring is-owned" style="margin-left:auto" title="On your rack">${icon("check", 13)}</span>`
-                : `<button class="lib-row__flag is-wanted ${wanted ? "is-on" : ""}" style="margin-left:auto" data-action="toggle-wanted" data-name="${escapeHtml(p.name)}" data-brand="${escapeHtml(p.brand)}" title="${wanted ? "On your buy list" : "Add to buy list"}">${icon("cart", 13)}</button>`}
+                : `<div style="display:flex; gap:6px; margin-left:auto">
+                    <button class="lib-row__flag is-wanted ${wanted ? "is-on" : ""}" data-action="toggle-wanted" data-name="${escapeHtml(p.name)}" data-brand="${escapeHtml(p.brand)}" title="${wanted ? "On your buy list" : "Add to buy list"}">${icon("cart", 13)}</button>
+                    <button class="lib-row__flag" data-action="paint-add-to-rack" data-name="${escapeHtml(p.name)}" data-brand="${escapeHtml(p.brand || "")}" data-hex="${p.hex}" data-type="${escapeHtml(p.type || "")}" title="Add straight to rack">${icon("plus", 13)}</button>
+                  </div>`}
             </div>
           `;
         }).join("") : `<div class="empty-state__sub">No paints listed.</div>`}
@@ -1609,6 +1629,7 @@ function viewPaints() {
                 <div class="paint-row__name">${escapeHtml(p.name)}</div>
                 <div class="paint-row__brand">${escapeHtml(p.type || "Other")}</div>
               </div>
+              ${p.quantity > 1 ? `<span class="qty-badge">×${p.quantity}</span>` : ""}
               ${p.needsRestock ? `<span class="restock-badge">Buy</span>` : ""}
               <div class="paint-lib-row__count">${n ? n + (n === 1 ? " recipe" : " recipes") : "unused"}</div>
               <div class="unit-row__chevron">${icon("chevron", 14)}</div>
@@ -1642,6 +1663,17 @@ function viewPaint(id) {
       <div class="detail-sub">${escapeHtml(p.brand || "Unbranded")} \u00b7 ${escapeHtml(p.type || "Other")} \u00b7 <span class="paint-row__hex">${escapeHtml(p.hex)}</span></div>
 
       <div class="settings-group" style="margin:16px 0">
+        <div class="settings-row">
+          <div>
+            <div class="settings-row__label">Quantity</div>
+            <div class="settings-row__desc">How many pots you've got on the rack.</div>
+          </div>
+          <div class="lib-row__qty">
+            <button class="lib-row__qty-btn" data-action="paint-qty-dec" data-id="${p.id}" data-name="${escapeHtml(p.name)}" aria-label="Decrease quantity">−</button>
+            <span class="lib-row__qty-n">${p.quantity || 1}</span>
+            <button class="lib-row__qty-btn" data-action="paint-qty-inc" data-id="${p.id}" aria-label="Increase quantity">+</button>
+          </div>
+        </div>
         <div class="settings-row">
           <div>
             <div class="settings-row__label">Need to buy</div>
@@ -1892,11 +1924,15 @@ function viewPaintLibrary() {
       ? `<button class="lib-row__flag is-restock ${owned.needsRestock ? "is-on" : ""}" data-action="toggle-restock" data-id="${owned.id}" title="${owned.needsRestock ? "Flagged for restock" : "Flag for restock"}">${icon("cart", 14)}</button>`
       : `<button class="lib-row__flag is-wanted ${wanted ? "is-on" : ""}" data-action="toggle-wanted" data-name="${escapeHtml(p.name)}" data-brand="${escapeHtml(p.brand)}" title="${wanted ? "On your buy list" : "Add to buy list"}">${icon("cart", 14)}</button>`;
     // Owned rows drop the whole-row tap-to-toggle: it made removing a paint
-    // one accidental tap away. Removing now only ever happens through this
-    // dedicated button, which confirms first.
+    // one accidental tap away. Decreasing the quantity to 0 confirms first
+    // (see paint-qty-dec) and is now the only way a paint leaves the rack.
     const statusBtn = owned
-      ? `<button class="lib-row__ring is-owned" data-action="lib-remove" data-id="${owned.id}" data-name="${escapeHtml(p.name)}" title="Remove from rack">${icon("trash", 13)}</button>`
-      : `<span class="lib-row__ring">${icon("check", 14)}</span>`;
+      ? `<div class="lib-row__qty">
+          <button class="lib-row__qty-btn" data-action="paint-qty-dec" data-id="${owned.id}" data-name="${escapeHtml(p.name)}" aria-label="Decrease quantity">−</button>
+          <span class="lib-row__qty-n">${owned.quantity || 1}</span>
+          <button class="lib-row__qty-btn" data-action="paint-qty-inc" data-id="${owned.id}" aria-label="Increase quantity">+</button>
+        </div>`
+      : `<span class="lib-row__ring lib-row__ring--add" title="Add to rack">${icon("plus", 14)}</span>`;
     return `
       <div class="lib-row ${owned ? "is-owned" : ""}"
         ${owned ? "" : `data-action="toggle-have"`}
@@ -1921,10 +1957,10 @@ function viewPaintLibrary() {
         <div style="width:36px"></div>
       </div>
       <div class="detail-sub" style="margin-bottom:14px">
-        Tap a paint's swatch to find similar colours from other brands. Tap the row to add it to
-        your rack, or the trash icon on an owned paint to remove it. Flag ones you're missing for
-        a buy list, or ones you own but are running low for a restock. Colours are close
-        approximations, not official swatches — manufacturers don't publish exact codes.
+        Tap a paint's swatch to find similar colours from other brands. Tap the row to add a first
+        pot to your rack, then use +/− to track how many you've got — down to 0 removes it. Flag
+        ones you're missing for a buy list, or ones you own but are running low for a restock.
+        Colours are close approximations, not official swatches — manufacturers don't publish exact codes.
       </div>
 
       <button class="colour-match-cta" data-nav="similar">${icon("search", 18)} Match a colour you have in mind</button>
@@ -3403,36 +3439,66 @@ document.addEventListener("click", async (e) => {
     return;
   }
 
-  const libRemove = t("[data-action='lib-remove']");
-  if (libRemove) {
-    const id = libRemove.dataset.id;
-    const n = paintUsageCount(id);
-    const msg = n
-      ? `This paint is used in ${n} recipe${n === 1 ? "" : "s"}. Removing it from your rack will leave those steps without a paint. Continue?`
-      : `Remove ${libRemove.dataset.name || "this paint"} from your rack?`;
-    if (await showConfirm(msg)) {
-      const res = await deletePaintRemote(id);
-      if (!res.ok) { showToast(res.message); return; }
-      save(KEYS.paints, getAllPaintRows().filter((p) => p.id !== id));
-      showToast("Removed from rack");
-      render();
+  const qtyDec = t("[data-action='paint-qty-dec']");
+  if (qtyDec) {
+    const id = qtyDec.dataset.id;
+    const rows = getAllPaintRows();
+    const row = rows.find((p) => p.id === id);
+    if (!row) return;
+    const next = (row.quantity || 1) - 1;
+    if (next <= 0) {
+      const n = paintUsageCount(id);
+      const msg = n
+        ? `This paint is used in ${n} recipe${n === 1 ? "" : "s"}. Removing it from your rack will leave those steps without a paint. Continue?`
+        : `Remove ${qtyDec.dataset.name || "this paint"} from your rack?`;
+      if (await showConfirm(msg)) {
+        const res = await deletePaintRemote(id);
+        if (!res.ok) { showToast(res.message); return; }
+        save(KEYS.paints, rows.filter((p) => p.id !== id));
+        showToast("Removed from rack");
+        render();
+      }
+      return;
     }
+    row.quantity = next;
+    stamp(row);
+    const res = await pushPaint(row);
+    if (!res.ok) { showToast(res.message); return; }
+    save(KEYS.paints, rows);
+    render();
+    return;
+  }
+
+  const qtyInc = t("[data-action='paint-qty-inc']");
+  if (qtyInc) {
+    const id = qtyInc.dataset.id;
+    const rows = getAllPaintRows();
+    const row = rows.find((p) => p.id === id);
+    if (!row) return;
+    row.quantity = (row.quantity || 1) + 1;
+    stamp(row);
+    const res = await pushPaint(row);
+    if (!res.ok) { showToast(res.message); return; }
+    save(KEYS.paints, rows);
+    render();
     return;
   }
 
   const toggleHave = t("[data-action='toggle-have']");
   if (toggleHave) {
     const { name, brand, hex, type } = toggleHave.dataset;
-    const id = "lib-" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
-    const row = stamp({ id, name, brand, hex, type });
-    const res = await pushPaint(row);
+    const res = await addPaintToRack({ name, brand, hex, type });
     if (!res.ok) { showToast(res.message); return; }
-    const rows = getAllPaintRows();
-    rows.push(row);
-    save(KEYS.paints, rows);
-    // Owned and "need to buy" are mutually exclusive — clear the wishlist
-    // flag now that it's moot.
-    if (isWanted(name, brand)) toggleWanted(name, brand);
+    showToast("Added to rack");
+    render();
+    return;
+  }
+
+  const paintAddToRack = t("[data-action='paint-add-to-rack']");
+  if (paintAddToRack) {
+    const { name, brand, hex, type } = paintAddToRack.dataset;
+    const res = await addPaintToRack({ name, brand, hex, type });
+    if (!res.ok) { showToast(res.message); return; }
     showToast("Added to rack");
     render();
     return;

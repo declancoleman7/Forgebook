@@ -234,6 +234,7 @@ function toRemotePaint(p, userId) {
   return {
     id: p.id, user_id: userId, name: p.name, brand: p.brand,
     hex: p.hex, type: p.type, needs_restock: !!p.needsRestock,
+    quantity: p.quantity == null ? 1 : p.quantity,
     updated_at: p.updatedAt, deleted: !!p.deleted,
   };
 }
@@ -242,6 +243,7 @@ function fromRemotePaint(row) {
   return {
     id: row.id, name: row.name, brand: row.brand, hex: row.hex,
     type: row.type, needsRestock: !!row.needs_restock,
+    quantity: row.quantity == null ? 1 : row.quantity,
     updatedAt: row.updated_at, deleted: !!row.deleted,
   };
 }
