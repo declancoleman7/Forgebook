@@ -970,6 +970,7 @@ const PAINT_LIBRARY = [
   { name: "Monastic Green", brand: "Vallejo", type: "Xpress Color Intense", hex: "#24483c" },
   { name: "Viking Grey", brand: "Vallejo", type: "Xpress Color Intense", hex: "#3c4854" },
   { name: "Hospitaller Black", brand: "Vallejo", type: "Xpress Color Intense", hex: "#1e1e24" },
+  { name: "Chainmail Silver", brand: "Vallejo", type: "Game Air Primer", hex: "#90909c" },
   { name: "Abyssal Blue", brand: "Army Painter", type: "Warpaints Fanatic", hex: "#003144" },
   { name: "Aegis Aqua", brand: "Army Painter", type: "Warpaints Fanatic", hex: "#6fb1ba" },
   { name: "Afterglow", brand: "Army Painter", type: "Warpaints Fanatic", hex: "#f0b323" },
