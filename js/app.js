@@ -1071,56 +1071,89 @@ function buildFeedItems() {
 // 2-column grid tile reused as-is on several other screens (several of
 // which never load vote/comment-count data at all), and the feed is a
 // single vertical column, not a grid -- the wrong shape regardless.
+// Reddit-style: a big, colorful image up top (the whole point is that a
+// photo or a vivid paint swatch is the first thing you see scrolling
+// through), meta/title below it, then a vote+comment action bar. The
+// clickable "open this" area (.feed-card__link) deliberately does NOT wrap
+// the actions row -- vote/comment buttons need their own click targets that
+// don't have a [data-nav] ancestor, or the click delegate's [data-nav]
+// check (which runs on the nearest ancestor match) would swallow taps meant
+// for the vote buttons and navigate to the recipe instead.
 function feedRecipeCardHtml(item, kind) {
   const r = item.recipe;
   const fac = faction(r.faction);
   const ownerId = kind === "published" ? item.authorId : item.recipeOwnerId;
+  // A comment-burst item has no single "who" (it's an aggregate across
+  // however many commenters) -- attribute it to the recipe's own owner,
+  // same person whose work is actually being talked about.
+  const authorId = kind === "published" ? item.authorId : ownerId;
   const votes = getRecipeVoteSummary(ownerId, r.id) || { likeCount: 0, dislikeCount: 0 };
+  const net = votes.likeCount - votes.dislikeCount;
   const commentCount = getRecipeCommentCount(ownerId, r.id);
   const isMine = ownerId === currentUserId();
-  const context = kind === "published"
-    ? `${avatarHtml(item.authorId, 16)} ${escapeHtml(authorName(item.authorId))} published this`
-    : `${item.count} new comment${item.count === 1 ? "" : "s"}`;
+  const mine = isMine ? null : myRecipeVoteFor(ownerId, r.id);
+  const authorAttr = isMine ? "" : `data-author="${escapeHtml(ownerId)}"`;
+  const tag = kind === "published" ? "New Recipe" : `${item.count} New Comment${item.count === 1 ? "" : "s"}`;
+
   return `
-    <div class="feed-card" data-nav="recipe" data-id="${escapeHtml(r.id)}" ${isMine ? "" : `data-author="${escapeHtml(ownerId)}"`}>
-      <div class="feed-card__hero ${r.photo ? "has-photo" : ""}" style="--faction-color:${fac.color}${r.photo ? `;background-image:url('${r.photo}')` : ""}">
-        ${r.photo ? "" : `<span class="emblem-badge">${emblemSvg(fac.emblem, 22)}</span>`}
-      </div>
-      <div class="feed-card__body">
-        <div class="feed-card__name">${escapeHtml(r.name)}</div>
-        <div class="feed-card__metrics">
-          <span>${icon("thumb-up", 13)} ${votes.likeCount - votes.dislikeCount}</span>
-          <span>${icon("comment", 13)} ${commentCount}</span>
+    <div class="feed-card">
+      <div class="feed-card__link" data-nav="recipe" data-id="${escapeHtml(r.id)}" ${authorAttr}>
+        <div class="feed-card__hero ${r.photo ? "has-photo" : ""}" style="--faction-color:${fac.color}${r.photo ? `;background-image:url('${r.photo}')` : ""}">
+          ${r.photo ? "" : `<span class="emblem-badge emblem-badge--xl">${emblemSvg(fac.emblem, 46)}</span>`}
+          <span class="feed-card__tag">${escapeHtml(tag)}</span>
         </div>
-        <div class="feed-card__context">${context} · ${relativeTime(item.at)}</div>
+        <div class="feed-card__body">
+          <div class="feed-card__meta">
+            ${avatarHtml(authorId, 18)}
+            <span class="feed-card__author">${escapeHtml(authorName(authorId))}</span>
+            <span class="feed-card__dot">·</span>
+            <span class="feed-card__time">${relativeTime(item.at)}</span>
+          </div>
+          <div class="feed-card__title">${escapeHtml(r.name)}</div>
+        </div>
+      </div>
+      <div class="feed-card__actions">
+        ${isMine ? `
+          <div class="feed-card__votes feed-card__votes--readonly">${icon("thumb-up", 15)}<span class="feed-card__vote-score">${net}</span></div>
+        ` : `
+          <div class="feed-card__votes">
+            <button class="feed-card__vote-btn ${mine === 1 ? "is-active" : ""}" data-action="vote-recipe" data-owner-id="${escapeHtml(ownerId)}" data-recipe-id="${escapeHtml(r.id)}" data-value="1" aria-label="Like">${icon("thumb-up", 15)}</button>
+            <span class="feed-card__vote-score">${net}</span>
+            <button class="feed-card__vote-btn ${mine === -1 ? "is-active" : ""}" data-action="vote-recipe" data-owner-id="${escapeHtml(ownerId)}" data-recipe-id="${escapeHtml(r.id)}" data-value="-1" aria-label="Dislike">${icon("thumb-down", 15)}</button>
+          </div>
+        `}
+        <div class="feed-card__comment-btn" data-nav="recipe" data-id="${escapeHtml(r.id)}" ${authorAttr}>${icon("comment", 15)} ${commentCount} Comment${commentCount === 1 ? "" : "s"}</div>
       </div>
     </div>
   `;
 }
 
-// A paint-tied feed card (paint_rating/paint_note) -- these have no "likes"
-// under this feature, so the metrics row shows the paint's existing star
-// rating instead of vote/comment counts, a deliberately different metrics
-// row rather than an identical layout forced onto data that doesn't fit.
+// A paint-tied feed card (paint_rating/paint_note) -- deliberately the
+// quiet half of the feed. Recipes are Forgebook's actual content and get
+// the full hero-image treatment above; a paint rating or note is ambient
+// community activity, not a "post," so this renders as a small, muted,
+// single-line-ish row instead of competing with recipe cards for attention.
 function feedPaintCardHtml(item) {
   const p = item.paint;
   const summary = getRatingSummary(p.name, p.brand);
+  const authorId = item.type === "paint_rating" ? item.raterId : item.authorId;
+  const tag = item.type === "paint_rating" ? "Rating" : "Note";
+  const preview = item.type === "paint_rating" ? `Rated it ${item.stars}★` : `“${escapeHtml(item.body)}”`;
   return `
-    <div class="feed-card" data-action="find-similar-colour" data-name="${escapeHtml(p.name)}" data-brand="${escapeHtml(p.brand)}" data-hex="${p.hex}">
-      <div class="feed-card__hero" style="background:${p.hex}">${paintTypeBadgeHtml(p.type)}</div>
-      <div class="feed-card__body">
-        <div class="feed-card__name">${escapeHtml(p.name)} <span style="opacity:0.7">(${escapeHtml(p.brand)})</span></div>
-        <div class="feed-card__metrics">
-          ${summary
-            ? `<span>${starRowHtml(summary.avgStars, { size: 12 })} (${summary.ratingCount})</span>`
-            : `<span>No ratings yet</span>`}
+    <div class="feed-card-minor" data-action="find-similar-colour" data-name="${escapeHtml(p.name)}" data-brand="${escapeHtml(p.brand)}" data-hex="${p.hex}">
+      <div class="feed-card-minor__swatch" style="background:${p.hex}">${paintTypeBadgeHtml(p.type)}</div>
+      <div class="feed-card-minor__body">
+        <div class="feed-card-minor__meta">
+          ${avatarHtml(authorId, 14)}
+          <span class="feed-card-minor__author">${escapeHtml(authorName(authorId))}</span>
+          <span class="feed-card-minor__tag">${tag}</span>
+          <span class="feed-card__dot">·</span>
+          <span class="feed-card__time">${relativeTime(item.at)}</span>
         </div>
-        <div class="feed-card__context">
-          ${item.type === "paint_rating"
-            ? `${avatarHtml(item.raterId, 16)} ${escapeHtml(authorName(item.raterId))} rated it ${item.stars}★`
-            : `${avatarHtml(item.authorId, 16)} ${escapeHtml(authorName(item.authorId))}: "${escapeHtml(item.body)}"`}
-          · ${relativeTime(item.at)}
-        </div>
+        <div class="feed-card-minor__title">${escapeHtml(p.name)} <span class="feed-card__brand">${escapeHtml(p.brand)}</span> — ${preview}</div>
+      </div>
+      <div class="feed-card-minor__rating">
+        ${summary ? `★${Number(summary.avgStars).toFixed(1)}` : ""}
       </div>
     </div>
   `;
