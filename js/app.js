@@ -82,6 +82,8 @@ let state = {
   paintLibBrands: [], // multi-select — empty = all brands
   paintLibCategories: [], // multi-select — paintCategory() keys; empty = all types
   paintLibSort: "name", // "name" | "rating" — Paint Library sort order
+  paintLibQuery: "", // the Paint Library's own inline #paint-library-search box -- separate from globalSearch, same reasoning as the Recipes list's own searchQuery above
+  paintLibFilterOpen: false, // brand+category filter overlay (mirrors recipeFilterOpen)
   includeShared: true, // whether other users' shared recipes appear in lists/browsing
   feedSort: "popular", // "popular" | "new" — Community Feed sort order
 };
@@ -1256,6 +1258,42 @@ function recipeFilterOverlayHtml(used) {
         <div class="filter-overlay__footer">
           <button type="button" class="btn btn-ghost btn-block" data-action="clear-recipe-filters">Clear all</button>
           <button type="button" class="btn btn-primary btn-block" data-action="close-recipe-filters">Done</button>
+        </div>
+      </div>
+    </div>`;
+}
+
+// Same "one trigger, one toggle-everything overlay" shape as
+// recipeFilterOverlayHtml above -- brand and type used to be two
+// always-visible chip rows; consolidating them here keeps the page from
+// being a wall of filter chips above the actual paint list.
+function paintLibFilterOverlayHtml(allBrands) {
+  if (!state.paintLibFilterOpen) return "";
+  return `
+    <div class="filter-overlay">
+      <div class="filter-overlay__backdrop" data-action="close-paint-lib-filters"></div>
+      <div class="filter-overlay__panel">
+        <div class="filter-overlay__header">
+          <div class="page-title" style="margin:0">Filter paints</div>
+          <button type="button" class="icon-btn" data-action="close-paint-lib-filters" aria-label="Close">${icon("back", 16)}</button>
+        </div>
+        <div class="filter-overlay__body">
+          ${allBrands.length > 1 ? `
+          <div class="section-label">Brand</div>
+          <div class="filter-toggle-row">
+            <div class="faction-chip ${!state.paintLibBrands.length ? "is-active" : ""}" data-action="lib-brand" data-brand="">All brands</div>
+            ${allBrands.map((b) => `<div class="faction-chip ${state.paintLibBrands.includes(b) ? "is-active" : ""}" data-action="lib-brand" data-brand="${escapeHtml(b)}">${escapeHtml(b)}</div>`).join("")}
+          </div>
+          ` : ""}
+          <div class="section-label">Type</div>
+          <div class="filter-toggle-row">
+            <div class="faction-chip ${!state.paintLibCategories.length ? "is-active" : ""}" data-action="lib-category" data-category="">All types</div>
+            ${["base", "wash", "contrast", "metallic", "primer"].map((c) => `<div class="faction-chip ${state.paintLibCategories.includes(c) ? "is-active" : ""}" data-action="lib-category" data-category="${c}">${PAINT_CATEGORY_LABEL[c]}</div>`).join("")}
+          </div>
+        </div>
+        <div class="filter-overlay__footer">
+          <button type="button" class="btn btn-ghost btn-block" data-action="clear-paint-lib-filters">Clear all</button>
+          <button type="button" class="btn btn-primary btn-block" data-action="close-paint-lib-filters">Done</button>
         </div>
       </div>
     </div>`;
@@ -2844,6 +2882,8 @@ function computeColourMatches(hex, excludeKey, resultFilter, sourceBrand, source
 // ---------------------------------------------------------------
 function viewPaintLibrary() {
   let entries = PAINT_LIBRARY;
+  const q = state.paintLibQuery.trim().toLowerCase();
+  if (q) entries = entries.filter((p) => paintMatchesQuery(p, q));
   if (state.paintLibBrands.length) entries = entries.filter((p) => state.paintLibBrands.includes(p.brand));
   if (state.paintLibCategories.length) entries = entries.filter((p) => state.paintLibCategories.includes(paintCategory(p.type)));
 
@@ -2940,6 +2980,11 @@ function viewPaintLibrary() {
         Colours are close approximations, not official swatches — manufacturers don't publish exact codes.
       </div>
 
+      <div class="mini-search" style="margin-bottom:14px">
+        ${icon("search", 14)}
+        <input type="text" id="paint-library-search" placeholder="Search paints" value="${escapeHtml(state.paintLibQuery)}" />
+      </div>
+
       <button class="colour-match-cta" data-nav="similar">${icon("search", 18)} Match a colour you have in mind</button>
 
       <div class="lib-progress">
@@ -2956,22 +3001,16 @@ function viewPaintLibrary() {
         <button class="${state.paintLibFilter === "want" ? "is-active" : ""}" data-action="lib-filter" data-filter="want">To buy <span class="b">${wantCount}</span></button>
       </div>
 
-      ${allBrands.length > 1 ? `
-        <div class="faction-row" style="margin-bottom:10px">
-          <div class="faction-chip ${!state.paintLibBrands.length ? "is-active" : ""}" data-action="lib-brand" data-brand="">All brands</div>
-          ${allBrands.map((b) => `<div class="faction-chip ${state.paintLibBrands.includes(b) ? "is-active" : ""}" data-action="lib-brand" data-brand="${escapeHtml(b)}">${escapeHtml(b)}</div>`).join("")}
-        </div>
-      ` : ""}
-
-      <div class="faction-row" style="margin-bottom:10px">
-        <div class="faction-chip ${!state.paintLibCategories.length ? "is-active" : ""}" data-action="lib-category" data-category="">All types</div>
-        ${["base", "wash", "contrast", "metallic", "primer"].map((c) => `<div class="faction-chip ${state.paintLibCategories.includes(c) ? "is-active" : ""}" data-action="lib-category" data-category="${c}">${PAINT_CATEGORY_LABEL[c]}</div>`).join("")}
-      </div>
+      <button type="button" class="btn btn-ghost recipe-filter-trigger" data-action="open-paint-lib-filters" style="margin:10px 0">
+        ${icon("filter", 14)} Filters
+        ${(state.paintLibBrands.length + state.paintLibCategories.length) ? `<span class="recipe-filter-trigger__count">${state.paintLibBrands.length + state.paintLibCategories.length}</span>` : ""}
+      </button>
 
       <div class="lib-filter-seg" style="margin-bottom:10px">
         <button class="${state.paintLibSort === "name" ? "is-active" : ""}" data-action="lib-sort" data-sort="name">Default order</button>
         <button class="${state.paintLibSort === "rating" ? "is-active" : ""}" data-action="lib-sort" data-sort="rating">Top rated</button>
       </div>
+      ${paintLibFilterOverlayHtml(allBrands)}
 
       ${!entries.length
         ? emptyStateHtml("search", "No matches", "Try a different filter.")
@@ -4169,6 +4208,9 @@ function render() {
   const recipeListSearch = root.querySelector("#recipe-list-search");
   if (recipeListSearch) recipeListSearch.oninput = (e) => { state.searchQuery = e.target.value; render(); };
 
+  const paintLibSearch = root.querySelector("#paint-library-search");
+  if (paintLibSearch) paintLibSearch.oninput = (e) => { state.paintLibQuery = e.target.value; render(); };
+
   document.querySelectorAll(".bottom-nav__item, .side-nav__item").forEach((el) => {
     const r = el.dataset.route;
     const active =
@@ -4429,6 +4471,20 @@ document.addEventListener("click", async (e) => {
   if (clearRecipeFilters) {
     state.recipeFactionFilters = [];
     state.recipeDifficultyFilters = [];
+    render();
+    return;
+  }
+
+  const openPaintLibFilters = t("[data-action='open-paint-lib-filters']");
+  if (openPaintLibFilters) { state.paintLibFilterOpen = true; render(); return; }
+
+  const closePaintLibFilters = t("[data-action='close-paint-lib-filters']");
+  if (closePaintLibFilters) { state.paintLibFilterOpen = false; render(); return; }
+
+  const clearPaintLibFilters = t("[data-action='clear-paint-lib-filters']");
+  if (clearPaintLibFilters) {
+    state.paintLibBrands = [];
+    state.paintLibCategories = [];
     render();
     return;
   }
