@@ -196,6 +196,7 @@ function clearLiveState() {
   save(KEYS.profiles, []);
   save(KEYS.myRatings, []);
   save(KEYS.ratingSummary, []);
+  save(KEYS.activityFeed, {});
   save(KEYS.globalArt, {});
   localStorage.removeItem(SYNC_KEYS.lastSync);
 }
@@ -270,7 +271,10 @@ function toRemoteRating(paintKey, stars, userId) {
 }
 
 function fromRemoteRating(row) {
-  return { paintKey: row.paint_key, stars: row.stars, updatedAt: row.updated_at };
+  // userId is only meaningful for the activity feed (fetchActivityFeed
+  // reads across every rater, not just the caller's own) -- harmless extra
+  // field for the "my own ratings" callers, which already know it's theirs.
+  return { paintKey: row.paint_key, stars: row.stars, updatedAt: row.updated_at, userId: row.user_id };
 }
 
 // A shared recipe keeps its author's id — it's a read-only view of someone
@@ -384,6 +388,40 @@ async function fetchSharedRecipes(userId) {
   save(KEYS.sharedRecipes, sharedRecipes);
   save(KEYS.sharedPaints, sharedPaints);
   save(KEYS.profiles, profiles);
+}
+
+// The Home activity feed's raw material — bounded, recency-ordered slices
+// of comments/ratings/notes site-wide. Deliberately doesn't also re-fetch
+// published recipes: fetchSharedRecipes above already pulls every published
+// recipe unconditionally, so buildFeedItems() (js/app.js) derives its
+// "recipe published" items from that existing cache instead of a second,
+// redundant query against the same table.
+async function fetchActivityFeed() {
+  const [cRes, rRes, nRes] = await Promise.all([
+    sb.from("recipe_comments").select("*").eq("status", "visible").eq("flagged", false).eq("deleted", false).order("created_at", { ascending: false }).limit(100),
+    sb.from("paint_ratings").select("*").eq("deleted", false).order("updated_at", { ascending: false }).limit(100),
+    sb.from("paint_notes").select("*").eq("status", "visible").eq("flagged", false).eq("deleted", false).order("created_at", { ascending: false }).limit(100),
+  ]);
+  if (cRes.error) throw cRes.error;
+  if (rRes.error) throw rRes.error;
+  if (nRes.error) throw nRes.error;
+
+  // Any commenter/rater/note-author not already known from fetchSharedRecipes
+  // (e.g. someone active only on paints, never publishing a recipe of their
+  // own) needs their display name too, so the feed can show who did what.
+  const comments = (cRes.data || []).map(fromRemoteComment);
+  const ratings = (rRes.data || []).map(fromRemoteRating);
+  const notes = (nRes.data || []).map(fromRemotePaintNote);
+  const knownIds = new Set(readJSON(KEYS.profiles, []).map((p) => p.userId));
+  const missingIds = [...new Set([...comments.map((c) => c.userId), ...ratings.map((r) => r.userId), ...notes.map((n) => n.userId)])].filter((id) => !knownIds.has(id));
+  if (missingIds.length) {
+    const { data } = await sb.from("profiles").select("user_id, display_name").in("user_id", missingIds);
+    const profiles = readJSON(KEYS.profiles, []);
+    (data || []).forEach((row) => profiles.push({ userId: row.user_id, displayName: row.display_name }));
+    save(KEYS.profiles, profiles);
+  }
+
+  return { comments, ratings, notes };
 }
 
 // The public share page's one query — deliberately separate from
@@ -594,6 +632,15 @@ async function loadBook() {
 
   try {
     save(KEYS.ratingSummary, await fetchRatingSummary());
+  } catch (e) {
+    // swallowed on purpose
+  }
+
+  // Same deliberate isolation: a stale/empty activity feed just means Home
+  // shows less, not that the load failed. Runs after fetchSharedRecipes
+  // above so its profile cache is already warm for most feed authors.
+  try {
+    save(KEYS.activityFeed, await fetchActivityFeed());
   } catch (e) {
     // swallowed on purpose
   }

@@ -2159,6 +2159,9 @@ const KEYS = {
   // of split as sharedRecipes/sharedPaints above (mine vs. everyone's).
   myRatings: "forgebook.myRatings",
   ratingSummary: "forgebook.ratingSummary",
+  // Raw material for the Home activity feed -- see fetchActivityFeed in
+  // cloud.js and buildFeedItems in app.js.
+  activityFeed: "forgebook.activityFeed",
 };
 
 function readJSON(key, fallback) {

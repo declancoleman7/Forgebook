@@ -805,50 +805,129 @@ function swipeTo(dir) {
 }
 
 // ---------------------------------------------------------------
-// View: Home
+// View: Home \u2014 a site-wide activity feed (recently published recipes,
+// recipe comments, paint ratings, paint notes), not a personal dashboard.
+// "Continue Painting"/"Your Armies" (the old Home content) live on your own
+// Profile now \u2014 see personalWorkspaceHtml.
 // ---------------------------------------------------------------
-function viewHome() {
-  const recipes = getRecipes();
-  const recents = getRecents().map((id) => findRecipe(id)).filter(Boolean);
-  const cont = recents[0] || recipes[0];
-  const recentList = recents.slice(0, 4);
-  const armies = [...new Set(recipes.map((r) => r.faction))];
+const FEED_WINDOW_MS = 7 * 24 * 3600 * 1000;
+const FEED_HALF_LIFE_MS = 48 * 3600 * 1000;
 
+// Turns the four raw arrays cached by fetchActivityFeed (plus the shared
+// recipes list already cached separately) into one heterogeneous, ranked
+// list. Comments are grouped per recipe within FEED_WINDOW_MS so "5 new
+// comments on X" reads as a single item instead of five -- ratings/notes are
+// inherently paint-level (keyed by paint_key, not a recipe), so each one is
+// its own item pointing at that paint's Similar Colours page.
+function buildFeedItems() {
+  const feed = readJSON(KEYS.activityFeed, {});
+  const comments = feed.comments || [];
+  const ratings = feed.ratings || [];
+  const notes = feed.notes || [];
+  const now = Date.now();
+  const items = [];
+
+  getSharedRecipes()
+    .filter((r) => now - new Date(r.updatedAt).getTime() < FEED_WINDOW_MS)
+    .forEach((r) => items.push({ type: "recipe_published", recipe: r, authorId: r.authorId, at: r.updatedAt, engagement: 1 }));
+
+  const commentGroups = {};
+  comments
+    .filter((c) => now - new Date(c.createdAt).getTime() < FEED_WINDOW_MS)
+    .forEach((c) => {
+      const key = c.recipeOwnerId + "|" + c.recipeId;
+      const g = commentGroups[key] || (commentGroups[key] = { recipeOwnerId: c.recipeOwnerId, recipeId: c.recipeId, count: 0, latestAt: c.createdAt });
+      g.count += 1;
+      if (new Date(c.createdAt) > new Date(g.latestAt)) g.latestAt = c.createdAt;
+    });
+  Object.values(commentGroups).forEach((g) => {
+    const recipe = findRecipe(g.recipeId, g.recipeOwnerId === currentUserId() ? undefined : g.recipeOwnerId);
+    if (!recipe) return;
+    items.push({ type: "recipe_comments", recipe, recipeOwnerId: g.recipeOwnerId, count: g.count, at: g.latestAt, engagement: g.count });
+  });
+
+  ratings
+    .filter((r) => now - new Date(r.updatedAt).getTime() < FEED_WINDOW_MS)
+    .forEach((r) => {
+      const paint = paintFromKey(r.paintKey);
+      if (paint) items.push({ type: "paint_rating", paint, raterId: r.userId, stars: r.stars, at: r.updatedAt, engagement: 1 });
+    });
+
+  notes
+    .filter((n) => now - new Date(n.createdAt).getTime() < FEED_WINDOW_MS)
+    .forEach((n) => {
+      const paint = paintFromKey(n.paintKey);
+      if (paint) items.push({ type: "paint_note", paint, authorId: n.userId, body: n.body, at: n.createdAt, engagement: 1 });
+    });
+
+  // 48h half-life decay, boosted by engagement (comment count) so a
+  // still-active thread can outrank a quieter, slightly newer item.
+  const decay = (iso) => Math.pow(0.5, (now - new Date(iso).getTime()) / FEED_HALF_LIFE_MS);
+  items.forEach((it) => { it.score = decay(it.at) * (1 + Math.log2(1 + it.engagement)); });
+  items.sort((a, b) => b.score - a.score);
+  return items.slice(0, 30);
+}
+
+function feedItemHtml(item) {
+  if (item.type === "recipe_published") {
+    const r = item.recipe;
+    return `
+      <div class="comment-row" data-nav="recipe" data-id="${escapeHtml(r.id)}" ${r.authorId ? `data-author="${escapeHtml(r.authorId)}"` : ""} style="cursor:pointer">
+        <div class="comment-row__meta">
+          <span class="comment-row__author">${icon("book", 12)} New recipe</span>
+          <span class="comment-row__time">${relativeTime(item.at)}</span>
+        </div>
+        <div class="comment-row__body">${escapeHtml(authorName(item.authorId))} published "${escapeHtml(r.name)}"</div>
+      </div>
+    `;
+  }
+  if (item.type === "recipe_comments") {
+    const r = item.recipe;
+    const isMine = item.recipeOwnerId === currentUserId();
+    return `
+      <div class="comment-row" data-nav="recipe" data-id="${escapeHtml(r.id)}" ${isMine ? "" : `data-author="${escapeHtml(item.recipeOwnerId)}"`} style="cursor:pointer">
+        <div class="comment-row__meta">
+          <span class="comment-row__author">Comments</span>
+          <span class="comment-row__time">${relativeTime(item.at)}</span>
+        </div>
+        <div class="comment-row__body">${item.count} new comment${item.count === 1 ? "" : "s"} on "${escapeHtml(r.name)}"</div>
+      </div>
+    `;
+  }
+  if (item.type === "paint_rating") {
+    const p = item.paint;
+    return `
+      <div class="comment-row" data-action="find-similar-colour" data-name="${escapeHtml(p.name)}" data-brand="${escapeHtml(p.brand)}" data-hex="${p.hex}" style="cursor:pointer">
+        <div class="comment-row__meta">
+          ${starRowHtml(item.stars, { size: 12 })}
+          <span class="comment-row__time">${relativeTime(item.at)}</span>
+        </div>
+        <div class="comment-row__body">${escapeHtml(authorName(item.raterId))} rated ${escapeHtml(p.name)} <span style="opacity:0.7">(${escapeHtml(p.brand)})</span></div>
+      </div>
+    `;
+  }
+  // paint_note
+  const p = item.paint;
+  return `
+    <div class="comment-row" data-action="find-similar-colour" data-name="${escapeHtml(p.name)}" data-brand="${escapeHtml(p.brand)}" data-hex="${p.hex}" style="cursor:pointer">
+      <div class="comment-row__meta">
+        <span class="comment-row__author">Note</span>
+        <span class="comment-row__time">${relativeTime(item.at)}</span>
+      </div>
+      <div class="comment-row__body">${escapeHtml(authorName(item.authorId))} on ${escapeHtml(p.name)}: "${escapeHtml(item.body)}"</div>
+    </div>
+  `;
+}
+
+function viewHome() {
+  const items = buildFeedItems();
   return `
     <div class="page-enter">
-      ${cont ? `
-        <div class="section-label">Continue Painting</div>
-        <div class="continue-card" data-nav="recipe" data-id="${cont.id}" style="--faction-color:${faction(cont.faction).color}">
-          <div class="continue-card__hero ${cont.photo ? "has-photo" : ""}"${cont.photo ? ` style="background-image:url('${cont.photo}')"` : ""}>
-            ${cont.photo ? "" : `<span class="emblem-badge emblem-badge--md">${emblemSvg(faction(cont.faction).emblem, 24)}</span>`}
-          </div>
-          <div class="continue-card__body">
-            <div class="continue-card__eyebrow">${escapeHtml(faction(cont.faction).label)}${cont.unit ? " \u00b7 " + escapeHtml(cont.unit) : ""}</div>
-            <div class="continue-card__title">${escapeHtml(cont.name)}</div>
-          </div>
-          <div class="continue-card__chevron">${icon("chevron", 20)}</div>
-        </div>
-      ` : ""}
-
-      <div class="section-label">Your Armies</div>
-      ${armies.length ? `
-        <div class="faction-row">
-          ${armies.map((id) => {
-            const f = faction(id);
-            const n = recipes.filter((r) => r.faction === id).length;
-            return `
-              <div class="faction-chip" data-nav="faction" data-id="${f.id}" style="--chip-color:${f.color}">
-                <span class="faction-chip__emblem" style="color:${f.color}">${emblemSvg(f.emblem, 15)}</span>
-                ${escapeHtml(f.label)} <span class="faction-chip__count">${n}</span>
-              </div>`;
-          }).join("")}
-        </div>
-      ` : `<div class="empty-state__sub" style="padding:0 2px 8px">No recipes yet. Tap Armies to pick a faction.</div>`}
-
-      <div class="section-label">Recent Recipes</div>
-      ${recentList.length
-        ? `<div class="recipe-grid">${recentList.map(recipeCardHtml).join("")}</div>`
-        : emptyStateHtml("book", "No recipes yet", "Tap the + button to record your first paint recipe.")}
+      <div class="page-title">Community Feed</div>
+      <div style="font-size:13px; opacity:0.75; margin:0 2px 14px">What's happening across Forgebook right now.</div>
+      ${items.length
+        ? items.map(feedItemHtml).join("")
+        : emptyStateHtml("book", "Nothing yet", "Publish a recipe, or leave a note or rating, to get the community feed moving.")}
     </div>
   `;
 }
