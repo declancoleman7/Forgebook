@@ -768,6 +768,24 @@ main {
   color: var(--ink);
 }
 
+.recipe-card__meta-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.recipe-card__score {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  color: var(--ink-dim);
+}
+
+.recipe-card__score svg {
+  width: 11px;
+  height: 11px;
+}
+
 .recipe-card__author {
   margin-top: 5px;
   display: flex;

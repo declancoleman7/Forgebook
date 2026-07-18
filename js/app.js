@@ -1288,6 +1288,13 @@ function recipeCardHtml(r) {
     const p = resolveStepPaint(r, s, "paintId");
     return p ? p.hex : fac.color;
   });
+  // A published recipe's net like/dislike score, same figure the detail
+  // page and feed cards show -- r.authorId is only set on someone else's
+  // shared recipe (see getVisibleRecipes()); your own recipes have none, so
+  // the owner is implicitly you. Drafts have no viewers to vote, so no score.
+  const ownerId = r.authorId || currentUserId();
+  const votes = r.published !== false ? getRecipeVoteSummary(ownerId, r.id) : null;
+  const net = votes ? votes.likeCount - votes.dislikeCount : 0;
   return `
     <div class="recipe-card" data-nav="recipe" data-id="${r.id}" ${r.authorId ? `data-author="${escapeHtml(r.authorId)}"` : ""} style="--faction-color:${fac.color}">
       <div class="recipe-card__hero ${r.photo ? "has-photo" : ""}"${r.photo ? ` style="background-image:url('${r.photo}')"` : ""}>
@@ -1301,7 +1308,10 @@ function recipeCardHtml(r) {
         <div class="recipe-card__name">${escapeHtml(r.name)}</div>
         <div class="recipe-card__meta">
           ${difficultyDots(r.difficulty || 1)}
-          <span class="recipe-card__steps">${(r.steps || []).length} steps</span>
+          <span class="recipe-card__meta-right">
+            <span class="recipe-card__steps">${(r.steps || []).length} steps</span>
+            ${r.published !== false ? `<span class="recipe-card__score">${icon("thumb-up", 11)} ${net}</span>` : ""}
+          </span>
         </div>
         ${r.authorId ? `<div class="recipe-card__author" data-nav="profile" data-id="${escapeHtml(r.authorId)}">${avatarHtml(r.authorId, 14)} ${escapeHtml(authorName(r.authorId))}</div>` : ""}
         ${r.published === false ? `<span class="pill-status pill-status--draft">Draft</span>` : ""}
