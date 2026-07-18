@@ -73,6 +73,7 @@ let state = {
   paintLibFilter: "all", // "all" | "owned" | "want" — Paint Library ownership filter
   paintLibBrands: [], // multi-select — empty = all brands
   paintLibCategories: [], // multi-select — paintCategory() keys; empty = all types
+  paintLibSort: "name", // "name" | "rating" — Paint Library sort order
   includeShared: true, // whether other users' shared recipes appear in lists/browsing
 };
 
@@ -330,6 +331,24 @@ function paintTypeBadgeHtml(type) {
   return `<span class="paint-type-badge" title="${PAINT_CATEGORY_LABEL[cat]}"><svg viewBox="0 0 24 24" fill="currentColor" stroke="none">${glyph}</svg></span>`;
 }
 
+// One shared star-rating partial for every place a rating shows up: the
+// Similar Colours rating widget, a profile's "Ratings Given" list, and the
+// compact Paint Library row badge — so the visual language can't drift.
+const STAR_PATH = "M12 2l2.9 6.6 7.1.6-5.4 4.7 1.6 7-6.2-3.7-6.2 3.7 1.6-7L2 9.2l7.1-.6L12 2z";
+function starRowHtml(value, opts = {}) {
+  const size = opts.size || 16;
+  const interactive = !!opts.interactive;
+  const stars = [1, 2, 3, 4, 5]
+    .map((n) => {
+      const filled = value != null && n <= Math.round(value);
+      const cls = "star-row__star" + (filled ? " is-filled" : "");
+      const attrs = interactive ? `data-action="rate-paint" data-value="${n}" role="button" tabindex="0"` : "";
+      return `<span class="${cls}" ${attrs}><svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="currentColor" stroke="none"><path d="${STAR_PATH}"/></svg></span>`;
+    })
+    .join("");
+  return `<span class="star-row ${interactive ? "star-row--interactive" : ""}">${stars}</span>`;
+}
+
 // ---------------------------------------------------------------
 // Paint library — browsing a real catalogue (PAINT_LIBRARY, in data.js) and
 // tracking which entries the rack already has, or still needs to buy.
@@ -373,6 +392,26 @@ function toggleWanted(name, brand) {
     save(KEYS.wantToBuy, rows);
     pushWant(key);
   }
+}
+
+function getMyRatings() { return readJSON(KEYS.myRatings, []); }
+function myRatingFor(name, brand) {
+  const r = getMyRatings().find((x) => x.paintKey === paintKey(name, brand));
+  return r ? r.stars : null;
+}
+function getRatingSummary(name, brand) {
+  return readJSON(KEYS.ratingSummary, []).find((x) => x.paintKey === paintKey(name, brand)) || null;
+}
+// Same optimistic-local-then-fire-and-forget shape as toggleWanted above —
+// a star tap shouldn't wait on a round trip before it reflects on screen.
+function ratePaint(name, brand, stars) {
+  const key = paintKey(name, brand);
+  const rows = getMyRatings();
+  const idx = rows.findIndex((r) => r.paintKey === key);
+  if (idx > -1) rows[idx] = { paintKey: key, stars };
+  else rows.push({ paintKey: key, stars });
+  save(KEYS.myRatings, rows);
+  pushRating(key, stars);
 }
 
 // A flag on an owned paint itself, so it rides along with that paint's
@@ -1745,6 +1784,24 @@ function openSimilarColours(name, brand, hex) {
   navigate("similar", { name, brand });
 }
 
+// A primary action on the page, not buried like Community Notes further
+// down — sits right under the "here's the paint you looked up" row.
+function paintRatingWidgetHtml(sourceName, sourceBrand) {
+  const summary = getRatingSummary(sourceName, sourceBrand);
+  const mine = myRatingFor(sourceName, sourceBrand);
+  return `
+    <div class="rating-widget">
+      ${starRowHtml(mine, { size: 22, interactive: true })}
+      <div class="rating-widget__meta">
+        ${summary
+          ? `<span class="rating-widget__avg">${Number(summary.avgStars).toFixed(1)}</span><span class="rating-widget__count">(${summary.ratingCount})</span>`
+          : `<span class="rating-widget__count">No ratings yet</span>`}
+        ${mine ? `<div class="rating-widget__mine">Your rating: ${mine}★ · tap a star to change</div>` : ""}
+      </div>
+    </div>
+  `;
+}
+
 function viewSimilarColours(params) {
   const sig = params.name ? params.name + "|" + params.brand : "__colour__";
   if (sig !== similarColoursSeenSig) {
@@ -1812,6 +1869,8 @@ function viewSimilarColours(params) {
           <div class="results-source__meta" id="results-source-meta">${isColourMode ? activeHex.toUpperCase() : escapeHtml(st.sourceBrand)}</div>
         </div>
       </div>
+
+      ${!isColourMode ? paintRatingWidgetHtml(st.sourceName, st.sourceBrand) : ""}
 
       <div class="lib-filter-seg">
         <button data-action="similar-filter" data-filter="all" class="${st.resultFilter === "all" ? "is-active" : ""}">All brands</button>
@@ -1928,9 +1987,29 @@ function viewPaintLibrary() {
   const groups = [];
   entries.forEach((p) => { if (!groups.includes(p.type)) groups.push(p.type); });
 
+  // "Top rated" breaks out of the type-grouped layout entirely -- the whole
+  // point is a single ranked list (e.g. "all whites, best rated first"),
+  // which a per-type grouping would just fragment back apart. Unrated
+  // entries sort last; ties break by rating count, then name.
+  const ratedSorted =
+    state.paintLibSort === "rating"
+      ? [...entries].sort((a, b) => {
+          const as = getRatingSummary(a.name, a.brand);
+          const bs = getRatingSummary(b.name, b.brand);
+          const aAvg = as ? as.avgStars : -1;
+          const bAvg = bs ? bs.avgStars : -1;
+          if (bAvg !== aAvg) return bAvg - aAvg;
+          const aCount = as ? as.ratingCount : 0;
+          const bCount = bs ? bs.ratingCount : 0;
+          if (bCount !== aCount) return bCount - aCount;
+          return a.name.localeCompare(b.name);
+        })
+      : null;
+
   const row = (p) => {
     const owned = ownedPaintFor(p.name, p.brand);
     const wanted = isWanted(p.name, p.brand);
+    const summary = getRatingSummary(p.name, p.brand);
     const flagBtn = owned
       ? `<button class="lib-row__flag is-restock ${owned.needsRestock ? "is-on" : ""}" data-action="toggle-restock" data-id="${owned.id}" title="${owned.needsRestock ? "Flagged for restock" : "Flag for restock"}">${icon("cart", 14)}</button>`
       : `<button class="lib-row__flag is-wanted ${wanted ? "is-on" : ""}" data-action="toggle-wanted" data-name="${escapeHtml(p.name)}" data-brand="${escapeHtml(p.brand)}" title="${wanted ? "On your buy list" : "Add to buy list"}">${icon("cart", 14)}</button>`;
@@ -1950,7 +2029,7 @@ function viewPaintLibrary() {
         data-name="${escapeHtml(p.name)}" data-brand="${escapeHtml(p.brand)}"
         data-hex="${p.hex}" data-type="${escapeHtml(p.type)}"
       >
-        <div class="paint-row__swatch" data-action="find-similar-colour" data-name="${escapeHtml(p.name)}" data-brand="${escapeHtml(p.brand)}" data-hex="${p.hex}" title="Find similar colours" style="background:${p.hex}">${paintTypeBadgeHtml(p.type)}</div>
+        <div class="paint-row__swatch" data-action="find-similar-colour" data-name="${escapeHtml(p.name)}" data-brand="${escapeHtml(p.brand)}" data-hex="${p.hex}" title="Find similar colours" style="background:${p.hex}">${paintTypeBadgeHtml(p.type)}${summary ? `<span class="lib-row__rating" title="${Number(summary.avgStars).toFixed(1)} average, ${summary.ratingCount} rating${summary.ratingCount === 1 ? "" : "s"}">★${Number(summary.avgStars).toFixed(1)}</span>` : ""}</div>
         <div class="lib-row__info">
           <div class="paint-row__name">${escapeHtml(p.name)}</div>
           <div class="paint-row__brand">${escapeHtml(p.brand)} · ${escapeHtml(p.type)}</div>
@@ -2002,14 +2081,25 @@ function viewPaintLibrary() {
         ${["base", "wash", "contrast", "metallic", "primer"].map((c) => `<div class="faction-chip ${state.paintLibCategories.includes(c) ? "is-active" : ""}" data-action="lib-category" data-category="${c}">${PAINT_CATEGORY_LABEL[c]}</div>`).join("")}
       </div>
 
-      ${entries.length ? groups.map((type) => {
-        const inType = entries.filter((p) => p.type === type);
-        const ownedInType = inType.filter(isOwnedEntry).length;
-        return `
-          <div class="section-label">${escapeHtml(type)} <span class="lib-section-count">${ownedInType}/${inType.length} owned</span></div>
-          <div class="lib-grid">${inType.map(row).join("")}</div>
-        `;
-      }).join("") : emptyStateHtml("search", "No matches", "Try a different search or filter.")}
+      <div class="lib-filter-seg" style="margin-bottom:10px">
+        <button class="${state.paintLibSort === "name" ? "is-active" : ""}" data-action="lib-sort" data-sort="name">Default order</button>
+        <button class="${state.paintLibSort === "rating" ? "is-active" : ""}" data-action="lib-sort" data-sort="rating">Top rated</button>
+      </div>
+
+      ${!entries.length
+        ? emptyStateHtml("search", "No matches", "Try a different search or filter.")
+        : ratedSorted
+        ? `<div class="section-label">Top rated</div><div class="lib-grid">${ratedSorted.map(row).join("")}</div>`
+        : groups
+            .map((type) => {
+              const inType = entries.filter((p) => p.type === type);
+              const ownedInType = inType.filter(isOwnedEntry).length;
+              return `
+                <div class="section-label">${escapeHtml(type)} <span class="lib-section-count">${ownedInType}/${inType.length} owned</span></div>
+                <div class="lib-grid">${inType.map(row).join("")}</div>
+              `;
+            })
+            .join("")}
     </div>
   `;
 }
@@ -3545,6 +3635,17 @@ document.addEventListener("click", async (e) => {
   const similarFilter = t("[data-action='similar-filter']");
   if (similarFilter) {
     if (!similarFilter.disabled) { similarColours.resultFilter = similarFilter.dataset.filter; render(); }
+    return;
+  }
+
+  const libSort = t("[data-action='lib-sort']");
+  if (libSort) { state.paintLibSort = libSort.dataset.sort; render(); return; }
+
+  const rateBtn = t("[data-action='rate-paint']");
+  if (rateBtn) {
+    if (!isSignedIn()) { showToast("Sign in to rate paints"); return; }
+    ratePaint(similarColours.sourceName, similarColours.sourceBrand, Number(rateBtn.dataset.value));
+    render();
     return;
   }
 

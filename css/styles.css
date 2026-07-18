@@ -1223,6 +1223,24 @@ main {
   height: 9px;
 }
 
+/* Compact avg-rating badge on a Paint Library swatch -- opposite corner from
+   .paint-type-badge so the two never collide, small enough to not crowd an
+   already-tight row on narrow phones. */
+.lib-row__rating {
+  position: absolute;
+  top: -2px;
+  left: -2px;
+  padding: 1px 4px;
+  border-radius: 6px;
+  font-size: 9px;
+  font-weight: 700;
+  line-height: 1.4;
+  background: rgba(18, 14, 10, 0.8);
+  color: var(--gold-bright);
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.22);
+  pointer-events: none;
+}
+
 .paint-row__name {
   font-size: 13.5px;
   color: var(--parchment);
@@ -3213,6 +3231,34 @@ main {
 
 .results-source__name { font-family: var(--font-display); font-size: 16px; color: var(--parchment); }
 .results-source__meta { font-size: 11.5px; color: var(--ink); font-family: var(--font-mono); margin-top: 2px; }
+
+/* One shared star-rating partial (starRowHtml in app.js) -- the Similar
+   Colours rating widget, a profile's "Ratings Given" list, and the compact
+   Paint Library badge all render through this same visual language. Filled
+   stars use --gold-bright rather than --kinship, which is already the
+   colour-matching UI's own accent -- reusing it here would read as "another
+   colour-match control" instead of a rating. */
+.star-row { display: inline-flex; gap: 2px; color: var(--line); }
+.star-row__star { display: inline-flex; color: inherit; }
+.star-row__star.is-filled { color: var(--gold-bright); }
+.star-row--interactive .star-row__star { cursor: pointer; }
+.star-row--interactive .star-row__star:hover,
+.star-row--interactive .star-row__star:hover ~ .star-row__star { color: var(--gold-bright); opacity: 0.6; }
+
+.rating-widget {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: var(--bg-panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  padding: 12px;
+  margin: 4px 0 14px;
+}
+.rating-widget__meta { display: flex; flex-direction: column; gap: 2px; }
+.rating-widget__avg { font-family: var(--font-display); font-size: 16px; color: var(--parchment); margin-right: 4px; }
+.rating-widget__count { font-size: 12px; color: var(--ink); }
+.rating-widget__mine { font-size: 11.5px; color: var(--ink-dim); }
 
 .colour-match-row {
   display: flex;

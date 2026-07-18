@@ -95,11 +95,109 @@ create table if not exists public.faction_emblems (
   primary key (faction_id)
 );
 
+-- ------------------------------------------------------------
+-- Comments on published recipes. recipe_owner_id+recipe_id together
+-- reference one recipe unambiguously, since recipes.id is only unique
+-- per-author (recipes' primary key is the composite (user_id, id)).
+-- ------------------------------------------------------------
+create table if not exists public.recipe_comments (
+  id              uuid        not null default gen_random_uuid(),
+  recipe_owner_id uuid        not null,
+  recipe_id       text        not null,
+  user_id         uuid        not null references auth.users (id) on delete cascade,
+  body            text        not null,
+  edited          boolean     not null default false,
+  status          text        not null default 'visible',
+  created_at      timestamptz not null default now(),
+  updated_at      timestamptz not null default now(),
+  deleted         boolean     not null default false,
+  primary key (id),
+  foreign key (recipe_owner_id, recipe_id) references public.recipes (user_id, id) on delete cascade,
+  check (char_length(body) between 1 and 500)
+);
+
+-- ------------------------------------------------------------
+-- Reports — one shared table for both recipe comments and paint notes,
+-- rather than a bespoke table per content type. content_id is deliberately
+-- not foreign-keyed to a specific table (it points at whichever table
+-- content_type names); the unique constraint is what makes "auto-hide past
+-- N reports" resistant to a single abuser spamming reports, by forcing N
+-- distinct reporters.
+-- ------------------------------------------------------------
+create table if not exists public.reports (
+  id           uuid        not null default gen_random_uuid(),
+  content_type text        not null, -- 'recipe_comment' | 'paint_note'
+  content_id   uuid        not null,
+  reporter_id  uuid        not null references auth.users (id) on delete cascade,
+  reason       text,
+  created_at   timestamptz not null default now(),
+  primary key (id),
+  unique (content_type, content_id, reporter_id)
+);
+
+-- ------------------------------------------------------------
+-- Community notes on library paints — freeform tips ("this is similar to a
+-- discontinued shade", "more like a wash than a contrast") that don't fit
+-- PAINT_LIBRARY's structured fields. Keyed by paint_key exactly like
+-- paint_wants, since PAINT_LIBRARY entries have no id/DB row of their own.
+-- `flagged` is a client-side profanity-filter result kept server-side as
+-- defense-in-depth; `status` is for admin moderation; the report-count
+-- auto-hide itself is enforced entirely by the read policy below, not a
+-- column, so there's nothing here that needs a trigger to stay in sync.
+-- ------------------------------------------------------------
+create table if not exists public.paint_notes (
+  id          uuid        not null default gen_random_uuid(),
+  paint_key   text        not null,
+  user_id     uuid        not null references auth.users (id) on delete cascade,
+  body        text        not null,
+  flagged     boolean     not null default false,
+  status      text        not null default 'visible',
+  created_at  timestamptz not null default now(),
+  updated_at  timestamptz not null default now(),
+  deleted     boolean     not null default false,
+  primary key (id),
+  check (char_length(body) between 1 and 500)
+);
+
+-- ------------------------------------------------------------
+-- Paint ratings — one rating per user per paint (upsertable), same
+-- (user_id, paint_key) shape as paint_wants. Fully public-readable, which is
+-- what lets the aggregate view below stay a plain view.
+-- ------------------------------------------------------------
+create table if not exists public.paint_ratings (
+  paint_key  text        not null,
+  user_id    uuid        not null references auth.users (id) on delete cascade,
+  stars      int         not null,
+  updated_at timestamptz not null default now(),
+  deleted    boolean     not null default false,
+  primary key (user_id, paint_key),
+  check (stars between 1 and 5)
+);
+
+-- Site-wide avg+count per paint, computed once here rather than the client
+-- running ~2000 individual queries across PAINT_LIBRARY. No security_invoker
+-- clause: paint_ratings is already fully public-read (see RLS below), and
+-- that clause needs Postgres 15+, which isn't worth depending on when the
+-- extra precision is moot against an already-public base table.
+create or replace view public.paint_rating_summary as
+select paint_key, round(avg(stars), 2) as avg_stars, count(*) as rating_count
+from public.paint_ratings
+where deleted = false
+group by paint_key;
+
 -- Sync pulls "everything changed since X", so index that.
 create index if not exists recipes_user_updated_idx     on public.recipes     (user_id, updated_at);
 create index if not exists paints_user_updated_idx      on public.paints      (user_id, updated_at);
 create index if not exists paint_wants_user_updated_idx on public.paint_wants (user_id, updated_at);
 create index if not exists recipes_published_idx        on public.recipes     (published) where published;
+create index if not exists recipe_comments_recipe_idx   on public.recipe_comments (recipe_owner_id, recipe_id, created_at);
+create index if not exists reports_content_idx          on public.reports     (content_type, content_id);
+create index if not exists paint_notes_key_idx          on public.paint_notes (paint_key, created_at);
+create index if not exists paint_ratings_key_idx         on public.paint_ratings (paint_key);
+
+-- Fast case-insensitive display-name search for the profile finder.
+create extension if not exists pg_trgm;
+create index if not exists profiles_display_name_trgm_idx on public.profiles using gin (display_name gin_trgm_ops);
 
 -- ------------------------------------------------------------
 -- Row Level Security
@@ -191,6 +289,134 @@ create policy "admin manage faction emblems" on public.faction_emblems
   for all
   using      (exists (select 1 from public.profiles p where p.user_id = auth.uid() and p.is_admin))
   with check (exists (select 1 from public.profiles p where p.user_id = auth.uid() and p.is_admin));
+
+-- ------------------------------------------------------------
+-- Comments, reports, paint notes, paint ratings
+-- ------------------------------------------------------------
+alter table public.recipe_comments enable row level security;
+alter table public.reports         enable row level security;
+alter table public.paint_notes     enable row level security;
+alter table public.paint_ratings   enable row level security;
+
+-- Readable by anyone who can already read the underlying recipe (including
+-- an anonymous visitor on the public share page) — mirrors "read published
+-- recipes" exactly. A comment past the report threshold (or hidden by an
+-- admin) is additionally visible only to its own author or an admin.
+drop policy if exists "read comments on visible recipes" on public.recipe_comments;
+create policy "read comments on visible recipes" on public.recipe_comments
+  for select
+  using (
+    deleted = false
+    and (
+      status = 'visible'
+      or user_id = auth.uid()
+      or exists (select 1 from public.profiles p where p.user_id = auth.uid() and p.is_admin)
+    )
+    and exists (
+      select 1 from public.recipes r
+      where r.user_id = recipe_comments.recipe_owner_id
+        and r.id = recipe_comments.recipe_id
+        and r.published = true and r.deleted = false
+    )
+  );
+
+-- auth.uid() = user_id can never be satisfied by an anonymous request, so
+-- this is authenticated-only without needing an explicit role check.
+drop policy if exists "post comments on published recipes" on public.recipe_comments;
+create policy "post comments on published recipes" on public.recipe_comments
+  for insert
+  with check (
+    auth.uid() = user_id
+    and exists (
+      select 1 from public.recipes r
+      where r.user_id = recipe_owner_id and r.id = recipe_id
+        and r.published = true and r.deleted = false
+    )
+  );
+
+-- Covers both a text edit (edited=true) and the author's own soft-delete
+-- (deleted=true) — there's no separate delete policy for this table.
+drop policy if exists "edit own comments" on public.recipe_comments;
+create policy "edit own comments" on public.recipe_comments
+  for update
+  using      (auth.uid() = user_id)
+  with check (auth.uid() = user_id);
+
+drop policy if exists "admin moderate comments" on public.recipe_comments;
+create policy "admin moderate comments" on public.recipe_comments
+  for update
+  using      (exists (select 1 from public.profiles p where p.user_id = auth.uid() and p.is_admin))
+  with check (exists (select 1 from public.profiles p where p.user_id = auth.uid() and p.is_admin));
+
+drop policy if exists "file a report" on public.reports;
+create policy "file a report" on public.reports
+  for insert
+  with check (auth.uid() = reporter_id);
+
+drop policy if exists "read own or admin reports" on public.reports;
+create policy "read own or admin reports" on public.reports
+  for select
+  using (
+    auth.uid() = reporter_id
+    or exists (select 1 from public.profiles p where p.user_id = auth.uid() and p.is_admin)
+  );
+
+drop policy if exists "admin manage reports" on public.reports;
+create policy "admin manage reports" on public.reports
+  for all
+  using      (exists (select 1 from public.profiles p where p.user_id = auth.uid() and p.is_admin))
+  with check (exists (select 1 from public.profiles p where p.user_id = auth.uid() and p.is_admin));
+
+-- Publicly readable like the paint library itself, EXCEPT a note past the
+-- report threshold (3 distinct reporters), which only its own author and an
+-- admin can still see. The threshold check happens right here, at read
+-- time — no denormalized counter, no trigger.
+drop policy if exists "read visible paint notes" on public.paint_notes;
+create policy "read visible paint notes" on public.paint_notes
+  for select
+  using (
+    deleted = false
+    and (
+      status = 'visible'
+      and (
+        select count(*) from public.reports rep
+        where rep.content_type = 'paint_note' and rep.content_id = paint_notes.id
+      ) < 3
+      or user_id = auth.uid()
+      or exists (select 1 from public.profiles p where p.user_id = auth.uid() and p.is_admin)
+    )
+  );
+
+drop policy if exists "post paint notes" on public.paint_notes;
+create policy "post paint notes" on public.paint_notes
+  for insert
+  with check (auth.uid() = user_id);
+
+-- Same soft-delete-via-update convention as recipe_comments.
+drop policy if exists "manage own paint notes" on public.paint_notes;
+create policy "manage own paint notes" on public.paint_notes
+  for update
+  using      (auth.uid() = user_id)
+  with check (auth.uid() = user_id);
+
+drop policy if exists "admin moderate paint notes" on public.paint_notes;
+create policy "admin moderate paint notes" on public.paint_notes
+  for update
+  using      (exists (select 1 from public.profiles p where p.user_id = auth.uid() and p.is_admin))
+  with check (exists (select 1 from public.profiles p where p.user_id = auth.uid() and p.is_admin));
+
+drop policy if exists "own paint rating" on public.paint_ratings;
+create policy "own paint rating" on public.paint_ratings
+  for all
+  using      (auth.uid() = user_id)
+  with check (auth.uid() = user_id);
+
+-- Fully public — this is what makes paint_rating_summary safe to expose to
+-- everyone without leaking anything beyond the aggregate itself.
+drop policy if exists "read all paint ratings" on public.paint_ratings;
+create policy "read all paint ratings" on public.paint_ratings
+  for select
+  using (deleted = false);
 
 -- ------------------------------------------------------------
 -- Admin bootstrap — run this block (just this block) whenever you want to

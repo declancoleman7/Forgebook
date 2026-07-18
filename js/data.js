@@ -2154,6 +2154,11 @@ const KEYS = {
   sharedPaints: "forgebook.sharedPaints",
   profiles: "forgebook.profiles",
   theme: "forgebook.theme", // "light" | absent (absent = dark, the app's default)
+  // The signed-in user's own paint ratings, and the site-wide avg+count per
+  // paint_key (paint_rating_summary view) -- two separate caches, same shape
+  // of split as sharedRecipes/sharedPaints above (mine vs. everyone's).
+  myRatings: "forgebook.myRatings",
+  ratingSummary: "forgebook.ratingSummary",
 };
 
 function readJSON(key, fallback) {

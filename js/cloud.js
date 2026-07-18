@@ -187,6 +187,8 @@ function clearLiveState() {
   save(KEYS.sharedRecipes, []);
   save(KEYS.sharedPaints, []);
   save(KEYS.profiles, []);
+  save(KEYS.myRatings, []);
+  save(KEYS.ratingSummary, []);
   save(KEYS.globalArt, {});
   localStorage.removeItem(SYNC_KEYS.lastSync);
 }
@@ -254,6 +256,14 @@ function toRemoteWant(key, userId) {
 
 function fromRemoteWant(row) {
   return { key: row.paint_key };
+}
+
+function toRemoteRating(paintKey, stars, userId) {
+  return { paint_key: paintKey, user_id: userId, stars, updated_at: nowIso() };
+}
+
+function fromRemoteRating(row) {
+  return { paintKey: row.paint_key, stars: row.stars, updatedAt: row.updated_at };
 }
 
 // A shared recipe keeps its author's id — it's a read-only view of someone
@@ -521,6 +531,20 @@ async function loadBook() {
     // swallowed on purpose
   }
 
+  // Same deliberate isolation: a rating badge that hasn't loaded yet is a
+  // cosmetic gap, not a broken app.
+  try {
+    save(KEYS.myRatings, await fetchMyRatings());
+  } catch (e) {
+    // swallowed on purpose
+  }
+
+  try {
+    save(KEYS.ratingSummary, await fetchRatingSummary());
+  } catch (e) {
+    // swallowed on purpose
+  }
+
   try {
     await fetchGlobalFactionEmblems();
   } catch (e) {
@@ -574,6 +598,38 @@ async function removeWantRemote(key) {
   if (!sb || !isSignedIn()) return { ok: false };
   const { error } = await sb.from("paint_wants").delete().eq("user_id", session.user.id).eq("paint_key", key);
   return { ok: !error };
+}
+
+// One rating per user per paint — upsert covers both "rate for the first
+// time" and "change your rating" the same way pushWant covers add/re-add.
+async function pushRating(paintKey, stars) {
+  if (!sb || !isSignedIn()) return { ok: false, message: "Sign in to rate paints." };
+  const { error } = await sb.from("paint_ratings").upsert(toRemoteRating(paintKey, stars, session.user.id));
+  if (error) return { ok: false, message: "Couldn't save that rating — try again." };
+  return { ok: true };
+}
+
+async function removeRatingRemote(paintKey) {
+  if (!sb || !isSignedIn()) return { ok: false };
+  const { error } = await sb.from("paint_ratings").delete().eq("user_id", session.user.id).eq("paint_key", paintKey);
+  return { ok: !error };
+}
+
+// The signed-in user's own ratings, for "your rating: X" display.
+async function fetchMyRatings() {
+  if (!sb || !isSignedIn()) return [];
+  const { data, error } = await sb.from("paint_ratings").select("*").eq("user_id", session.user.id).eq("deleted", false);
+  if (error) throw error;
+  return (data || []).map(fromRemoteRating);
+}
+
+// Site-wide avg+count per paint_key, one call instead of ~2000 individual
+// queries across PAINT_LIBRARY (see paint_rating_summary in schema.sql).
+async function fetchRatingSummary() {
+  if (!sb) return [];
+  const { data, error } = await sb.from("paint_rating_summary").select("*");
+  if (error) throw error;
+  return (data || []).map((row) => ({ paintKey: row.paint_key, avgStars: row.avg_stars, ratingCount: row.rating_count }));
 }
 
 function syncStatusLabel() {
