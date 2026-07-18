@@ -40,6 +40,8 @@ const ICONS = {
   cart: '<circle cx="9" cy="20" r="1.4" fill="currentColor" /><circle cx="18" cy="20" r="1.4" fill="currentColor" /><path d="M2 3h3l2.5 12h11l2-8H6" />',
   filter: '<path d="M4 6h16" /><path d="M7 12h10" /><path d="M10 18h4" />',
   flag: '<path d="M5 21V4" /><path d="M5 4h13l-3 4 3 4H5" />',
+  user: '<circle cx="12" cy="8" r="4" /><path d="M4 21c0-4.4 3.6-7 8-7s8 2.6 8 7" />',
+  bell: '<path d="M6 10a6 6 0 0 1 12 0c0 4 1.5 5.5 1.5 6.5H4.5C4.5 15.5 6 14 6 10Z" /><path d="M10 19a2 2 0 0 0 4 0" />',
 };
 
 function icon(name, size = 20) {
@@ -59,7 +61,9 @@ const NAV_ITEMS = [
   { route: "factions", label: "Armies", icon: "banner" },
   { route: "recipes", label: "Recipes", icon: "book" },
   { route: "paints", label: "Paints", icon: "palette" },
-  { route: "settings", label: "Settings", icon: "settings" },
+  // Settings now lives inside your own Profile (a gear icon in its header),
+  // rather than being its own top-level destination.
+  { route: "profile", label: "Profile", icon: "user" },
 ];
 
 let state = {
@@ -871,6 +875,7 @@ function recipeCardHtml(r) {
           <span class="recipe-card__steps">${(r.steps || []).length} steps</span>
         </div>
         ${r.authorId ? `<div class="recipe-card__author" data-nav="profile" data-id="${escapeHtml(r.authorId)}">${icon("book", 11)} ${escapeHtml(authorName(r.authorId))}</div>` : ""}
+        ${r.published === false ? `<span class="pill-status pill-status--draft">Draft</span>` : ""}
       </div>
     </div>
   `;
@@ -2066,19 +2071,22 @@ function viewProfile(params) {
   ensureProfileLoaded(params.id);
   const p = profileCache[params.id];
   const isMe = params.id === currentUserId();
-  // My own published recipes live in the own-recipe cache (getSharedRecipes()
-  // explicitly excludes the caller's own rows) -- everyone else's come from
-  // the fetched profile, tagged with authorId so recipeCardHtml links them
-  // through the existing shared-recipe nav path.
+  // Your own Profile is now the primary "my stuff" screen (reached via the
+  // main nav), so it shows everything you own, published or not -- a
+  // stranger's page stays symmetric with what a visitor to it would see
+  // (published only). My own recipes live in the own-recipe cache
+  // (getSharedRecipes() explicitly excludes the caller's own rows) --
+  // everyone else's come from the fetched profile, tagged with authorId so
+  // recipeCardHtml links them through the existing shared-recipe nav path.
   const recipes = isMe
-    ? getRecipes().filter((r) => r.published)
+    ? getRecipes()
     : p ? p.recipes.map((r) => ({ ...r, authorId: params.id })) : [];
 
   return `
     <div class="page-enter">
       <div class="detail-header">
         <button class="icon-btn" data-nav="home">${icon("back", 18)}</button>
-        <div style="width:36px"></div>
+        ${isMe ? `<button class="icon-btn" data-nav="settings">${icon("settings", 18)}</button>` : `<div style="width:36px"></div>`}
       </div>
       ${p === undefined
         ? `<div class="empty-state__sub">Loading…</div>`
@@ -2086,12 +2094,14 @@ function viewProfile(params) {
         ? emptyStateHtml("search", "Painter not found", "This profile doesn't exist, or has no published work yet.")
         : `
           <div class="detail-title">${escapeHtml(p.displayName)}</div>
-          <div class="detail-sub">${recipes.length} recipe${recipes.length === 1 ? "" : "s"} shared</div>
+          <div class="detail-sub">${recipes.length} recipe${recipes.length === 1 ? "" : "s"}${isMe ? "" : " shared"}</div>
 
-          <div class="section-label">Published Recipes</div>
+          ${isMe ? personalWorkspaceHtml(recipes) : ""}
+
+          <div class="section-label">${isMe ? "Your Recipes" : "Published Recipes"}</div>
           ${recipes.length
             ? `<div class="recipe-grid">${recipes.map(recipeCardHtml).join("")}</div>`
-            : emptyStateHtml("book", "No recipes yet", "Nothing published so far.")}
+            : emptyStateHtml("book", "No recipes yet", isMe ? "Tap the + button to record your first paint recipe." : "Nothing published so far.")}
 
           <div class="section-label">Notes Written</div>
           ${p.notes.length ? p.notes.map(profileNoteRowHtml).join("") : `<div class="empty-state__sub">No community notes yet.</div>`}
@@ -2100,6 +2110,47 @@ function viewProfile(params) {
           ${p.ratings.length ? p.ratings.map(profileRatingRowHtml).join("") : `<div class="empty-state__sub">No ratings yet.</div>`}
         `}
     </div>
+  `;
+}
+
+// "Continue Painting" + "Your Armies" -- lifted from the old Home tab
+// (which is now the community activity feed) since this personal-workspace
+// convenience needed a new home once Home stopped being personal. Only
+// rendered on your own Profile, never a stranger's.
+function personalWorkspaceHtml(recipes) {
+  const recents = getRecents().map((id) => findRecipe(id)).filter(Boolean);
+  const cont = recents[0] || recipes[0];
+  const armies = [...new Set(recipes.map((r) => r.faction))];
+
+  return `
+    ${cont ? `
+      <div class="section-label">Continue Painting</div>
+      <div class="continue-card" data-nav="recipe" data-id="${cont.id}" style="--faction-color:${faction(cont.faction).color}">
+        <div class="continue-card__hero ${cont.photo ? "has-photo" : ""}"${cont.photo ? ` style="background-image:url('${cont.photo}')"` : ""}>
+          ${cont.photo ? "" : `<span class="emblem-badge emblem-badge--md">${emblemSvg(faction(cont.faction).emblem, 24)}</span>`}
+        </div>
+        <div class="continue-card__body">
+          <div class="continue-card__eyebrow">${escapeHtml(faction(cont.faction).label)}${cont.unit ? " · " + escapeHtml(cont.unit) : ""}</div>
+          <div class="continue-card__title">${escapeHtml(cont.name)}</div>
+        </div>
+        <div class="continue-card__chevron">${icon("chevron", 20)}</div>
+      </div>
+    ` : ""}
+
+    <div class="section-label">Your Armies</div>
+    ${armies.length ? `
+      <div class="faction-row">
+        ${armies.map((id) => {
+          const f = faction(id);
+          const n = recipes.filter((r) => r.faction === id).length;
+          return `
+            <div class="faction-chip" data-nav="faction" data-id="${f.id}" style="--chip-color:${f.color}">
+              <span class="faction-chip__emblem" style="color:${f.color}">${emblemSvg(f.emblem, 15)}</span>
+              ${escapeHtml(f.label)} <span class="faction-chip__count">${n}</span>
+            </div>`;
+        }).join("")}
+      </div>
+    ` : `<div class="empty-state__sub" style="padding:0 2px 8px">No recipes yet. Tap Armies to pick a faction.</div>`}
   `;
 }
 
@@ -3256,7 +3307,11 @@ function authFormHtml() {
 function viewSettings() {
   return `
     <div class="page-enter">
-      <div class="page-title">Settings</div>
+      <div class="detail-header">
+        <button class="icon-btn" data-nav="profile" data-id="${escapeHtml(currentUserId())}">${icon("back", 18)}</button>
+        <div class="page-title" style="margin:0">Settings</div>
+        <div style="width:36px"></div>
+      </div>
 
       <div class="section-label">Account</div>
       <div class="settings-group">
@@ -4534,11 +4589,16 @@ window.addEventListener("resize", () => {
 // Init
 // ---------------------------------------------------------------
 function buildShell() {
+  // Nav buttons are static markup built once here at boot, not re-rendered
+  // per route -- the profile button's own id has to be baked in now rather
+  // than read off state, since it's always "my own profile" regardless of
+  // whatever else is on screen.
+  const navIdAttr = (route) => (route === "profile" ? ` data-id="${escapeHtml(currentUserId())}"` : "");
   document.getElementById("app").innerHTML = `
     <nav class="side-nav">
       <div class="side-nav__brand">${icon("book", 20)} Forgebook</div>
       ${NAV_ITEMS.map((n) => `
-        <button class="side-nav__item" data-nav="${n.route}" data-route="${n.route}">
+        <button class="side-nav__item" data-nav="${n.route}" data-route="${n.route}"${navIdAttr(n.route)}>
           ${icon(n.icon, 18)} ${n.label}
         </button>`).join("")}
     </nav>
@@ -4548,13 +4608,17 @@ function buildShell() {
         ${icon("search", 16)}
         <input type="text" id="search-input" placeholder="Search recipes, armies or paints" />
       </div>
+      <button class="topbar__bell" data-nav="notifications" aria-label="Notifications">
+        ${icon("bell", 18)}
+        <span class="topbar__bell-badge hidden" id="notif-badge"></span>
+      </button>
       <div class="sync-pill hidden" id="sync-pill"></div>
     </header>
     <main id="view-root"></main>
     <button class="fab" id="fab" data-nav="recipe-new" aria-label="Add recipe">${icon("plus", 24)}</button>
     <nav class="bottom-nav">
       ${NAV_ITEMS.map((n) => `
-        <button class="bottom-nav__item" data-nav="${n.route}" data-route="${n.route}">
+        <button class="bottom-nav__item" data-nav="${n.route}" data-route="${n.route}"${navIdAttr(n.route)}>
           ${icon(n.icon, 20)}
           <span>${n.label}</span>
         </button>`).join("")}

@@ -50,6 +50,16 @@ create table if not exists public.paints (
 alter table public.paints add column if not exists needs_restock boolean not null default false;
 alter table public.paints add column if not exists quantity int not null default 1;
 
+-- Same shape as data.js's paintKey(name, brand), computed here so the
+-- paint-rating notification trigger can match a paint_ratings row back to
+-- owned paints without re-deriving the string by hand in plpgsql.
+-- coalesce(brand,'') matters: brand is nullable, and NULL || anything is
+-- NULL in SQL (unlike JS's "" fallback) -- without it, every brandless
+-- paint would silently generate a paint_key that can never match anything.
+alter table public.paints add column if not exists paint_key text
+  generated always as (lower(trim(name)) || '|' || lower(trim(coalesce(brand, '')))) stored;
+create index if not exists paints_paint_key_idx on public.paints (paint_key);
+
 -- ------------------------------------------------------------
 -- Paint shopping list (the paint-library "need to buy" flag) — deliberately
 -- separate from paints: these are library paints the user doesn't own yet,
@@ -81,6 +91,7 @@ create table if not exists public.profiles (
 -- Running this again on an existing database: adds the column without
 -- touching anything already there.
 alter table public.profiles add column if not exists is_admin boolean not null default false;
+alter table public.profiles add column if not exists avatar_path text;
 
 -- ------------------------------------------------------------
 -- Faction emblems — an admin-uploaded image for an army that replaces the
@@ -116,6 +127,12 @@ create table if not exists public.recipe_comments (
   foreign key (recipe_owner_id, recipe_id) references public.recipes (user_id, id) on delete cascade,
   check (char_length(body) between 1 and 500)
 );
+
+-- flagged was added after this table's initial release -- create table if
+-- not exists is a permanent no-op on a database that already has this
+-- table, so (unlike paint_notes, which had flagged from its first release)
+-- this column needs its own explicit migration to reach an existing table.
+alter table public.recipe_comments add column if not exists flagged boolean not null default false;
 
 -- ------------------------------------------------------------
 -- Reports — one shared table for both recipe comments and paint notes,
@@ -432,6 +449,253 @@ create policy "read all paint ratings" on public.paint_ratings
   using (deleted = false);
 
 -- ------------------------------------------------------------
+-- Notifications — this codebase's first DB triggers, and the first RLS
+-- where the whole point is that clients can never insert at all: rows are
+-- only ever created by the security-definer trigger functions below, which
+-- bypass RLS the same way a table owner always does. If a future edit ever
+-- adds a client-facing insert policy "just to test something", that would
+-- let any signed-in user forge a notification to anyone -- don't.
+--
+-- Columns are sparse/nullable because which ones apply depends on `type`:
+-- a mention sourced from a paint note has no recipe_owner_id/recipe_id, a
+-- rating notification has no comment_id, etc.
+-- ------------------------------------------------------------
+create table if not exists public.notifications (
+  id              uuid        not null default gen_random_uuid(),
+  recipient_id    uuid        not null references auth.users (id) on delete cascade,
+  actor_id        uuid        references auth.users (id) on delete set null,
+  type            text        not null check (type in ('comment', 'rating', 'mention')),
+  recipe_owner_id uuid,
+  recipe_id       text,
+  comment_id      uuid        references public.recipe_comments (id) on delete cascade,
+  paint_note_id   uuid        references public.paint_notes (id) on delete cascade,
+  paint_key       text,
+  read            boolean     not null default false,
+  created_at      timestamptz not null default now(),
+  primary key (id),
+  foreign key (recipe_owner_id, recipe_id) references public.recipes (user_id, id) on delete cascade
+);
+create index if not exists notifications_recipient_idx on public.notifications (recipient_id, read, created_at desc);
+
+-- Lets the rating trigger's steps @> ... containment check (below) use an
+-- index instead of scanning every published recipe row it's handed.
+create index if not exists recipes_steps_gin_idx on public.recipes using gin (steps jsonb_path_ops);
+
+alter table public.notifications enable row level security;
+
+drop policy if exists "read own notifications" on public.notifications;
+create policy "read own notifications" on public.notifications
+  for select
+  using (auth.uid() = recipient_id);
+
+-- Covers both "mark one read" and "mark all read" -- one update policy,
+-- gated on recipient identity both before AND after the write.
+drop policy if exists "mark own notifications read" on public.notifications;
+create policy "mark own notifications read" on public.notifications
+  for update
+  using      (auth.uid() = recipient_id)
+  with check (auth.uid() = recipient_id);
+
+-- No client insert/delete at all (only the security-definer triggers below
+-- create rows), and even the one row a recipient can touch, only its own
+-- read flag is theirs to change -- same column-level lockdown pattern as
+-- profiles.is_admin above.
+revoke insert, delete on public.notifications from authenticated;
+revoke update on public.notifications from authenticated;
+grant update (read) on public.notifications to authenticated;
+
+-- ------------------------------------------------------------
+-- Resolves every "@Display Name" mention in a comment/note body to real
+-- profiles.user_id values, longest-display-name-first so "@Declan Smith"
+-- is preferred over a shorter "@Declan" that's a prefix of it, and a match
+-- only counts if the character right after it isn't itself a name
+-- character (so "@DeclanSmith" doesn't false-hit a user literally named
+-- "Declan"). Case-insensitive: with zero autocomplete UI, forcing exact-
+-- case typing would silently drop real mentions nobody would ever notice
+-- failed. Runs DB-side (not client-side) for the same reliability reason
+-- as the triggers below: a mention must resolve no matter which client
+-- path wrote the comment/note, and a client has no efficient way to know
+-- every display name in the system to match against anyway.
+-- ------------------------------------------------------------
+create or replace function public.mentioned_profile_ids(body text, exclude_user uuid)
+returns setof uuid
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  names text[];
+  ids uuid[];
+  n int;
+  i int;
+  at_pos int;
+  search_from int := 1;
+  match_len int;
+  candidate text;
+  boundary_char text;
+  found_id uuid;
+  result_ids uuid[] := '{}';
+begin
+  select array_agg(display_name order by length(display_name) desc),
+         array_agg(user_id      order by length(display_name) desc)
+    into names, ids
+  from public.profiles
+  where display_name is not null and length(trim(display_name)) > 0;
+
+  if names is null then
+    return;
+  end if;
+  n := array_length(names, 1);
+
+  loop
+    at_pos := position('@' in substring(body from search_from));
+    exit when at_pos = 0;
+    at_pos := search_from + at_pos - 1;
+
+    found_id := null;
+    for i in 1..n loop
+      match_len := length(names[i]);
+      candidate := substring(body from at_pos + 1 for match_len);
+      if candidate is not null and lower(candidate) = lower(names[i]) then
+        boundary_char := substring(body from at_pos + 1 + match_len for 1);
+        if (boundary_char is null or boundary_char !~ '[[:alnum:]_]') and ids[i] <> exclude_user then
+          found_id := ids[i];
+        end if;
+        exit;
+      end if;
+    end loop;
+
+    if found_id is not null and not (found_id = any(result_ids)) then
+      result_ids := result_ids || found_id;
+    end if;
+
+    search_from := at_pos + 1;
+  end loop;
+
+  return query select unnest(result_ids);
+end;
+$$;
+
+-- Notifies the recipe owner (skipped if commenting on your own recipe) plus
+-- anyone @mentioned in the body. flagged=false guards both: a filtered
+-- (hidden-pending) comment must not ping anyone, since the recipient's own
+-- read policy on recipe_comments would hide it from them anyway -- a dead
+-- deep-link, not a leak, but confusing, and this is exactly the kind of
+-- check that's easy to silently drop in a future edit (see this repo's own
+-- paint_notes.flagged history).
+create or replace function public.notify_on_recipe_comment()
+returns trigger
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  mentioned uuid;
+begin
+  if new.user_id <> new.recipe_owner_id and new.flagged = false then
+    insert into public.notifications (recipient_id, actor_id, type, recipe_owner_id, recipe_id, comment_id)
+    values (new.recipe_owner_id, new.user_id, 'comment', new.recipe_owner_id, new.recipe_id, new.id);
+  end if;
+
+  if new.flagged = false then
+    for mentioned in select public.mentioned_profile_ids(new.body, new.user_id) loop
+      -- Don't double-notify the recipe owner if they were already notified
+      -- above for this exact comment.
+      continue when mentioned = new.recipe_owner_id and new.user_id <> new.recipe_owner_id;
+      insert into public.notifications (recipient_id, actor_id, type, recipe_owner_id, recipe_id, comment_id)
+      values (mentioned, new.user_id, 'mention', new.recipe_owner_id, new.recipe_id, new.id);
+    end loop;
+  end if;
+
+  return new;
+end;
+$$;
+
+drop trigger if exists recipe_comments_notify on public.recipe_comments;
+create trigger recipe_comments_notify
+  after insert on public.recipe_comments
+  for each row execute function public.notify_on_recipe_comment();
+
+-- A paint note has no "owner" to notify about -- mentions only.
+create or replace function public.notify_on_paint_note()
+returns trigger
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  mentioned uuid;
+begin
+  if new.flagged = false then
+    for mentioned in select public.mentioned_profile_ids(new.body, new.user_id) loop
+      insert into public.notifications (recipient_id, actor_id, type, paint_key, paint_note_id)
+      values (mentioned, new.user_id, 'mention', new.paint_key, new.id);
+    end loop;
+  end if;
+  return new;
+end;
+$$;
+
+drop trigger if exists paint_notes_notify on public.paint_notes;
+create trigger paint_notes_notify
+  after insert on public.paint_notes
+  for each row execute function public.notify_on_paint_note();
+
+-- "Someone rated a paint that appears in one of your published recipes" --
+-- resolves via paint_ratings.paint_key -> paints (same paint_key, any
+-- owner) -> recipes (that owner, published, not deleted, steps references
+-- that paint's id). This is the one genuinely expensive query in this
+-- design (worst case O(users owning a same-named paint x their published
+-- recipe count), run on every rating write) -- acceptable at this app's
+-- current scale given both new indexes above keep every hop indexed, but
+-- worth reconsidering (e.g. dropping the published/steps hop entirely in
+-- favour of "rated a paint in your rack") if the user base grows a lot.
+-- Fires on insert or on stars actually changing (not a same-value re-
+-- upsert) -- ratings are upsertable, so "new rating" isn't always a fresh
+-- row.
+create or replace function public.notify_on_paint_rating()
+returns trigger
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  hit record;
+begin
+  if new.deleted then
+    return new;
+  end if;
+  if tg_op = 'UPDATE' and new.stars is not distinct from old.stars then
+    return new;
+  end if;
+
+  for hit in
+    select distinct r.user_id as owner_id, r.id as recipe_id
+    from public.paints p
+    join public.recipes r on r.user_id = p.user_id
+    where p.paint_key = new.paint_key
+      and r.published = true
+      and r.deleted = false
+      and r.user_id <> new.user_id
+      and (
+        r.steps @> jsonb_build_array(jsonb_build_object('paintId', p.id))
+        or r.steps @> jsonb_build_array(jsonb_build_object('mixPaintId', p.id))
+      )
+  loop
+    insert into public.notifications (recipient_id, actor_id, type, recipe_owner_id, recipe_id, paint_key)
+    values (hit.owner_id, new.user_id, 'rating', hit.owner_id, hit.recipe_id, new.paint_key);
+  end loop;
+
+  return new;
+end;
+$$;
+
+drop trigger if exists paint_ratings_notify on public.paint_ratings;
+create trigger paint_ratings_notify
+  after insert or update of stars on public.paint_ratings
+  for each row execute function public.notify_on_paint_rating();
+
+-- ------------------------------------------------------------
 -- Admin bootstrap — run this block (just this block) whenever you want to
 -- grant or move admin. Safe to re-run: it's a no-op if that person is
 -- already an admin, and it only ever touches the one row matched by email.
@@ -483,6 +747,44 @@ drop policy if exists "photos readable" on storage.objects;
 create policy "photos readable" on storage.objects
   for select
   using (bucket_id = 'recipe-photos');
+
+-- ============================================================
+-- Avatar storage — identical per-user-folder-scoped approach to recipe
+-- photos above, just a separate bucket so an avatar upload can never
+-- collide with (or be confused for) a recipe photo path.
+-- ============================================================
+insert into storage.buckets (id, name, public)
+values ('avatar-photos', 'avatar-photos', true)
+on conflict (id) do nothing;
+
+drop policy if exists "own avatar upload" on storage.objects;
+create policy "own avatar upload" on storage.objects
+  for insert to authenticated
+  with check (
+    bucket_id = 'avatar-photos'
+    and (storage.foldername(name))[1] = auth.uid()::text
+  );
+
+drop policy if exists "own avatar update" on storage.objects;
+create policy "own avatar update" on storage.objects
+  for update to authenticated
+  using (
+    bucket_id = 'avatar-photos'
+    and (storage.foldername(name))[1] = auth.uid()::text
+  );
+
+drop policy if exists "own avatar delete" on storage.objects;
+create policy "own avatar delete" on storage.objects
+  for delete to authenticated
+  using (
+    bucket_id = 'avatar-photos'
+    and (storage.foldername(name))[1] = auth.uid()::text
+  );
+
+drop policy if exists "avatars readable" on storage.objects;
+create policy "avatars readable" on storage.objects
+  for select
+  using (bucket_id = 'avatar-photos');
 
 -- ============================================================
 -- Faction emblem storage — same public-bucket approach as recipe photos,
