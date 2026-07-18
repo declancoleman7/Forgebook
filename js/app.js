@@ -3731,10 +3731,54 @@ function viewNotifications() {
 }
 
 // ---------------------------------------------------------------
-// View: Global search (topbar box) — flat per-category lists for now;
-// Stage 4 layers a tab bar + richer per-category rendering on top of this
-// same match logic without changing how results are computed.
+// View: Global search (topbar box) — a tab bar (Top/Recipes/Paints/
+// Armies & Units/Accounts) over the same match logic from Stage 1.
 // ---------------------------------------------------------------
+function searchPaintRowHtml(p) {
+  return `
+    <div class="paint-lib-row" data-action="find-similar-colour" data-name="${escapeHtml(p.name)}" data-brand="${escapeHtml(p.brand || "")}" data-hex="${p.hex}" style="cursor:pointer">
+      <div class="paint-row__swatch" style="background:${p.hex}">${paintTypeBadgeHtml(p.type)}</div>
+      <div>
+        <div class="paint-row__name">${escapeHtml(p.name)}</div>
+        <div class="paint-row__brand">${escapeHtml(p.brand || "")}${p.type ? " · " + escapeHtml(p.type) : ""}</div>
+      </div>
+    </div>
+  `;
+}
+
+function searchArmyRowHtml(f) {
+  return `
+    <div class="unit-row" data-nav="faction" data-id="${f.id}">
+      <div class="unit-row__bar" style="background:${f.color}"></div>
+      <div class="unit-row__name">${escapeHtml(f.label)}</div>
+      <div class="unit-row__chevron">${icon("chevron", 16)}</div>
+    </div>
+  `;
+}
+
+function searchUnitRowHtml(u) {
+  const f = faction(u.facId);
+  return `
+    <div class="unit-row" data-open-unit="${escapeHtml(u.unit)}" data-faction="${u.facId}">
+      <div class="unit-row__bar" style="background:${f.color}"></div>
+      <div class="unit-row__name">${escapeHtml(u.unit)} <span style="opacity:0.6">· ${escapeHtml(f.label)}</span></div>
+      <div class="unit-row__count">${u.count}</div>
+      <div class="unit-row__chevron">${icon("chevron", 16)}</div>
+    </div>
+  `;
+}
+
+// Dispatches a Top-tab item to whichever row renderer matches its kind —
+// recipes get the denser compact row (consistent height across a mixed
+// list), not the full recipe-grid card used on the Recipes tab itself.
+function searchTopRowHtml(item) {
+  if (item.kind === "recipe") return recipeCompactRowHtml(item.data, false);
+  if (item.kind === "paint") return searchPaintRowHtml(item.data);
+  if (item.kind === "army") return searchArmyRowHtml(item.data);
+  if (item.kind === "unit") return searchUnitRowHtml(item.data);
+  return profileSearchResultRowHtml(item.data);
+}
+
 function viewSearch() {
   const q = globalSearch.query.trim().toLowerCase();
   const header = `
@@ -3756,52 +3800,61 @@ function viewSearch() {
   const accountsReady = globalSearch.accountResultsQuery === q;
   const accounts = accountsReady ? globalSearch.accountResults : [];
 
+  const tabs = [
+    { key: "top", label: "Top" }, // no count, mirrors Instagram's own Top tab
+    { key: "recipes", label: "Recipes", count: recipes.length },
+    { key: "paints", label: "Paints", count: paints.length },
+    { key: "armies", label: "Armies & Units", count: armies.length + units.length },
+    { key: "accounts", label: "Accounts", count: accountsReady ? accounts.length : null },
+  ];
+  const activeTab = tabs.some((t) => t.key === globalSearch.tab) ? globalSearch.tab : "top";
+
+  const tabBar = `
+    <div class="search-tabs">
+      ${tabs.map((t) => `
+        <div class="search-tab ${activeTab === t.key ? "is-active" : ""}" data-action="search-tab" data-tab="${t.key}">
+          ${escapeHtml(t.label)}
+          ${t.count != null ? `<span class="search-tab__count">${t.count}</span>` : t.key === "accounts" ? `<span class="search-tab__count">…</span>` : ""}
+        </div>
+      `).join("")}
+    </div>
+  `;
+
+  let body;
+  if (activeTab === "recipes") {
+    body = recipes.length
+      ? `<div class="recipe-grid">${recipes.map(recipeCardHtml).join("")}</div>`
+      : emptyStateHtml("book", "No recipes match", "Try a different search term.");
+  } else if (activeTab === "paints") {
+    body = paints.length
+      ? paints.slice(0, 40).map(searchPaintRowHtml).join("")
+      : emptyStateHtml("palette", "No paints match", "Try a different search term.");
+  } else if (activeTab === "armies") {
+    body = (armies.length || units.length)
+      ? `
+        ${armies.length ? `<div class="section-label">Armies</div>${armies.map(searchArmyRowHtml).join("")}` : ""}
+        ${units.length ? `<div class="section-label">Units</div>${units.map(searchUnitRowHtml).join("")}` : ""}
+      `
+      : emptyStateHtml("banner", "No armies or units match", "Try a different search term.");
+  } else if (activeTab === "accounts") {
+    body = accounts.length
+      ? accounts.map(profileSearchResultRowHtml).join("")
+      : `<div class="empty-state__sub">${accountsReady ? "No painters match." : "Searching…"}</div>`;
+  } else {
+    const rankedRecipes = rankByTier(recipes, (r) => r.name, q).map((r) => ({ kind: "recipe", data: r }));
+    const rankedPaints = rankByTier(paints, (p) => p.name, q).map((p) => ({ kind: "paint", data: p }));
+    const rankedArmies = rankByTier(armies, (f) => f.label, q).map((f) => ({ kind: "army", data: f }));
+    const rankedUnits = rankByTier(units, (u) => u.unit, q).map((u) => ({ kind: "unit", data: u }));
+    const rankedAccounts = accountsReady ? rankByTier(accounts, (a) => a.displayName, q).map((a) => ({ kind: "account", data: a })) : [];
+    const top = interleaveTop([rankedRecipes, rankedPaints, rankedArmies, rankedUnits, rankedAccounts], 15);
+    body = top.length ? top.map(searchTopRowHtml).join("") : emptyStateHtml("search", "No matches", "Try a different search term.");
+  }
+
   return `
     <div class="page-enter">
       ${header}
-
-      <div class="section-label">Recipes (${recipes.length})</div>
-      ${recipes.length
-        ? `<div class="recipe-grid">${recipes.map(recipeCardHtml).join("")}</div>`
-        : `<div class="empty-state__sub">No recipes match.</div>`}
-
-      <div class="section-label">Paints (${paints.length})</div>
-      ${paints.length
-        ? paints.slice(0, 20).map((p) => `
-            <div class="settings-row" data-action="find-similar-colour" data-name="${escapeHtml(p.name)}" data-brand="${escapeHtml(p.brand || "")}" data-hex="${p.hex}" style="cursor:pointer">
-              <div style="display:flex; align-items:center; gap:10px">
-                <span style="width:22px; height:22px; border-radius:6px; background:${p.hex}; flex-shrink:0; border:1px solid var(--line)"></span>
-                <div>
-                  <div class="settings-row__label">${escapeHtml(p.name)}</div>
-                  <div class="settings-row__desc">${escapeHtml(p.brand || "")}</div>
-                </div>
-              </div>
-            </div>
-          `).join("")
-        : `<div class="empty-state__sub">No paints match.</div>`}
-
-      <div class="section-label">Armies (${armies.length})</div>
-      ${armies.length
-        ? armies.map((f) => `<div class="settings-row" data-nav="faction" data-id="${f.id}" style="cursor:pointer"><div class="settings-row__label" style="color:${f.color}">${escapeHtml(f.label)}</div></div>`).join("")
-        : `<div class="empty-state__sub">No armies match.</div>`}
-
-      <div class="section-label">Units (${units.length})</div>
-      ${units.length
-        ? units.map((u) => `
-            <div class="settings-row" data-open-unit="${escapeHtml(u.unit)}" data-faction="${u.facId}" style="cursor:pointer">
-              <div>
-                <div class="settings-row__label">${escapeHtml(u.unit)}</div>
-                <div class="settings-row__desc">${escapeHtml(faction(u.facId).label)}</div>
-              </div>
-              <div class="settings-row__desc">${u.count}</div>
-            </div>
-          `).join("")
-        : `<div class="empty-state__sub">No units match.</div>`}
-
-      <div class="section-label">Accounts (${accountsReady ? accounts.length : "…"})</div>
-      ${accounts.length
-        ? accounts.map(profileSearchResultRowHtml).join("")
-        : `<div class="empty-state__sub">${accountsReady ? "No painters match." : "Searching…"}</div>`}
+      ${tabBar}
+      ${body}
     </div>
   `;
 }
@@ -4595,6 +4648,9 @@ document.addEventListener("click", async (e) => {
     markAllNotificationsReadRemote(); // fire-and-forget
     return;
   }
+
+  const searchTab = t("[data-action='search-tab']");
+  if (searchTab) { globalSearch.tab = searchTab.dataset.tab; render(); return; }
 
   const rateBtn = t("[data-action='rate-paint']");
   if (rateBtn) {

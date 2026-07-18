@@ -3453,6 +3453,49 @@ main {
   flex-shrink: 0;
 }
 
+/* Global search results — a horizontal-scroll pill row (same mechanics as
+   .faction-row), not an evenly-flexed segmented control: five tabs
+   including the two-word "Armies & Units" would be cramped if forced to
+   share width equally on a narrow phone. */
+.search-tabs {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  padding-bottom: 4px;
+  margin-bottom: 14px;
+}
+.search-tabs::-webkit-scrollbar { display: none; }
+
+.search-tab {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 14px;
+  border-radius: 999px;
+  background: var(--bg-panel);
+  border: 1px solid var(--line);
+  color: var(--parchment-dim);
+  font-size: 13px;
+  cursor: pointer;
+  transition: border-color 0.15s ease, color 0.15s ease, background 0.15s ease;
+}
+.search-tab.is-active {
+  color: var(--parchment);
+  background: var(--bg-raised-2);
+  border-color: var(--gold);
+}
+
+.search-tab__count {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  background: var(--gold);
+  color: var(--ink-on-accent);
+  border-radius: 999px;
+  padding: 1px 6px;
+}
+
 .colour-match-row {
   display: flex;
   align-items: center;
