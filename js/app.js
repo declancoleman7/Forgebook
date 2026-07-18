@@ -44,6 +44,7 @@ const ICONS = {
   bell: '<path d="M6 10a6 6 0 0 1 12 0c0 4 1.5 5.5 1.5 6.5H4.5C4.5 15.5 6 14 6 10Z" /><path d="M10 19a2 2 0 0 0 4 0" />',
   "thumb-up": '<path d="M7 11v9H4v-9h3z" /><path d="M7 11l3.5-7c1.2 0 2 1 2 2.2V9h5.5a2 2 0 0 1 2 2.4l-1.2 6A2 2 0 0 1 17 19H9a2 2 0 0 1-2-2v-6z" />',
   "thumb-down": '<path d="M17 13V4h3v9h-3z" /><path d="M17 13l-3.5 7c-1.2 0-2-1-2-2.2V15H6a2 2 0 0 1-2-2.4l1.2-6A2 2 0 0 1 7 5h8a2 2 0 0 1 2 2v6z" />',
+  comment: '<path d="M4 5h16v11H8l-4 4V5z" />',
 };
 
 function icon(name, size = 20) {
@@ -1061,55 +1062,71 @@ function buildFeedItems() {
   return items.slice(0, 30);
 }
 
-function feedItemHtml(item) {
-  if (item.type === "recipe_published") {
-    const r = item.recipe;
-    return `
-      <div class="comment-row" data-nav="recipe" data-id="${escapeHtml(r.id)}" ${r.authorId ? `data-author="${escapeHtml(r.authorId)}"` : ""} style="cursor:pointer">
-        <div class="comment-row__meta">
-          <span class="comment-row__author">${icon("book", 12)} New recipe</span>
-          <span class="comment-row__time">${relativeTime(item.at)}</span>
-        </div>
-        <div class="comment-row__body">${avatarHtml(item.authorId, 16)} ${escapeHtml(authorName(item.authorId))} published "${escapeHtml(r.name)}"</div>
-      </div>
-    `;
-  }
-  if (item.type === "recipe_comments") {
-    const r = item.recipe;
-    const isMine = item.recipeOwnerId === currentUserId();
-    return `
-      <div class="comment-row" data-nav="recipe" data-id="${escapeHtml(r.id)}" ${isMine ? "" : `data-author="${escapeHtml(item.recipeOwnerId)}"`} style="cursor:pointer">
-        <div class="comment-row__meta">
-          <span class="comment-row__author">Comments</span>
-          <span class="comment-row__time">${relativeTime(item.at)}</span>
-        </div>
-        <div class="comment-row__body">${item.count} new comment${item.count === 1 ? "" : "s"} on "${escapeHtml(r.name)}"</div>
-      </div>
-    `;
-  }
-  if (item.type === "paint_rating") {
-    const p = item.paint;
-    return `
-      <div class="comment-row" data-action="find-similar-colour" data-name="${escapeHtml(p.name)}" data-brand="${escapeHtml(p.brand)}" data-hex="${p.hex}" style="cursor:pointer">
-        <div class="comment-row__meta">
-          ${starRowHtml(item.stars, { size: 12 })}
-          <span class="comment-row__time">${relativeTime(item.at)}</span>
-        </div>
-        <div class="comment-row__body">${avatarHtml(item.raterId, 16)} ${escapeHtml(authorName(item.raterId))} rated ${escapeHtml(p.name)} <span style="opacity:0.7">(${escapeHtml(p.brand)})</span></div>
-      </div>
-    `;
-  }
-  // paint_note
-  const p = item.paint;
+// A recipe-tied feed card (recipe_published/recipe_comments) -- photo/emblem
+// thumbnail, name, net-vote + comment-count metrics, and whatever triggered
+// the item's appearance. Not recipeCardHtml: that component is a fixed
+// 2-column grid tile reused as-is on several other screens (several of
+// which never load vote/comment-count data at all), and the feed is a
+// single vertical column, not a grid -- the wrong shape regardless.
+function feedRecipeCardHtml(item, kind) {
+  const r = item.recipe;
+  const fac = faction(r.faction);
+  const ownerId = kind === "published" ? item.authorId : item.recipeOwnerId;
+  const votes = getRecipeVoteSummary(ownerId, r.id) || { likeCount: 0, dislikeCount: 0 };
+  const commentCount = getRecipeCommentCount(ownerId, r.id);
+  const isMine = ownerId === currentUserId();
+  const context = kind === "published"
+    ? `${avatarHtml(item.authorId, 16)} ${escapeHtml(authorName(item.authorId))} published this`
+    : `${item.count} new comment${item.count === 1 ? "" : "s"}`;
   return `
-    <div class="comment-row" data-action="find-similar-colour" data-name="${escapeHtml(p.name)}" data-brand="${escapeHtml(p.brand)}" data-hex="${p.hex}" style="cursor:pointer">
-      <div class="comment-row__meta">
-        <span class="comment-row__author">Note</span>
-        <span class="comment-row__time">${relativeTime(item.at)}</span>
+    <div class="feed-card" data-nav="recipe" data-id="${escapeHtml(r.id)}" ${isMine ? "" : `data-author="${escapeHtml(ownerId)}"`}>
+      <div class="feed-card__hero ${r.photo ? "has-photo" : ""}" style="--faction-color:${fac.color}${r.photo ? `;background-image:url('${r.photo}')` : ""}">
+        ${r.photo ? "" : `<span class="emblem-badge">${emblemSvg(fac.emblem, 22)}</span>`}
       </div>
-      <div class="comment-row__body">${avatarHtml(item.authorId, 16)} ${escapeHtml(authorName(item.authorId))} on ${escapeHtml(p.name)}: "${escapeHtml(item.body)}"</div>
+      <div class="feed-card__body">
+        <div class="feed-card__name">${escapeHtml(r.name)}</div>
+        <div class="feed-card__metrics">
+          <span>${icon("thumb-up", 13)} ${votes.likeCount - votes.dislikeCount}</span>
+          <span>${icon("comment", 13)} ${commentCount}</span>
+        </div>
+        <div class="feed-card__context">${context} · ${relativeTime(item.at)}</div>
+      </div>
     </div>
   `;
+}
+
+// A paint-tied feed card (paint_rating/paint_note) -- these have no "likes"
+// under this feature, so the metrics row shows the paint's existing star
+// rating instead of vote/comment counts, a deliberately different metrics
+// row rather than an identical layout forced onto data that doesn't fit.
+function feedPaintCardHtml(item) {
+  const p = item.paint;
+  const summary = getRatingSummary(p.name, p.brand);
+  return `
+    <div class="feed-card" data-action="find-similar-colour" data-name="${escapeHtml(p.name)}" data-brand="${escapeHtml(p.brand)}" data-hex="${p.hex}">
+      <div class="feed-card__hero" style="background:${p.hex}">${paintTypeBadgeHtml(p.type)}</div>
+      <div class="feed-card__body">
+        <div class="feed-card__name">${escapeHtml(p.name)} <span style="opacity:0.7">(${escapeHtml(p.brand)})</span></div>
+        <div class="feed-card__metrics">
+          ${summary
+            ? `<span>${starRowHtml(summary.avgStars, { size: 12 })} (${summary.ratingCount})</span>`
+            : `<span>No ratings yet</span>`}
+        </div>
+        <div class="feed-card__context">
+          ${item.type === "paint_rating"
+            ? `${avatarHtml(item.raterId, 16)} ${escapeHtml(authorName(item.raterId))} rated it ${item.stars}★`
+            : `${avatarHtml(item.authorId, 16)} ${escapeHtml(authorName(item.authorId))}: "${escapeHtml(item.body)}"`}
+          · ${relativeTime(item.at)}
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function feedItemHtml(item) {
+  if (item.type === "recipe_published") return feedRecipeCardHtml(item, "published");
+  if (item.type === "recipe_comments") return feedRecipeCardHtml(item, "comments");
+  return feedPaintCardHtml(item);
 }
 
 function viewHome() {

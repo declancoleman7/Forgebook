@@ -3464,6 +3464,40 @@ main {
 }
 .comment-row__link:hover { color: var(--gold-bright); }
 
+/* Activity feed preview cards -- same panel/border/radius shell as
+   .comment-row, but a horizontal thumbnail-left layout instead of a plain
+   text row, since each item now carries an image and metrics. */
+.feed-card {
+  display: flex;
+  gap: 12px;
+  background: var(--bg-panel);
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-md);
+  padding: 10px;
+  margin-bottom: 8px;
+  cursor: pointer;
+}
+.feed-card__hero {
+  flex-shrink: 0;
+  width: 60px;
+  height: 60px;
+  border-radius: var(--radius-sm);
+  background-color: var(--faction-color, var(--bg-raised));
+  background-size: cover;
+  background-position: center;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--parchment);
+}
+.feed-card__hero.has-photo { background-color: transparent; }
+.feed-card__body { flex: 1; min-width: 0; display: flex; flex-direction: column; justify-content: center; gap: 3px; }
+.feed-card__name { font-family: var(--font-display); font-size: 14.5px; color: var(--parchment); }
+.feed-card__metrics { display: flex; gap: 12px; font-size: 12px; color: var(--ink); }
+.feed-card__metrics span { display: inline-flex; align-items: center; gap: 4px; }
+.feed-card__metrics svg { width: 13px; height: 13px; }
+.feed-card__context { font-size: 11.5px; color: var(--ink-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
 /* A note/comment that's flagged, reported past threshold, or admin-hidden --
    only ever rendered at all for its own author (or an admin); everyone else
    simply never receives the row (enforced server-side by RLS), so there's
