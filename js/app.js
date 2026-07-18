@@ -24,8 +24,8 @@ function setThemePref(theme) {
 const ICONS = {
   home: '<path d="M3 11l9-8 9 8" /><path d="M5 10v10h14V10" />',
   book: '<path d="M4 4h11a3 3 0 0 1 3 3v13H7a3 3 0 0 1-3-3V4z" /><path d="M18 4v16" />',
-  banner: '<path d="M6 3h12v16l-6-4-6 4z" />',
-  palette: '<circle cx="12" cy="12" r="9" /><circle cx="9" cy="10" r="1.2" fill="currentColor" /><circle cx="13" cy="8.5" r="1.2" fill="currentColor" /><circle cx="16" cy="11.5" r="1.2" fill="currentColor" /><path d="M12 21a2 2 0 0 1-2-2c0-.8.6-1.3.6-2 0-.6-.6-1-1.3-1H9a4 4 0 0 1 0-8" />',
+  shield: '<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />',
+  paintdrop: '<path d="M12 3c4 5 7 8.5 7 12a7 7 0 0 1-14 0c0-3.5 3-7 7-12z" />',
   settings: '<circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1-1.6 1.7 1.7 0 0 0-1.9.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.9 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.6-1 1.7 1.7 0 0 0-.3-1.9l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.9.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.9-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.9V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z" />',
   search: '<circle cx="11" cy="11" r="7" /><path d="M21 21l-4.3-4.3" />',
   back: '<path d="M15 18l-6-6 6-6" />',
@@ -61,9 +61,9 @@ const BACKUP_FORMAT_VERSION = 5;
 
 const NAV_ITEMS = [
   { route: "home", label: "Home", icon: "home" },
-  { route: "factions", label: "Armies", icon: "banner" },
+  { route: "factions", label: "Armies", icon: "shield" },
   { route: "recipes", label: "Recipes", icon: "book" },
-  { route: "paints", label: "Paints", icon: "palette" },
+  { route: "paints", label: "Paints", icon: "paintdrop" },
   // Settings now lives inside your own Profile (a gear icon in its header),
   // rather than being its own top-level destination.
   { route: "profile", label: "Profile", icon: "user" },
@@ -87,6 +87,7 @@ let state = {
   rackQuery: "", // My Rack's own inline #rack-search box -- same reasoning again, scoped to just the paints you own
   includeShared: true, // whether other users' shared recipes appear in lists/browsing
   feedSort: "popular", // "popular" | "new" — Community Feed sort order
+  showAvatarNudge: false, // one-time "add a profile photo" card on Home, set true only right after a brand-new account's first sign-in
 };
 
 // ---------------------------------------------------------------
@@ -1165,12 +1166,32 @@ function feedItemHtml(item) {
   return feedPaintCardHtml(item);
 }
 
+// Shown exactly once, right after a brand-new account's first confirmed
+// sign-in (see cloud.js's justSignedUp / consumeJustSignedUp) -- an
+// encouragement, not a gate, so it's dismissible and never reappears once
+// dismissed or once a photo's actually uploaded.
+function avatarNudgeHtml() {
+  return `
+    <div class="notice notice--nudge">
+      ${avatarHtml(currentUserId(), 36)}
+      <div class="notice--nudge__body">
+        <div class="notice--nudge__title">Add a profile picture</div>
+        <div class="notice--nudge__desc">So people recognize you in comments and on shared recipes.</div>
+      </div>
+      <button class="btn btn-primary btn-sm" data-action="avatar-pick">Add photo</button>
+      <button class="icon-btn" data-action="dismiss-avatar-nudge" aria-label="Dismiss">${icon("check", 16)}</button>
+      <input type="file" id="avatar-input" accept="image/*" class="hidden" />
+    </div>
+  `;
+}
+
 function viewHome() {
   const items = buildFeedItems();
   return `
     <div class="page-enter">
       <div class="page-title">Community Feed</div>
       <div style="font-size:13px; opacity:0.75; margin:0 2px 10px">What's happening across Forgebook right now.</div>
+      ${state.showAvatarNudge ? avatarNudgeHtml() : ""}
       <div class="lib-filter-seg" style="margin-bottom:14px">
         <button class="${state.feedSort === "popular" ? "is-active" : ""}" data-action="feed-sort" data-sort="popular">Popular</button>
         <button class="${state.feedSort === "new" ? "is-active" : ""}" data-action="feed-sort" data-sort="new">New</button>
@@ -3835,6 +3856,13 @@ function renderPaintPicker() {
 // signup \u2014 the last one replaces the fields entirely rather than sitting
 // alongside them, since there's nothing left to do here until that link is
 // clicked (email confirmation is required before the account can sign in).
+// Shared between the signup form and the invite/password-setup screen --
+// both collect a display name for the very first time via the same
+// #auth-display-name input/state var. Filled in live by checkDisplayNameLive().
+function displayNameAvailabilityHintHtml() {
+  return `<div class="label-hint" id="display-name-availability"></div>`;
+}
+
 function authFormHtml() {
   if (authSignupSent) {
     return `
@@ -3852,6 +3880,7 @@ function authFormHtml() {
         <label>Display name</label>
         <input type="text" id="auth-display-name" placeholder="What should we call you?" value="${escapeHtml(authDisplayName)}" autocomplete="nickname" />
         <div class="label-hint" style="margin-top:4px">Shown as the author on any recipe you share.</div>
+        ${displayNameAvailabilityHintHtml()}
       </div>
       <div class="field" style="margin-bottom:10px">
         <label>Email</label>
@@ -4249,13 +4278,32 @@ function viewChangePassword() {
 // ---------------------------------------------------------------
 // Render
 // ---------------------------------------------------------------
+// Debounced, mirrors mentionAutocompleteDebounce's pattern: updates the hint
+// element directly rather than calling render(), so it never fights the
+// input's caret position mid-type.
+let displayNameCheckDebounce = null;
+function checkDisplayNameLive(name) {
+  clearTimeout(displayNameCheckDebounce);
+  const hintEl = document.getElementById("display-name-availability");
+  if (!hintEl) return;
+  const trimmed = (name || "").trim();
+  if (!trimmed) { hintEl.textContent = ""; hintEl.className = "label-hint"; return; }
+  displayNameCheckDebounce = setTimeout(async () => {
+    const available = await isDisplayNameAvailable(trimmed);
+    const el = document.getElementById("display-name-availability"); // re-fetch: the form may have re-rendered since the timeout was set
+    if (!el) return;
+    el.textContent = available ? "Available" : "Already taken — try another";
+    el.className = "label-hint " + (available ? "label-hint--ok" : "label-hint--warn");
+  }, 400);
+}
+
 function bindAuthInputs(root) {
   const bind = (id, fn) => { const el = root.querySelector(id); if (el) el.oninput = fn; };
   bind("#signin-email", (e) => { authEmail = e.target.value; });
   bind("#signin-password", (e) => { authPassword = e.target.value; });
   bind("#new-password", (e) => { authNewPassword = e.target.value; });
   bind("#new-password-confirm", (e) => { authNewPasswordConfirm = e.target.value; });
-  bind("#auth-display-name", (e) => { authDisplayName = e.target.value; });
+  bind("#auth-display-name", (e) => { authDisplayName = e.target.value; checkDisplayNameLive(e.target.value); });
 }
 
 function render() {
@@ -4269,6 +4317,13 @@ function render() {
     decideBootState();
     return;
   }
+
+  // ensureProfile() sets this the moment (and only the moment) a brand-new
+  // account's profiles row is first created, then calls this very render() --
+  // checking here (rather than once in bootIntoApp()) means it's picked up
+  // correctly whichever render() happens to run after that finishes, instead
+  // of racing bootIntoApp()'s own unrelated loadBook() await.
+  if (consumeJustSignedUp()) state.showAvatarNudge = true;
 
   const { route, params } = state;
   const root = document.getElementById("view-root");
@@ -4534,6 +4589,9 @@ document.addEventListener("click", async (e) => {
     if (!email || !email.includes("@")) { showToast("Enter your email"); return; }
     if (pw.length < 8) { showToast("Use at least 8 characters"); return; }
     if (pw !== pw2) { showToast("Passwords don't match"); return; }
+    // Not the real boundary (the DB's unique index is) -- just avoids a
+    // round trip that's certain to fail when the live hint already caught it.
+    if (!(await isDisplayNameAvailable(name))) { showToast("That name is already taken — try another"); return; }
     const res = await signUp(email, pw, name);
     if (!res.ok) { showToast(res.message); return; }
     authNewPassword = ""; authNewPasswordConfirm = ""; authDisplayName = "";
@@ -4550,6 +4608,7 @@ document.addEventListener("click", async (e) => {
     if (wasSetup && !name) { showToast("Enter a display name first"); return; }
     if (pw.length < 8) { showToast("Use at least 8 characters"); return; }
     if (pw !== pw2) { showToast("Passwords don't match"); return; }
+    if (wasSetup && !(await isDisplayNameAvailable(name))) { showToast("That name is already taken — try another"); return; }
     const res = await setPassword(pw);
     if (!res.ok) { showToast(res.message || "Couldn't set that password"); return; }
     if (wasSetup) await updateDisplayName(name);
@@ -4790,6 +4849,8 @@ document.addEventListener("click", async (e) => {
 
   const avatarPick = t("[data-action='avatar-pick']");
   if (avatarPick) { document.getElementById("avatar-input").click(); return; }
+
+  if (t("[data-action='dismiss-avatar-nudge']")) { state.showAvatarNudge = false; render(); return; }
 
   const photoRemove = t("[data-action='photo-remove']");
   if (photoRemove) { recipeForm.photo = null; render(); return; }
@@ -5394,6 +5455,7 @@ document.addEventListener("change", (e) => {
         // Same staleness issue as save-display-name -- your own Profile page
         // reads profileCache, not getProfiles(), so it needs dropping too.
         delete profileCache[currentUserId()];
+        state.showAvatarNudge = false; // goal met, whether this came from Settings or the Home nudge
         showToast("Profile picture updated");
         render();
       } catch (err) {
@@ -5672,6 +5734,7 @@ function passwordFormHtml(mode) {
           <label>Display name</label>
           <input type="text" id="auth-display-name" placeholder="What should we call you?" value="${escapeHtml(authDisplayName)}" autocomplete="nickname" />
           <div class="label-hint" style="margin-top:4px">Shown as the author on any recipe you share.</div>
+          ${displayNameAvailabilityHintHtml()}
         </div>
         ` : ""}
         <div class="field gate__field" style="margin-top:${isSetup ? "0" : "20px"}">

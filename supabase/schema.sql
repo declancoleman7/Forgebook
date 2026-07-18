@@ -268,6 +268,28 @@ create index if not exists paint_ratings_key_idx         on public.paint_ratings
 create extension if not exists pg_trgm;
 create index if not exists profiles_display_name_trgm_idx on public.profiles using gin (display_name gin_trgm_ops);
 
+-- Names must be unique (case-insensitive) once they show up as recipe
+-- authors, @mentions and search results.
+create unique index if not exists profiles_display_name_unique_idx on public.profiles (lower(display_name));
+
+-- Anonymous-callable availability check for the signup form -- profiles' own
+-- RLS only lets signed-in users read arbitrary rows, so a plain select from
+-- the pre-confirmation signup screen can't see enough to be accurate. This
+-- exposes nothing but a boolean.
+create or replace function public.display_name_available(p_name text)
+returns boolean
+language sql
+security definer
+set search_path = public
+stable
+as $$
+  select not exists (
+    select 1 from public.profiles where lower(display_name) = lower(trim(p_name))
+  );
+$$;
+
+grant execute on function public.display_name_available(text) to anon, authenticated;
+
 -- ------------------------------------------------------------
 -- Row Level Security
 -- ------------------------------------------------------------

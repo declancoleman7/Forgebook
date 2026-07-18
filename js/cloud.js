@@ -46,6 +46,18 @@ function needsPasswordSetup() {
 let passwordRecovery = false; // true once a "forgot password" link has been followed
 function inPasswordRecovery() { return passwordRecovery; }
 
+// True for exactly the one ensureProfile() call that creates a brand-new
+// profiles row -- i.e. this account's very first confirmed sign-in ever.
+// bootIntoApp() reads it once (to show the "add a photo" nudge) and it's
+// gone; it never fires again on later sign-ins, since ensureProfile only
+// takes the insert branch the one time the row doesn't already exist.
+let justSignedUp = false;
+function consumeJustSignedUp() {
+  const v = justSignedUp;
+  justSignedUp = false;
+  return v;
+}
+
 // ---------------------------------------------------------------
 // Init
 // ---------------------------------------------------------------
@@ -142,6 +154,13 @@ async function setPassword(password) {
   if (session) session.user = data.user;
   passwordRecovery = false;
   return { ok: true };
+}
+
+async function isDisplayNameAvailable(name) {
+  if (!sb) return true; // offline: don't block typing, the unique index is the real boundary at insert
+  const { data, error } = await sb.rpc("display_name_available", { p_name: name });
+  if (error) return true; // fail open on the live hint
+  return !!data;
 }
 
 async function requestPasswordReset(email) {
@@ -313,10 +332,24 @@ async function ensureProfile() {
       // in user_metadata until now, since there's no profiles row to hold it
       // until this first sign-in. The invite flow sets it directly via
       // updateDisplayName instead, so this call there is a same-value no-op.
-      const displayName = (session.user.user_metadata && session.user.user_metadata.display_name) || defaultDisplayName(currentEmail());
-      const { error: insErr } = await sb.from("profiles").insert({ user_id: userId, display_name: displayName });
+      const baseName = (session.user.user_metadata && session.user.user_metadata.display_name) || defaultDisplayName(currentEmail());
+      // display_name is now unique (case-insensitive). The signup form checks
+      // this live, but a narrow race (two people confirming the same name at
+      // once) can still collide here -- without a fallback that would leave
+      // this account permanently profile-less. Try a couple of disambiguated
+      // names before giving up.
+      let displayName = baseName;
+      let insErr = null;
+      for (let attempt = 1; attempt <= 3; attempt++) {
+        const name = attempt === 1 ? baseName : `${baseName} ${attempt}`;
+        const res = await sb.from("profiles").insert({ user_id: userId, display_name: name });
+        insErr = res.error;
+        if (!insErr) { displayName = name; break; }
+        if (insErr.code !== "23505") break; // not a name collision -- don't keep retrying blindly
+      }
       if (insErr) throw insErr;
       data = { user_id: userId, display_name: displayName };
+      justSignedUp = true; // read once by bootIntoApp(), then left alone
     }
     // Cache locally too, so the recipe form's "share" toggle can show your
     // own name immediately rather than waiting on the next full sync.

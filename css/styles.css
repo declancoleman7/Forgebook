@@ -2690,6 +2690,38 @@ main {
   letter-spacing: 0;
 }
 
+.label-hint--ok {
+  color: var(--success);
+}
+
+.label-hint--warn {
+  color: var(--danger);
+}
+
+.notice--nudge {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  border-left-color: var(--gold-bright);
+}
+
+.notice--nudge__body {
+  flex: 1;
+  min-width: 0;
+}
+
+.notice--nudge__title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--parchment);
+}
+
+.notice--nudge__desc {
+  font-size: 12px;
+  opacity: 0.8;
+  margin-top: 1px;
+}
+
 .fine-print {
   font-size: 11px;
   line-height: 1.5;
