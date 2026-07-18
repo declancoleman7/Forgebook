@@ -84,6 +84,7 @@ let state = {
   paintLibSort: "name", // "name" | "rating" — Paint Library sort order
   paintLibQuery: "", // the Paint Library's own inline #paint-library-search box -- separate from globalSearch, same reasoning as the Recipes list's own searchQuery above
   paintLibFilterOpen: false, // brand+category filter overlay (mirrors recipeFilterOpen)
+  rackQuery: "", // My Rack's own inline #rack-search box -- same reasoning again, scoped to just the paints you own
   includeShared: true, // whether other users' shared recipes appear in lists/browsing
   feedSort: "popular", // "popular" | "new" — Community Feed sort order
 };
@@ -1491,6 +1492,10 @@ function viewRecipes() {
     <div class="page-enter recipe-master">
       <div class="recipe-master__mobile-grid">
         <div class="page-title">Recipes</div>
+        <div class="mini-search">
+          ${icon("search", 14)}
+          <input type="text" id="recipe-grid-search" placeholder="Search recipes" value="${escapeHtml(state.searchQuery)}" />
+        </div>
         ${filterTrigger}
         ${recipes.length ? `<div class="recipe-grid">${recipes.map(recipeCardHtml).join("")}</div>` : noMatch}
       </div>
@@ -2059,7 +2064,9 @@ const FONT_MONO = 'ui-monospace, "SF Mono", "Cascadia Code", "Segoe UI Mono", Co
 // View: Paint rack (the user's own paints)
 // ---------------------------------------------------------------
 function viewPaints() {
-  const paints = getPaints();
+  const allPaints = getPaints();
+  const q = state.rackQuery.trim().toLowerCase();
+  const paints = q ? allPaints.filter((p) => paintMatchesQuery(p, q)) : allPaints;
 
   // group by brand so a big rack stays navigable
   const brands = [...new Set(paints.map((p) => p.brand || "Unbranded"))].sort();
@@ -2068,9 +2075,16 @@ function viewPaints() {
     <div class="page-enter">
       <div class="page-title">Paint Rack</div>
       <div class="detail-sub" style="margin-bottom:14px">
-        ${paints.length} paint${paints.length === 1 ? "" : "s"} on the rack.
+        ${allPaints.length} paint${allPaints.length === 1 ? "" : "s"} on the rack.
         Add them here once, then pull them into any recipe.
       </div>
+
+      ${allPaints.length ? `
+        <div class="mini-search">
+          ${icon("search", 14)}
+          <input type="text" id="rack-search" placeholder="Search your rack" value="${escapeHtml(state.rackQuery)}" />
+        </div>
+      ` : ""}
 
       <button class="btn btn-primary btn-block" data-nav="paint-library" style="margin-bottom:10px">
         Browse paint library
@@ -2096,7 +2110,9 @@ function viewPaints() {
               <div class="unit-row__chevron">${icon("chevron", 14)}</div>
             </div>`;
         }).join("")}
-      `).join("") : emptyStateHtml("palette", "No paints yet", "Add one manually, or browse the paint library.")}
+      `).join("") : q
+        ? emptyStateHtml("search", "No matches", "Try a different search term.")
+        : emptyStateHtml("palette", "No paints yet", "Add one manually, or browse the paint library.")}
     </div>
   `;
 }
@@ -4308,8 +4324,19 @@ function render() {
   const recipeListSearch = root.querySelector("#recipe-list-search");
   if (recipeListSearch) recipeListSearch.oninput = (e) => { state.searchQuery = e.target.value; render(); };
 
+  // Same state field as #recipe-list-search above -- this is the mobile
+  // card-grid's own copy of the identical "search recipes" box, shown
+  // instead of (not in addition to) the desktop list column's version;
+  // CSS toggles which one is visible per viewport, same as buildShell()
+  // already does for side-nav vs. bottom-nav.
+  const recipeGridSearch = root.querySelector("#recipe-grid-search");
+  if (recipeGridSearch) recipeGridSearch.oninput = (e) => { state.searchQuery = e.target.value; render(); };
+
   const paintLibSearch = root.querySelector("#paint-library-search");
   if (paintLibSearch) paintLibSearch.oninput = (e) => { state.paintLibQuery = e.target.value; render(); };
+
+  const rackSearch = root.querySelector("#rack-search");
+  if (rackSearch) rackSearch.oninput = (e) => { state.rackQuery = e.target.value; render(); };
 
   document.querySelectorAll(".bottom-nav__item, .side-nav__item").forEach((el) => {
     const r = el.dataset.route;
