@@ -3144,15 +3144,27 @@ function viewPaintLibrary() {
   if (state.paintLibBrands.length) entries = entries.filter((p) => state.paintLibBrands.includes(p.brand));
   if (state.paintLibCategories.length) entries = entries.filter((p) => state.paintLibCategories.includes(paintCategory(p.type)));
 
-  const isOwnedEntry = (p) => !!ownedPaintFor(p.name, p.brand);
-  const isWantedEntry = (p) => !isOwnedEntry(p) && isWanted(p.name, p.brand);
+  // ownedPaintFor()/isWanted()/getRatingSummary() each re-read and re-parse
+  // the relevant localStorage key from scratch on every call. The stats
+  // below run one of these per PAINT_LIBRARY entry -- all ~2000 of them,
+  // regardless of the current search -- so calling those helpers directly
+  // here turned every keystroke into thousands of redundant localStorage
+  // reads. Building one Map/Set per render instead makes every per-entry
+  // check an O(1) in-memory lookup.
+  const ownedByKey = new Map(getPaints().map((p) => [paintKey(p.name, p.brand), p]));
+  const wantedKeys = new Set(getWantToBuy());
+  const ratingSummaryByKey = new Map(readJSON(KEYS.ratingSummary, []).map((r) => [r.paintKey, r]));
+  const ownedEntry = (p) => ownedByKey.get(paintKey(p.name, p.brand));
+  const ratingFor = (p) => ratingSummaryByKey.get(paintKey(p.name, p.brand)) || null;
+  const isOwnedEntry = (p) => ownedByKey.has(paintKey(p.name, p.brand));
+  const isWantedEntry = (p) => !isOwnedEntry(p) && wantedKeys.has(paintKey(p.name, p.brand));
   // "To buy" covers both flavours of "go get this next time you're
   // shopping" -- a paint you don't own yet and a paint you own but flagged
   // as running low -- even though they're mutually exclusive per-paint and
   // use separate flag buttons (toggle-wanted vs toggle-restock).
   const needsPurchaseEntry = (p) => {
     if (isWantedEntry(p)) return true;
-    const owned = ownedPaintFor(p.name, p.brand);
+    const owned = ownedEntry(p);
     return !!owned && owned.needsRestock;
   };
 
@@ -3178,8 +3190,8 @@ function viewPaintLibrary() {
   const ratedSorted =
     state.paintLibSort === "rating"
       ? [...entries].sort((a, b) => {
-          const as = getRatingSummary(a.name, a.brand);
-          const bs = getRatingSummary(b.name, b.brand);
+          const as = ratingFor(a);
+          const bs = ratingFor(b);
           const aAvg = as ? as.avgStars : -1;
           const bAvg = bs ? bs.avgStars : -1;
           if (bAvg !== aAvg) return bAvg - aAvg;
@@ -3191,9 +3203,9 @@ function viewPaintLibrary() {
       : null;
 
   const row = (p) => {
-    const owned = ownedPaintFor(p.name, p.brand);
-    const wanted = isWanted(p.name, p.brand);
-    const summary = getRatingSummary(p.name, p.brand);
+    const owned = ownedEntry(p);
+    const wanted = wantedKeys.has(paintKey(p.name, p.brand));
+    const summary = ratingFor(p);
     const flagBtn = owned
       ? `<button class="lib-row__flag is-restock ${owned.needsRestock ? "is-on" : ""}" data-action="toggle-restock" data-id="${owned.id}" title="${owned.needsRestock ? "Flagged for restock" : "Flag for restock"}">${icon("cart", 14)}</button>`
       : `<button class="lib-row__flag is-wanted ${wanted ? "is-on" : ""}" data-action="toggle-wanted" data-name="${escapeHtml(p.name)}" data-brand="${escapeHtml(p.brand)}" title="${wanted ? "On your buy list" : "Add to buy list"}">${icon("cart", 14)}</button>`;
