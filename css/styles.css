@@ -388,15 +388,15 @@ main {
   padding-bottom: env(safe-area-inset-bottom, 0);
 }
 
+/* Icon-only -- no label underneath, so icons run a bit larger than they did
+   sharing space with text, and the button is just centered rather than a
+   column with a gap for that now-gone label. */
 .bottom-nav__item {
   flex: 1;
   display: flex;
-  flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 3px;
   color: var(--ink);
-  font-size: 11px;
   background: none;
   border: none;
   cursor: pointer;
@@ -404,8 +404,8 @@ main {
 }
 
 .bottom-nav__item svg {
-  width: 21px;
-  height: 21px;
+  width: 25px;
+  height: 25px;
   stroke: currentColor;
   fill: none;
 }
@@ -413,6 +413,14 @@ main {
 .bottom-nav__item.is-active {
   color: var(--gold-bright);
 }
+
+/* The Profile tab's icon slot is swapped for the signed-in user's own
+   avatar (see avatarHtml in app.js) -- give it a border so it reads clearly
+   against the bar even when it's just the tinted initial-letter fallback,
+   and highlight that border (matching .is-active's icon colour) when
+   Profile is the active tab, since an <img>-style avatar can't itself
+   change to the accent colour the way a stroked icon does. */
+.bottom-nav__item.is-active .avatar { border-color: var(--gold-bright); }
 
 .fab {
   position: fixed;
@@ -2202,6 +2210,11 @@ main {
     background: var(--bg-raised);
     color: var(--gold-bright);
   }
+
+  /* Profile's icon slot is swapped for the user's own avatar -- see the
+     matching .bottom-nav__item .avatar rule for why the border needs its
+     own active-state colour instead of relying on currentColor. */
+  .side-nav__item.is-active .avatar { border-color: var(--gold-bright); }
 
   .bottom-nav {
     display: none;

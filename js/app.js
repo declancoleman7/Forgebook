@@ -3529,7 +3529,7 @@ function viewRecipeForm(isEdit) {
       ` : ""}
 
       <div class="field">
-        <label>Photo of the finished mini <span class="label-hint">optional</span></label>
+        <label>Photo of the finished mini <span class="label-hint">${recipeForm.published ? "required to share" : "optional"}</span></label>
         <div class="photo-field">
           ${recipeForm.photo ? `
             <div class="photo-field__preview" style="background-image:url('${recipeForm.photo}')"></div>
@@ -4390,6 +4390,7 @@ function render() {
   document.getElementById("fab").classList.toggle("hidden", !showFab);
   updateSyncPill();
   updateNotifBadge();
+  updateNavAvatars();
   // Leaving the search route (nav tap, back button, tapping a result) clears
   // the topbar box, so it doesn't show a stale query next time it's opened.
   // Blurring matters too, not just clearing the value: a search result is a
@@ -4451,6 +4452,22 @@ function updateNotifBadge() {
   const count = getNotifications().filter((n) => !n.read).length;
   badge.classList.toggle("hidden", count === 0);
   badge.textContent = count > 9 ? "9+" : String(count);
+}
+
+// Same "static shell element, refreshed by render() rather than rebuilt"
+// pattern -- the Profile nav buttons' avatar is baked in once at boot
+// (buildShell()), so uploading a new one in Settings wouldn't otherwise
+// show up in the nav until the next full reload.
+function updateNavAvatars() {
+  // Two different sizes (side-nav sits next to an 18px icon+label row,
+  // bottom-nav is icon-only at 24px) -- regenerate each at its own size
+  // rather than baking one size in and trying to override it via CSS,
+  // since avatarHtml's width/height are inline styles and would always
+  // beat a stylesheet rule regardless of specificity.
+  const sideAvatar = document.querySelector(".side-nav__item[data-route='profile'] .avatar");
+  if (sideAvatar) sideAvatar.outerHTML = avatarHtml(currentUserId(), 18);
+  const bottomAvatar = document.querySelector(".bottom-nav__item[data-route='profile'] .avatar");
+  if (bottomAvatar) bottomAvatar.outerHTML = avatarHtml(currentUserId(), 24);
 }
 
 // ---------------------------------------------------------------
@@ -4792,7 +4809,15 @@ document.addEventListener("click", async (e) => {
   }
 
   const togglePublished = t("[data-action='toggle-published']");
-  if (togglePublished) { recipeForm.published = !recipeForm.published; render(); return; }
+  if (togglePublished) {
+    if (!recipeForm.published && !recipeForm.photo) {
+      showToast("Add a photo first — published recipes need one so the feed has something to show");
+      return;
+    }
+    recipeForm.published = !recipeForm.published;
+    render();
+    return;
+  }
 
   // Add a paint to the rack without losing the half-written recipe
   const quickPaint = t("[data-action='quick-paint']");
@@ -4833,6 +4858,9 @@ document.addEventListener("click", async (e) => {
     if (!recipeForm.name.trim()) { showToast("Give the recipe a name first"); return; }
     const steps = recipeForm.steps.filter((s) => s.paintId || s.wantPaint);
     if (!steps.length) { showToast("Add at least one step with a paint"); return; }
+    // Backstop for the toggle-published guard above -- e.g. removing a photo
+    // after already turning sharing on.
+    if (recipeForm.published && !recipeForm.photo) { showToast("Add a photo before publishing, or turn off sharing"); return; }
 
     const payload = {
       id: recipeForm.id,
@@ -5542,14 +5570,18 @@ function buildShell() {
   // Nav buttons are static markup built once here at boot, not re-rendered
   // per route -- the profile button's own id has to be baked in now rather
   // than read off state, since it's always "my own profile" regardless of
-  // whatever else is on screen.
+  // whatever else is on screen. Its icon slot is the user's own avatar
+  // instead of a generic glyph, for the same reason -- baked in once here,
+  // then kept fresh (in case the avatar changes mid-session) by
+  // updateNavAvatars(), called every render() same as updateNotifBadge().
   const navIdAttr = (route) => (route === "profile" ? ` data-id="${escapeHtml(currentUserId())}"` : "");
+  const navGlyph = (n, size) => (n.route === "profile" ? avatarHtml(currentUserId(), size) : icon(n.icon, size));
   document.getElementById("app").innerHTML = `
     <nav class="side-nav">
       <div class="side-nav__brand">${icon("book", 20)} Forgebook</div>
       ${NAV_ITEMS.map((n) => `
         <button class="side-nav__item" data-nav="${n.route}" data-route="${n.route}"${navIdAttr(n.route)}>
-          ${icon(n.icon, 18)} ${n.label}
+          ${navGlyph(n, 18)} ${n.label}
         </button>`).join("")}
     </nav>
     <header class="topbar">
@@ -5569,9 +5601,8 @@ function buildShell() {
     <button class="fab" id="fab" data-nav="recipe-new" aria-label="Add recipe">${icon("plus", 24)}</button>
     <nav class="bottom-nav">
       ${NAV_ITEMS.map((n) => `
-        <button class="bottom-nav__item" data-nav="${n.route}" data-route="${n.route}"${navIdAttr(n.route)}>
-          ${icon(n.icon, 20)}
-          <span>${n.label}</span>
+        <button class="bottom-nav__item" data-nav="${n.route}" data-route="${n.route}"${navIdAttr(n.route)} aria-label="${n.label}">
+          ${navGlyph(n, 24)}
         </button>`).join("")}
     </nav>
     <div class="toast" id="toast"></div>
