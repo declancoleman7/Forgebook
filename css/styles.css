@@ -465,22 +465,43 @@ main {
   overflow-x: visible;
 }
 
-/* Recipes filter window — toggle several armies/difficulties at once in an
-   overlay, instead of inline chips where only one selection was possible
-   and options could be scrolled out of view. */
-.recipe-filter-trigger {
-  display: inline-flex;
+/* Filter window trigger — toggle several filters at once in an overlay
+   (recipes: army/difficulty; paint library: brand/type), instead of inline
+   chips where options could be scrolled out of view. An icon-only button
+   (same shape as .icon-btn) so it sits inline right next to a page's search
+   box, same footprint as .topbar__bell's own icon+corner-badge pattern. */
+.filter-icon-btn {
+  position: relative;
+  width: 36px;
+  height: 36px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-panel);
+  border: 1px solid var(--line);
+  color: var(--ink);
+  display: flex;
   align-items: center;
-  gap: 7px;
+  justify-content: center;
+  cursor: pointer;
+  flex-shrink: 0;
 }
+.filter-icon-btn:hover { color: var(--gold-bright); border-color: var(--gold); }
+.filter-icon-btn svg { width: 16px; height: 16px; stroke: currentColor; fill: none; }
 
-.recipe-filter-trigger__count {
-  font-family: var(--font-mono);
-  font-size: 10px;
+.filter-icon-btn__count {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: 999px;
   background: var(--gold);
   color: var(--ink-on-accent);
-  border-radius: 999px;
-  padding: 1px 6px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 16px;
+  text-align: center;
 }
 
 .filter-overlay {
@@ -908,10 +929,25 @@ main {
   display: block;
 }
 
+/* On a page with both a search box and a filter trigger, .search-filter-row
+   holds them side by side (search flexes to fill, filter stays a small
+   fixed icon button) instead of stacking a full-width "Filters" button
+   underneath -- .mini-search's own margin-bottom is dropped in that
+   context since the row itself carries the spacing instead. */
+.search-filter-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+.search-filter-row .mini-search { margin-bottom: 0; }
+
 .mini-search {
   display: flex;
   align-items: center;
   gap: 8px;
+  flex: 1;
+  min-width: 0;
   background: var(--bg-raised);
   border: 1px solid var(--line);
   border-radius: var(--radius-md);

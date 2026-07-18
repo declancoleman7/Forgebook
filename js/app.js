@@ -1200,15 +1200,16 @@ function recipeCompactRowHtml(r, isActive) {
 }
 
 // Shared by the mobile grid and the desktop list column in viewRecipes() —
-// a single trigger button, badged with the active filter count, that opens
-// the multi-select filter window below. Both call this and
-// recipeFilterOverlayHtml() so mobile and desktop never drift apart.
+// an icon-only trigger, badged with the active filter count, that opens the
+// multi-select filter window below. Both call this and
+// recipeFilterOverlayHtml() so mobile and desktop never drift apart. Sits
+// inline right next to the page's own search box (see viewRecipes()).
 function recipeFilterTriggerHtml() {
   const count = state.recipeFactionFilters.length + state.recipeDifficultyFilters.length;
   return `
-    <button type="button" class="btn btn-ghost recipe-filter-trigger" data-action="open-recipe-filters" style="margin-bottom:14px">
-      ${icon("filter", 14)} Filters
-      ${count ? `<span class="recipe-filter-trigger__count">${count}</span>` : ""}
+    <button type="button" class="filter-icon-btn" data-action="open-recipe-filters" aria-label="Filters">
+      ${icon("filter", 16)}
+      ${count ? `<span class="filter-icon-btn__count">${count}</span>` : ""}
     </button>`;
 }
 
@@ -1492,21 +1493,25 @@ function viewRecipes() {
     <div class="page-enter recipe-master">
       <div class="recipe-master__mobile-grid">
         <div class="page-title">Recipes</div>
-        <div class="mini-search">
-          ${icon("search", 14)}
-          <input type="text" id="recipe-grid-search" placeholder="Search recipes" value="${escapeHtml(state.searchQuery)}" />
+        <div class="search-filter-row">
+          <div class="mini-search">
+            ${icon("search", 14)}
+            <input type="text" id="recipe-grid-search" placeholder="Search recipes" value="${escapeHtml(state.searchQuery)}" />
+          </div>
+          ${filterTrigger}
         </div>
-        ${filterTrigger}
         ${recipes.length ? `<div class="recipe-grid">${recipes.map(recipeCardHtml).join("")}</div>` : noMatch}
       </div>
       <div class="recipe-master__list">
         <div class="page-title" style="margin-bottom:2px">Recipes</div>
         <div class="detail-sub" style="margin-bottom:12px">${recipes.length} recipe${recipes.length === 1 ? "" : "s"}</div>
-        <div class="mini-search">
-          ${icon("search", 14)}
-          <input type="text" id="recipe-list-search" placeholder="Search recipes" value="${escapeHtml(state.searchQuery)}" />
+        <div class="search-filter-row">
+          <div class="mini-search">
+            ${icon("search", 14)}
+            <input type="text" id="recipe-list-search" placeholder="Search recipes" value="${escapeHtml(state.searchQuery)}" />
+          </div>
+          ${filterTrigger}
         </div>
-        ${filterTrigger}
         ${recipes.length ? recipes.map((r) => recipeCompactRowHtml(r, false)).join("") : noMatch}
       </div>
       <div class="recipe-master__placeholder">
@@ -3096,9 +3101,15 @@ function viewPaintLibrary() {
         Colours are close approximations, not official swatches — manufacturers don't publish exact codes.
       </div>
 
-      <div class="mini-search" style="margin-bottom:14px">
-        ${icon("search", 14)}
-        <input type="text" id="paint-library-search" placeholder="Search paints" value="${escapeHtml(state.paintLibQuery)}" />
+      <div class="search-filter-row">
+        <div class="mini-search">
+          ${icon("search", 14)}
+          <input type="text" id="paint-library-search" placeholder="Search paints" value="${escapeHtml(state.paintLibQuery)}" />
+        </div>
+        <button type="button" class="filter-icon-btn" data-action="open-paint-lib-filters" aria-label="Filters">
+          ${icon("filter", 16)}
+          ${(state.paintLibBrands.length + state.paintLibCategories.length) ? `<span class="filter-icon-btn__count">${state.paintLibBrands.length + state.paintLibCategories.length}</span>` : ""}
+        </button>
       </div>
 
       <button class="colour-match-cta" data-nav="similar">${icon("search", 18)} Match a colour you have in mind</button>
@@ -3116,11 +3127,6 @@ function viewPaintLibrary() {
         <button class="${state.paintLibFilter === "owned" ? "is-active" : ""}" data-action="lib-filter" data-filter="owned">On rack <span class="b">${ownedCount}</span></button>
         <button class="${state.paintLibFilter === "want" ? "is-active" : ""}" data-action="lib-filter" data-filter="want">To buy <span class="b">${wantCount}</span></button>
       </div>
-
-      <button type="button" class="btn btn-ghost recipe-filter-trigger" data-action="open-paint-lib-filters" style="margin:10px 0">
-        ${icon("filter", 14)} Filters
-        ${(state.paintLibBrands.length + state.paintLibCategories.length) ? `<span class="recipe-filter-trigger__count">${state.paintLibBrands.length + state.paintLibCategories.length}</span>` : ""}
-      </button>
 
       <div class="lib-filter-seg" style="margin-bottom:10px">
         <button class="${state.paintLibSort === "name" ? "is-active" : ""}" data-action="lib-sort" data-sort="name">Default order</button>
