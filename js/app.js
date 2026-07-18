@@ -82,6 +82,7 @@ let state = {
   paintLibCategories: [], // multi-select — paintCategory() keys; empty = all types
   paintLibSort: "name", // "name" | "rating" — Paint Library sort order
   includeShared: true, // whether other users' shared recipes appear in lists/browsing
+  feedSort: "popular", // "popular" | "new" — Community Feed sort order
 };
 
 // ---------------------------------------------------------------
@@ -965,6 +966,27 @@ function swipeTo(dir) {
 // ---------------------------------------------------------------
 const FEED_WINDOW_MS = 7 * 24 * 3600 * 1000;
 const FEED_HALF_LIFE_MS = 48 * 3600 * 1000;
+// A comment is a meaningfully higher-effort signal than a one-tap like (read,
+// think, type a sentence, vs. a single tap) -- weighted higher so it counts
+// for noticeably more. A round number, not derived from data; a tunable
+// starting point, not load-bearing precision.
+const COMMENT_ENGAGEMENT_WEIGHT = 3;
+
+function getRecipeCommentCount(ownerId, recipeId) {
+  const row = readJSON(KEYS.recipeCommentCounts, []).find((x) => x.recipeOwnerId === ownerId && x.recipeId === recipeId);
+  return row ? row.commentCount : 0;
+}
+
+// Popular-sort engagement for a recipe-tied feed item -- combines its net
+// vote score with its comment count. Floored at 0: a disliked recipe
+// shouldn't push engagement negative into the log below. paint_rating/
+// paint_note items don't use this -- they have no "likes" concept under this
+// feature, so their engagement stays the simple flat value it always was.
+function recipeEngagement(ownerId, recipeId, commentCount) {
+  const s = getRecipeVoteSummary(ownerId, recipeId);
+  const net = s ? s.likeCount - s.dislikeCount : 0;
+  return Math.max(0, net) + commentCount * COMMENT_ENGAGEMENT_WEIGHT;
+}
 
 // Turns the four raw arrays cached by fetchActivityFeed (plus the shared
 // recipes list already cached separately) into one heterogeneous, ranked
@@ -982,7 +1004,12 @@ function buildFeedItems() {
 
   getSharedRecipes()
     .filter((r) => now - new Date(r.updatedAt).getTime() < FEED_WINDOW_MS)
-    .forEach((r) => items.push({ type: "recipe_published", recipe: r, authorId: r.authorId, at: r.updatedAt, engagement: 1 }));
+    .forEach((r) => items.push({
+      type: "recipe_published", recipe: r, authorId: r.authorId, at: r.updatedAt,
+      // Lifetime comment count, not the rolling window below -- "how well is
+      // this new recipe doing" should reflect its full response so far.
+      engagement: recipeEngagement(r.authorId, r.id, getRecipeCommentCount(r.authorId, r.id)),
+    }));
 
   const commentGroups = {};
   comments
@@ -996,7 +1023,14 @@ function buildFeedItems() {
   Object.values(commentGroups).forEach((g) => {
     const recipe = findRecipe(g.recipeId, g.recipeOwnerId === currentUserId() ? undefined : g.recipeOwnerId);
     if (!recipe) return;
-    items.push({ type: "recipe_comments", recipe, recipeOwnerId: g.recipeOwnerId, count: g.count, at: g.latestAt, engagement: g.count });
+    items.push({
+      type: "recipe_comments", recipe, recipeOwnerId: g.recipeOwnerId, count: g.count, at: g.latestAt,
+      // The windowed burst count, not the lifetime total -- this item
+      // specifically represents "N new comments just now," so using the
+      // lifetime count here would let an old, heavily-commented recipe's
+      // occasional new burst permanently dominate.
+      engagement: recipeEngagement(g.recipeOwnerId, g.recipeId, g.count),
+    });
   });
 
   ratings
@@ -1013,11 +1047,17 @@ function buildFeedItems() {
       if (paint) items.push({ type: "paint_note", paint, authorId: n.userId, body: n.body, at: n.createdAt, engagement: 1 });
     });
 
-  // 48h half-life decay, boosted by engagement (comment count) so a
-  // still-active thread can outrank a quieter, slightly newer item.
-  const decay = (iso) => Math.pow(0.5, (now - new Date(iso).getTime()) / FEED_HALF_LIFE_MS);
-  items.forEach((it) => { it.score = decay(it.at) * (1 + Math.log2(1 + it.engagement)); });
-  items.sort((a, b) => b.score - a.score);
+  if (state.feedSort === "new") {
+    // Pure recency -- a full bypass of the decay/engagement scoring below,
+    // not a variant of it.
+    items.sort((a, b) => new Date(b.at) - new Date(a.at));
+  } else {
+    // 48h half-life decay, boosted by engagement so a still-active thread
+    // can outrank a quieter, slightly newer item.
+    const decay = (iso) => Math.pow(0.5, (now - new Date(iso).getTime()) / FEED_HALF_LIFE_MS);
+    items.forEach((it) => { it.score = decay(it.at) * (1 + Math.log2(1 + it.engagement)); });
+    items.sort((a, b) => b.score - a.score);
+  }
   return items.slice(0, 30);
 }
 
@@ -1077,7 +1117,11 @@ function viewHome() {
   return `
     <div class="page-enter">
       <div class="page-title">Community Feed</div>
-      <div style="font-size:13px; opacity:0.75; margin:0 2px 14px">What's happening across Forgebook right now.</div>
+      <div style="font-size:13px; opacity:0.75; margin:0 2px 10px">What's happening across Forgebook right now.</div>
+      <div class="lib-filter-seg" style="margin-bottom:14px">
+        <button class="${state.feedSort === "popular" ? "is-active" : ""}" data-action="feed-sort" data-sort="popular">Popular</button>
+        <button class="${state.feedSort === "new" ? "is-active" : ""}" data-action="feed-sort" data-sort="new">New</button>
+      </div>
       ${items.length
         ? items.map(feedItemHtml).join("")
         : emptyStateHtml("book", "Nothing yet", "Publish a recipe, or leave a note or rating, to get the community feed moving.")}
@@ -4737,6 +4781,9 @@ document.addEventListener("click", async (e) => {
 
   const libSort = t("[data-action='lib-sort']");
   if (libSort) { state.paintLibSort = libSort.dataset.sort; render(); return; }
+
+  const feedSort = t("[data-action='feed-sort']");
+  if (feedSort) { state.feedSort = feedSort.dataset.sort; render(); return; }
 
   const openNotif = t("[data-action='open-notification']");
   if (openNotif) {
