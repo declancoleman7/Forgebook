@@ -2589,7 +2589,10 @@ function runGlobalSearch(q) {
       searchProfiles(trimmed).then((results) => {
         if (globalSearch.query.trim() !== trimmed) return; // superseded by more typing
         globalSearch.accountResults = results;
-        globalSearch.accountResultsQuery = trimmed;
+        // Lowercased to match viewSearch()'s own lowercased `q` -- accountsReady's
+        // comparison would otherwise never match a capitalized query (i.e. almost
+        // any real name), silently stranding the Accounts tab on "..." forever.
+        globalSearch.accountResultsQuery = trimmed.toLowerCase();
         render();
       });
     }, 250);
@@ -4049,13 +4052,6 @@ function viewSettings() {
         </div>
         <div class="settings-row">
           <div>
-            <div class="settings-row__label">Find a painter</div>
-            <div class="settings-row__desc">Look up someone else's profile by display name.</div>
-          </div>
-          <button class="btn btn-ghost btn-sm" data-nav="profile">Search</button>
-        </div>
-        <div class="settings-row">
-          <div>
             <div class="settings-row__label">Sign out</div>
             <div class="settings-row__desc">You'll need to sign in again to use Forgebook.</div>
           </div>
@@ -4141,6 +4137,7 @@ function notificationRowHtml(n) {
   let text;
   if (n.type === "comment") text = `commented on your recipe "${escapeHtml(recipe ? recipe.name : "a recipe")}"`;
   else if (n.type === "rating") text = `rated a paint you feature in "${escapeHtml(recipe ? recipe.name : "a recipe")}"`;
+  else if (n.type === "like") text = `liked your recipe "${escapeHtml(recipe ? recipe.name : "a recipe")}"`;
   else if (recipe) text = `mentioned you in a comment on "${escapeHtml(recipe.name)}"`;
   else text = `mentioned you in a note on ${escapeHtml(paint ? paint.name : "a paint")}`;
 

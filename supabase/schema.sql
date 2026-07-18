@@ -559,17 +559,17 @@ create policy "read all recipe votes" on public.recipe_votes
 -- a mention sourced from a paint note has no recipe_owner_id/recipe_id, a
 -- rating notification has no comment_id, etc.
 --
--- Deliberately no 'vote' type here, and no trigger on recipe_votes: a vote
--- is a one-tap, high-frequency action (unlike a comment or a rating, both
--- already deliberate enough to warrant a notification) -- notifying on
--- every like would be noisy. Not an oversight; don't add it without
--- re-considering that tradeoff.
+-- 'like' notifies only on a genuine like (never a dislike, and never a
+-- same-value re-upsert or a retraction) -- see notify_on_recipe_vote below.
+-- A vote is otherwise a one-tap, high-frequency action, which is why this
+-- was deliberately excluded when voting first shipped; scoping it to just
+-- likes keeps that original noise concern in mind rather than ignoring it.
 -- ------------------------------------------------------------
 create table if not exists public.notifications (
   id              uuid        not null default gen_random_uuid(),
   recipient_id    uuid        not null references auth.users (id) on delete cascade,
   actor_id        uuid        references auth.users (id) on delete set null,
-  type            text        not null check (type in ('comment', 'rating', 'mention')),
+  type            text        not null check (type in ('comment', 'rating', 'mention', 'like')),
   recipe_owner_id uuid,
   recipe_id       text,
   comment_id      uuid        references public.recipe_comments (id) on delete cascade,
@@ -581,6 +581,12 @@ create table if not exists public.notifications (
   foreign key (recipe_owner_id, recipe_id) references public.recipes (user_id, id) on delete cascade
 );
 create index if not exists notifications_recipient_idx on public.notifications (recipient_id, read, created_at desc);
+
+-- create table if not exists is a permanent no-op on a database that
+-- already has this table, so widening the inline check above needs its own
+-- explicit migration to reach one that predates the 'like' type.
+alter table public.notifications drop constraint if exists notifications_type_check;
+alter table public.notifications add constraint notifications_type_check check (type in ('comment', 'rating', 'mention', 'like'));
 
 -- Lets the rating trigger's steps @> ... containment check (below) use an
 -- index instead of scanning every published recipe row it's handed.
@@ -799,6 +805,36 @@ drop trigger if exists paint_ratings_notify on public.paint_ratings;
 create trigger paint_ratings_notify
   after insert or update of stars on public.paint_ratings
   for each row execute function public.notify_on_paint_rating();
+
+-- "Someone liked your recipe" -- fires only on a genuine "now liked"
+-- transition: a fresh insert with value = 1, or an update where the value
+-- actually changed to 1 (e.g. dislike -> like). Deliberately does not fire
+-- for a dislike, a same-value re-upsert (not reachable anyway --
+-- voteOnRecipe retracts rather than re-upserts an unchanged value), or a
+-- retraction (a real DELETE, which no trigger here is attached to). No
+-- self-notify guard needed: recipe_votes' own "own recipe vote" RLS already
+-- requires recipe_owner_id <> user_id for every insert/update, and the
+-- recipe must already be published+undeleted to pass that same check -- so
+-- both are already guaranteed by the time this trigger runs.
+create or replace function public.notify_on_recipe_vote()
+returns trigger
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+begin
+  if new.value = 1 and (tg_op = 'INSERT' or old.value is distinct from new.value) then
+    insert into public.notifications (recipient_id, actor_id, type, recipe_owner_id, recipe_id)
+    values (new.recipe_owner_id, new.user_id, 'like', new.recipe_owner_id, new.recipe_id);
+  end if;
+  return new;
+end;
+$$;
+
+drop trigger if exists recipe_votes_notify on public.recipe_votes;
+create trigger recipe_votes_notify
+  after insert or update of value on public.recipe_votes
+  for each row execute function public.notify_on_recipe_vote();
 
 -- ------------------------------------------------------------
 -- Admin bootstrap — run this block (just this block) whenever you want to
