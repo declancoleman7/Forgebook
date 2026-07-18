@@ -74,7 +74,7 @@ let state = {
   recipeFactionFilters: [], // multi-select — the Recipes list's filter window; empty = any
   recipeDifficultyFilters: [], // multi-select — same window; empty = any
   recipeFilterOpen: false,
-  searchQuery: "",
+  searchQuery: "", // the Recipes list's own inline #recipe-list-search box only -- the topbar box drives globalSearch (a separate, non-state variable) instead
   paintLibFilter: "all", // "all" | "owned" | "want" — Paint Library ownership filter
   paintLibBrands: [], // multi-select — empty = all brands
   paintLibCategories: [], // multi-select — paintCategory() keys; empty = all types
@@ -1188,7 +1188,6 @@ function emptyStateHtml(iconName, title, sub) {
 function viewFactions() {
   const recipes = getVisibleRecipes();
   const art = { ...getGlobalFactionArt(), ...getFactionArt() }; // personal override wins over the admin's shared one
-  const q = state.searchQuery.toLowerCase();
 
   const tile = (f) => {
     const n = recipes.filter((r) => r.faction === f.id).length;
@@ -1217,9 +1216,7 @@ function viewFactions() {
 
   const body = SYSTEMS.map((sys) => {
     const groups = sys.alliances.map((alliance) => {
-      const facs = FACTIONS.filter(
-        (f) => f.system === sys.id && f.alliance === alliance && (!q || f.label.toLowerCase().includes(q))
-      );
+      const facs = FACTIONS.filter((f) => f.system === sys.id && f.alliance === alliance);
       if (!facs.length) return "";
       return `
         <div class="alliance-label">${escapeHtml(alliance)}</div>
@@ -1233,7 +1230,7 @@ function viewFactions() {
   return `
     <div class="page-enter">
       <div class="page-title">Armies</div>
-      ${body || emptyStateHtml("search", "No armies match", "Try a different search term.")}
+      ${body}
       <div class="fine-print">
         Emblems are original artwork drawn for Forgebook, not Games Workshop's own icons.
         Open any army to swap in your own image.
@@ -1934,15 +1931,7 @@ const FONT_MONO = 'ui-monospace, "SF Mono", "Cascadia Code", "Segoe UI Mono", Co
 // View: Paint rack (the user's own paints)
 // ---------------------------------------------------------------
 function viewPaints() {
-  const q = state.searchQuery.toLowerCase();
-  let paints = getPaints();
-  if (q) {
-    paints = paints.filter((p) =>
-      p.name.toLowerCase().includes(q) ||
-      (p.brand || "").toLowerCase().includes(q) ||
-      (p.type || "").toLowerCase().includes(q)
-    );
-  }
+  const paints = getPaints();
 
   // group by brand so a big rack stays navigable
   const brands = [...new Set(paints.map((p) => p.brand || "Unbranded"))].sort();
@@ -1951,7 +1940,7 @@ function viewPaints() {
     <div class="page-enter">
       <div class="page-title">Paint Rack</div>
       <div class="detail-sub" style="margin-bottom:14px">
-        ${getPaints().length} paint${getPaints().length === 1 ? "" : "s"} on the rack.
+        ${paints.length} paint${paints.length === 1 ? "" : "s"} on the rack.
         Add them here once, then pull them into any recipe.
       </div>
 
@@ -1979,7 +1968,7 @@ function viewPaints() {
               <div class="unit-row__chevron">${icon("chevron", 14)}</div>
             </div>`;
         }).join("")}
-      `).join("") : emptyStateHtml("palette", "No paints match", "Add a paint, or clear the search.")}
+      `).join("") : emptyStateHtml("palette", "No paints yet", "Add one manually, or browse the paint library.")}
     </div>
   `;
 }
@@ -2696,11 +2685,9 @@ function computeColourMatches(hex, excludeKey, resultFilter, sourceBrand, source
 // show both at once.
 // ---------------------------------------------------------------
 function viewPaintLibrary() {
-  const q = state.searchQuery.toLowerCase();
   let entries = PAINT_LIBRARY;
   if (state.paintLibBrands.length) entries = entries.filter((p) => state.paintLibBrands.includes(p.brand));
   if (state.paintLibCategories.length) entries = entries.filter((p) => state.paintLibCategories.includes(paintCategory(p.type)));
-  if (q) entries = entries.filter((p) => p.name.toLowerCase().includes(q) || p.type.toLowerCase().includes(q));
 
   const isOwnedEntry = (p) => !!ownedPaintFor(p.name, p.brand);
   const isWantedEntry = (p) => !isOwnedEntry(p) && isWanted(p.name, p.brand);
@@ -2829,7 +2816,7 @@ function viewPaintLibrary() {
       </div>
 
       ${!entries.length
-        ? emptyStateHtml("search", "No matches", "Try a different search or filter.")
+        ? emptyStateHtml("search", "No matches", "Try a different filter.")
         : ratedSorted
         ? `<div class="section-label">Top rated</div><div class="lib-grid">${ratedSorted.map(row).join("")}</div>`
         : groups
