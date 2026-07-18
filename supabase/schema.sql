@@ -203,6 +203,57 @@ from public.paint_ratings
 where deleted = false
 group by paint_key;
 
+-- ------------------------------------------------------------
+-- Recipe likes/dislikes — a quick one-tap engagement signal, distinct from
+-- the considered 1-5 star paint ratings above. Recipes are keyed by
+-- (user_id, id), not a single string like paint_key, so this needs the same
+-- recipe_owner_id+recipe_id composite recipe_comments already uses to point
+-- at one recipe unambiguously.
+-- ------------------------------------------------------------
+create table if not exists public.recipe_votes (
+  recipe_owner_id uuid        not null,
+  recipe_id       text        not null,
+  user_id         uuid        not null references auth.users (id) on delete cascade,
+  value           int         not null,
+  updated_at      timestamptz not null default now(),
+  deleted         boolean     not null default false,
+  primary key (user_id, recipe_owner_id, recipe_id),
+  foreign key (recipe_owner_id, recipe_id) references public.recipes (user_id, id) on delete cascade,
+  check (value in (-1, 1))
+);
+create index if not exists recipe_votes_recipe_idx on public.recipe_votes (recipe_owner_id, recipe_id);
+
+-- Both counts stored (net is computed client-side for display) so dislike
+-- counts stay independently queryable later even though only the net score
+-- is ever shown. Fully public, same as paint_rating_summary above -- nothing
+-- this exposes isn't already publicly readable via the RLS below.
+create or replace view public.recipe_vote_summary as
+select recipe_owner_id, recipe_id,
+  count(*) filter (where value =  1) as like_count,
+  count(*) filter (where value = -1) as dislike_count
+from public.recipe_votes
+where deleted = false
+group by recipe_owner_id, recipe_id;
+
+-- A site-wide comment count per recipe for the activity feed's preview
+-- cards -- recipe_comments has no such aggregate today (per-recipe counts
+-- are only ever fetched on demand when actually viewing that recipe).
+-- Unlike the vote/rating views above, recipe_comments' own RLS is NOT fully
+-- public (it hides flagged/non-visible rows from everyone but that
+-- comment's own author and admins) -- a plain view bypasses that RLS
+-- entirely, so this view's own where-clause is the only thing standing
+-- between a stranger and a count that would otherwise leak "there's a
+-- hidden/reported comment here." The filter below deliberately reproduces
+-- only the PUBLIC subset of "read comments on visible recipes"'s own
+-- condition, and deliberately does NOT special-case the viewer being the
+-- comment's author or an admin -- even a comment's own author sees the same
+-- public-only count everyone else on the feed does.
+create or replace view public.recipe_comment_counts as
+select recipe_owner_id, recipe_id, count(*) as comment_count
+from public.recipe_comments
+where deleted = false and status = 'visible' and flagged = false
+group by recipe_owner_id, recipe_id;
+
 -- Sync pulls "everything changed since X", so index that.
 create index if not exists recipes_user_updated_idx     on public.recipes     (user_id, updated_at);
 create index if not exists paints_user_updated_idx      on public.paints      (user_id, updated_at);
@@ -315,6 +366,7 @@ alter table public.recipe_comments enable row level security;
 alter table public.reports         enable row level security;
 alter table public.paint_notes     enable row level security;
 alter table public.paint_ratings   enable row level security;
+alter table public.recipe_votes    enable row level security;
 
 -- Readable by anyone who can already read the underlying recipe (including
 -- an anonymous visitor on the public share page) — mirrors "read published
@@ -448,6 +500,31 @@ create policy "read all paint ratings" on public.paint_ratings
   for select
   using (deleted = false);
 
+-- One policy (not comments' insert/update split) covers insert, update, AND
+-- delete: with check gates insert/update on "still published, not your own
+-- recipe" -- retracting a vote (delete only evaluates `using`) always works,
+-- even on a recipe that's since been unpublished.
+drop policy if exists "own recipe vote" on public.recipe_votes;
+create policy "own recipe vote" on public.recipe_votes
+  for all
+  using      (auth.uid() = user_id)
+  with check (
+    auth.uid() = user_id
+    and recipe_owner_id <> user_id
+    and exists (
+      select 1 from public.recipes r
+      where r.user_id = recipe_owner_id and r.id = recipe_id
+        and r.published = true and r.deleted = false
+    )
+  );
+
+-- Fully public, same rationale as "read all paint ratings" above -- this is
+-- what makes both a fully-visible dislike count and recipe_vote_summary safe.
+drop policy if exists "read all recipe votes" on public.recipe_votes;
+create policy "read all recipe votes" on public.recipe_votes
+  for select
+  using (deleted = false);
+
 -- ------------------------------------------------------------
 -- Notifications — this codebase's first DB triggers, and the first RLS
 -- where the whole point is that clients can never insert at all: rows are
@@ -459,6 +536,12 @@ create policy "read all paint ratings" on public.paint_ratings
 -- Columns are sparse/nullable because which ones apply depends on `type`:
 -- a mention sourced from a paint note has no recipe_owner_id/recipe_id, a
 -- rating notification has no comment_id, etc.
+--
+-- Deliberately no 'vote' type here, and no trigger on recipe_votes: a vote
+-- is a one-tap, high-frequency action (unlike a comment or a rating, both
+-- already deliberate enough to warrant a notification) -- notifying on
+-- every like would be noisy. Not an oversight; don't add it without
+-- re-considering that tradeoff.
 -- ------------------------------------------------------------
 create table if not exists public.notifications (
   id              uuid        not null default gen_random_uuid(),

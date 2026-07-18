@@ -196,6 +196,9 @@ function clearLiveState() {
   save(KEYS.profiles, []);
   save(KEYS.myRatings, []);
   save(KEYS.ratingSummary, []);
+  save(KEYS.myRecipeVotes, []);
+  save(KEYS.recipeVoteSummary, []);
+  save(KEYS.recipeCommentCounts, []);
   save(KEYS.activityFeed, {});
   save(KEYS.notifications, []);
   save(KEYS.globalArt, {});
@@ -720,6 +723,25 @@ async function loadBook() {
     // swallowed on purpose
   }
 
+  // Same isolation again for recipe votes and their site-wide counts.
+  try {
+    save(KEYS.myRecipeVotes, await fetchMyRecipeVotes());
+  } catch (e) {
+    // swallowed on purpose
+  }
+
+  try {
+    save(KEYS.recipeVoteSummary, await fetchRecipeVoteSummary());
+  } catch (e) {
+    // swallowed on purpose
+  }
+
+  try {
+    save(KEYS.recipeCommentCounts, await fetchRecipeCommentCounts());
+  } catch (e) {
+    // swallowed on purpose
+  }
+
   // Same deliberate isolation: a stale/empty activity feed just means Home
   // shows less, not that the load failed. Runs after fetchSharedRecipes
   // above so its profile cache is already warm for most feed authors.
@@ -822,6 +844,56 @@ async function fetchRatingSummary() {
   const { data, error } = await sb.from("paint_rating_summary").select("*");
   if (error) throw error;
   return (data || []).map((row) => ({ paintKey: row.paint_key, avgStars: row.avg_stars, ratingCount: row.rating_count }));
+}
+
+// Recipe likes/dislikes — same upsert-to-change/delete-to-retract shape as
+// paint ratings above, just keyed by the recipe_owner_id+recipe_id composite
+// (recipe_comments' own shape) instead of a single paint_key string.
+function toRemoteVote(ownerId, recipeId, value, userId) {
+  return { recipe_owner_id: ownerId, recipe_id: recipeId, user_id: userId, value, updated_at: nowIso() };
+}
+function fromRemoteVote(row) {
+  return { recipeOwnerId: row.recipe_owner_id, recipeId: row.recipe_id, value: row.value, updatedAt: row.updated_at, userId: row.user_id };
+}
+
+async function pushRecipeVote(ownerId, recipeId, value) {
+  if (!sb || !isSignedIn()) return { ok: false, message: "Sign in to vote." };
+  const { error } = await sb.from("recipe_votes").upsert(toRemoteVote(ownerId, recipeId, value, session.user.id));
+  if (error) return { ok: false, message: "Couldn't save that — try again." };
+  return { ok: true };
+}
+
+async function removeRecipeVoteRemote(ownerId, recipeId) {
+  if (!sb || !isSignedIn()) return { ok: false };
+  const { error } = await sb.from("recipe_votes").delete()
+    .eq("user_id", session.user.id).eq("recipe_owner_id", ownerId).eq("recipe_id", recipeId);
+  return { ok: !error };
+}
+
+// The signed-in user's own votes, for "your vote" display.
+async function fetchMyRecipeVotes() {
+  if (!sb || !isSignedIn()) return [];
+  const { data, error } = await sb.from("recipe_votes").select("*").eq("user_id", session.user.id).eq("deleted", false);
+  if (error) throw error;
+  return (data || []).map(fromRemoteVote);
+}
+
+// Site-wide like/dislike counts per recipe (see recipe_vote_summary in
+// schema.sql) — one call rather than a query per recipe on screen.
+async function fetchRecipeVoteSummary() {
+  if (!sb) return [];
+  const { data, error } = await sb.from("recipe_vote_summary").select("*");
+  if (error) throw error;
+  return (data || []).map((row) => ({ recipeOwnerId: row.recipe_owner_id, recipeId: row.recipe_id, likeCount: row.like_count, dislikeCount: row.dislike_count }));
+}
+
+// Site-wide comment count per recipe (see recipe_comment_counts in
+// schema.sql), for the activity feed's preview cards.
+async function fetchRecipeCommentCounts() {
+  if (!sb) return [];
+  const { data, error } = await sb.from("recipe_comment_counts").select("*");
+  if (error) throw error;
+  return (data || []).map((row) => ({ recipeOwnerId: row.recipe_owner_id, recipeId: row.recipe_id, commentCount: row.comment_count }));
 }
 
 function toRemotePaintNote(n, userId) {

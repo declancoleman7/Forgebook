@@ -42,6 +42,8 @@ const ICONS = {
   flag: '<path d="M5 21V4" /><path d="M5 4h13l-3 4 3 4H5" />',
   user: '<circle cx="12" cy="8" r="4" /><path d="M4 21c0-4.4 3.6-7 8-7s8 2.6 8 7" />',
   bell: '<path d="M6 10a6 6 0 0 1 12 0c0 4 1.5 5.5 1.5 6.5H4.5C4.5 15.5 6 14 6 10Z" /><path d="M10 19a2 2 0 0 0 4 0" />',
+  "thumb-up": '<path d="M7 11v9H4v-9h3z" /><path d="M7 11l3.5-7c1.2 0 2 1 2 2.2V9h5.5a2 2 0 0 1 2 2.4l-1.2 6A2 2 0 0 1 17 19H9a2 2 0 0 1-2-2v-6z" />',
+  "thumb-down": '<path d="M17 13V4h3v9h-3z" /><path d="M17 13l-3.5 7c-1.2 0-2-1-2-2.2V15H6a2 2 0 0 1-2-2.4l1.2-6A2 2 0 0 1 7 5h8a2 2 0 0 1 2 2v6z" />',
 };
 
 function icon(name, size = 20) {
@@ -463,6 +465,32 @@ function ratePaint(name, brand, stars) {
   else rows.push({ paintKey: key, stars });
   save(KEYS.myRatings, rows);
   pushRating(key, stars);
+}
+
+function getMyRecipeVotes() { return readJSON(KEYS.myRecipeVotes, []); }
+function myRecipeVoteFor(ownerId, recipeId) {
+  const v = getMyRecipeVotes().find((x) => x.recipeOwnerId === ownerId && x.recipeId === recipeId);
+  return v ? v.value : null;
+}
+function getRecipeVoteSummary(ownerId, recipeId) {
+  return readJSON(KEYS.recipeVoteSummary, []).find((x) => x.recipeOwnerId === ownerId && x.recipeId === recipeId) || null;
+}
+// Same optimistic-local-then-fire-and-forget shape as ratePaint above.
+// Tapping the same button you already voted retracts it instead of no-op'ing
+// -- that's what makes like/dislike a toggle rather than a one-way action.
+function voteOnRecipe(ownerId, recipeId, value) {
+  const rows = getMyRecipeVotes();
+  const idx = rows.findIndex((v) => v.recipeOwnerId === ownerId && v.recipeId === recipeId);
+  if (idx > -1 && rows[idx].value === value) {
+    rows.splice(idx, 1);
+    save(KEYS.myRecipeVotes, rows);
+    removeRecipeVoteRemote(ownerId, recipeId);
+  } else {
+    if (idx > -1) rows[idx] = { recipeOwnerId: ownerId, recipeId, value };
+    else rows.push({ recipeOwnerId: ownerId, recipeId, value });
+    save(KEYS.myRecipeVotes, rows);
+    pushRecipeVote(ownerId, recipeId, value);
+  }
 }
 
 // A flag on an owned paint itself, so it rides along with that paint's
@@ -1435,6 +1463,7 @@ function viewRecipeDetail(id, authorId) {
       </div>
       <div class="detail-title">${escapeHtml(r.name)}</div>
       ${isShared ? `<div class="shared-badge">${avatarHtml(r.authorId, 16)} Shared by <span data-nav="profile" data-id="${escapeHtml(r.authorId)}" style="cursor:pointer; text-decoration:underline">${escapeHtml(authorName(r.authorId))}</span></div>` : ""}
+      ${r.published ? recipeVoteWidgetHtml(r, ownerId) : ""}
       <div class="metastrip">
         <div class="metastrip__cell">
           <div class="metastrip__n">${difficultyDots(r.difficulty || 1)}</div>
@@ -2568,6 +2597,33 @@ function paintRatingWidgetHtml(sourceName, sourceBrand) {
           : `<span class="rating-widget__count">No ratings yet</span>`}
         ${mine ? `<div class="rating-widget__mine">Your rating: ${mine}★ · tap a star to change</div>` : ""}
       </div>
+    </div>
+  `;
+}
+
+// A quick one-tap like/dislike, distinct from the considered star rating
+// above -- net score only (no separate like/dislike counts shown), per
+// product decision. Read-only (net score, no buttons) on your own recipe:
+// voting on your own work doesn't make sense, and RLS would reject it
+// anyway -- this just avoids a confusing silent-fail tap.
+function recipeVoteWidgetHtml(recipe, ownerId) {
+  const summary = getRecipeVoteSummary(ownerId, recipe.id);
+  const net = summary ? summary.likeCount - summary.dislikeCount : 0;
+  const isOwn = ownerId === currentUserId();
+  if (isOwn) {
+    return `
+      <div class="vote-widget vote-widget--readonly">
+        <span class="vote-widget__net">${net}</span>
+        <span class="vote-widget__label">net score</span>
+      </div>
+    `;
+  }
+  const mine = myRecipeVoteFor(ownerId, recipe.id);
+  return `
+    <div class="vote-widget">
+      <button class="vote-widget__btn ${mine === 1 ? "is-active" : ""}" data-action="vote-recipe" data-owner-id="${escapeHtml(ownerId)}" data-recipe-id="${escapeHtml(recipe.id)}" data-value="1" aria-label="Like">${icon("thumb-up", 18)}</button>
+      <span class="vote-widget__net">${net}</span>
+      <button class="vote-widget__btn ${mine === -1 ? "is-active" : ""}" data-action="vote-recipe" data-owner-id="${escapeHtml(ownerId)}" data-recipe-id="${escapeHtml(recipe.id)}" data-value="-1" aria-label="Dislike">${icon("thumb-down", 18)}</button>
     </div>
   `;
 }
@@ -4720,6 +4776,14 @@ document.addEventListener("click", async (e) => {
   if (rateBtn) {
     if (!isSignedIn()) { showToast("Sign in to rate paints"); return; }
     ratePaint(similarColours.sourceName, similarColours.sourceBrand, Number(rateBtn.dataset.value));
+    render();
+    return;
+  }
+
+  const voteBtn = t("[data-action='vote-recipe']");
+  if (voteBtn) {
+    if (!isSignedIn()) { showToast("Sign in to vote"); return; }
+    voteOnRecipe(voteBtn.dataset.ownerId, voteBtn.dataset.recipeId, Number(voteBtn.dataset.value));
     render();
     return;
   }

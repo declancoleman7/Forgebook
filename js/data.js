@@ -2170,6 +2170,14 @@ const KEYS = {
   // same treatment as `recents`/`art` below. See getRecentSearches/
   // pushRecentSearch in app.js.
   recentSearches: "forgebook.recentSearches",
+  // The signed-in user's own recipe likes/dislikes, and the site-wide
+  // like/dislike counts per recipe (recipe_vote_summary view) -- same
+  // mine-vs-everyone's split as myRatings/ratingSummary above.
+  myRecipeVotes: "forgebook.myRecipeVotes",
+  recipeVoteSummary: "forgebook.recipeVoteSummary",
+  // Site-wide comment count per recipe (recipe_comment_counts view), for the
+  // activity feed's preview cards -- see fetchRecipeCommentCounts in cloud.js.
+  recipeCommentCounts: "forgebook.recipeCommentCounts",
 };
 
 function readJSON(key, fallback) {
