@@ -107,6 +107,7 @@ create table if not exists public.recipe_comments (
   user_id         uuid        not null references auth.users (id) on delete cascade,
   body            text        not null,
   edited          boolean     not null default false,
+  flagged         boolean     not null default false,
   status          text        not null default 'visible',
   created_at      timestamptz not null default now(),
   updated_at      timestamptz not null default now(),
@@ -302,13 +303,17 @@ alter table public.paint_ratings   enable row level security;
 -- an anonymous visitor on the public share page) — mirrors "read published
 -- recipes" exactly. A comment past the report threshold (or hidden by an
 -- admin) is additionally visible only to its own author or an admin.
+-- Same flagged-hides-from-everyone-but-author shape as paint_notes: a
+-- client-filter hit doesn't block the post, it just starts it hidden-pending
+-- (status='visible' alone isn't enough to be seen by others; not-flagged is
+-- also required), same as an admin explicitly hiding it via status.
 drop policy if exists "read comments on visible recipes" on public.recipe_comments;
 create policy "read comments on visible recipes" on public.recipe_comments
   for select
   using (
     deleted = false
     and (
-      status = 'visible'
+      (status = 'visible' and flagged = false)
       or user_id = auth.uid()
       or exists (select 1 from public.profiles p where p.user_id = auth.uid() and p.is_admin)
     )

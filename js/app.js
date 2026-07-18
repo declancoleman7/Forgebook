@@ -1181,6 +1181,12 @@ function viewRecipeDetail(id, authorId) {
   const idx = siblings.findIndex((s) => s.id === r.id && (s.authorId || null) === (r.authorId || null));
   const swipeCls = swipeDirection === "left" ? "swipe-in-left" : swipeDirection === "right" ? "swipe-in-right" : "";
 
+  // A recipe you own has no .authorId (that's only set on someone else's
+  // shared copy) — either way this is the row's true DB owner, which is
+  // what the comments table's composite foreign key needs.
+  const ownerId = r.authorId || currentUserId();
+  if (r.published) ensureCommentsLoaded(ownerId, r.id);
+
   const detailHtml = `
     <div class="page-enter ${swipeCls}" data-swipe-page>
       <div class="detail-header">
@@ -1307,6 +1313,8 @@ function viewRecipeDetail(id, authorId) {
           ${icon("upload", 15)} Share
         </button>
       </div>
+
+      ${r.published ? commentListHtml(ownerId, r.id) : ""}
     </div>
   `;
 
@@ -1371,6 +1379,16 @@ async function renderPublicRecipe(params) {
   const { recipe: r, paints, authorName: author } = result;
   const f = faction(r.faction);
   const steps = r.steps || [];
+
+  // This route never calls the normal render() cycle, so comments are
+  // fetched straight into the shared cache here (this function is already
+  // async) rather than through the fire-and-render ensureCommentsLoaded
+  // pattern the signed-in recipe detail page uses.
+  const commentsKey = params.authorId + "|" + params.id;
+  if (commentsCache[commentsKey] === undefined) {
+    try { commentsCache[commentsKey] = await fetchComments(params.authorId, params.id); }
+    catch (e) { commentsCache[commentsKey] = []; }
+  }
 
   const usedPaints = [];
   const seenPaintKeys = new Set();
@@ -1462,6 +1480,8 @@ async function renderPublicRecipe(params) {
     `).join("") : `<div class="empty-state__sub">No steps recorded.</div>`}
 
     ${r.notes ? `<div class="section-label">Notes</div><div class="notes-block">${escapeHtml(r.notes)}</div>` : ""}
+
+    ${commentListHtml(params.authorId, params.id, true)}
 
     <a class="btn btn-primary btn-block" style="margin-top:24px" href="./">
       ${icon("book", 16)} Track your own recipes with Forgebook
@@ -1855,6 +1875,91 @@ let communityNoteFormSeenSig = null;
 function resetPaintNotesCache() {
   paintNotesCache = {};
   paintNotesLoading = {};
+}
+
+// ---------------------------------------------------------------
+// Recipe comments — flat, chronological (newest first), fetched on demand
+// per recipe exactly like Community Notes above (same reasoning: no bulk
+// "every comment on everything" cache makes sense here either). Cache key
+// is "ownerId|recipeId" since a recipe's own id is only unique per-author.
+// ---------------------------------------------------------------
+let commentsCache = {};
+let commentsLoading = {};
+let commentForm = { body: "", editingId: null };
+let commentFormSeenSig = null;
+
+function resetCommentsCache() {
+  commentsCache = {};
+  commentsLoading = {};
+}
+
+function ensureCommentsLoaded(ownerId, recipeId) {
+  const key = ownerId + "|" + recipeId;
+  if (commentsCache[key] !== undefined || commentsLoading[key]) return;
+  commentsLoading[key] = true;
+  fetchComments(ownerId, recipeId)
+    .then((comments) => { commentsCache[key] = comments; })
+    .catch((e) => { commentsCache[key] = []; })
+    .finally(() => { commentsLoading[key] = false; render(); });
+}
+
+// readOnly forces the plain read-only rendering regardless of session state
+// — used by the public (signed-out) share page, which has no state/render()
+// cycle of its own to react to a click-delegate action even if the visitor
+// happens to already have a session (e.g. an installed PWA opening its own
+// share link) — so composer/reply/edit/report controls would be dead UI
+// there rather than actually broken, but simplest and safest is to just
+// never offer them on that route at all.
+function commentListHtml(ownerId, recipeId, readOnly = false) {
+  const key = ownerId + "|" + recipeId;
+  if (commentFormSeenSig !== key) {
+    commentFormSeenSig = key;
+    commentForm = { body: "", editingId: null };
+  }
+  const comments = commentsCache[key];
+  const myId = currentUserId();
+  const sorted = comments ? [...comments].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)) : comments;
+  const canWrite = !readOnly && isSignedIn();
+  return `
+    <div class="section-label">Comments${comments ? ` (${comments.length})` : ""}</div>
+    ${canWrite ? `
+      <div class="note-composer">
+        <textarea id="comment-input" maxlength="500" placeholder="Ask a question or share a tip...">${escapeHtml(commentForm.body)}</textarea>
+        <div class="note-composer__footer">
+          <span class="char-count">${commentForm.body.length}/500</span>
+          <button class="btn btn-primary btn-sm" data-action="submit-comment" data-owner-id="${escapeHtml(ownerId)}" data-recipe-id="${escapeHtml(recipeId)}">${commentForm.editingId ? "Save edit" : "Post comment"}</button>
+        </div>
+      </div>
+    ` : readOnly ? `<div class="fine-print" style="margin-bottom:14px">Sign in to comment — <a href="./">open Forgebook</a>.</div>` : `<div class="fine-print" style="margin-bottom:14px">Sign in to comment.</div>`}
+    ${sorted === undefined
+      ? `<div class="empty-state__sub">Loading comments…</div>`
+      : sorted.length
+      ? sorted.map((c) => commentRowHtml(c, myId, readOnly)).join("")
+      : `<div class="empty-state__sub">No comments yet.</div>`}
+  `;
+}
+
+function commentRowHtml(c, myId, readOnly = false) {
+  const isMine = !readOnly && c.userId === myId;
+  const pending = c.flagged || c.status === "hidden";
+  const links = [];
+  if (!readOnly && isSignedIn() && !isMine) links.push(`<button class="comment-row__link" data-action="reply-comment" data-user-id="${escapeHtml(c.userId)}">Reply</button>`);
+  if (isMine) {
+    links.push(`<button class="comment-row__link" data-action="edit-comment" data-id="${escapeHtml(c.id)}" data-body="${escapeHtml(c.body)}">Edit</button>`);
+    links.push(`<button class="comment-row__link" data-action="delete-comment" data-id="${escapeHtml(c.id)}">Delete</button>`);
+  }
+  return `
+    <div class="comment-row ${pending ? "is-pending" : ""}">
+      <div class="comment-row__meta">
+        <span class="comment-row__author" data-nav="profile" data-id="${escapeHtml(c.userId)}">${escapeHtml(authorName(c.userId))}</span>
+        <span class="comment-row__time">${relativeTime(c.createdAt)}${c.edited ? " · edited" : ""}</span>
+        ${pending ? `<span class="pill-status">${c.status === "hidden" ? "Hidden — reported" : "Hidden — pending review"}</span>` : ""}
+      </div>
+      <div class="comment-row__body">${escapeHtml(c.body)}</div>
+      ${links.length ? `<div class="comment-row__linkrow">${links.join("")}</div>` : ""}
+      ${!readOnly && !isMine && isSignedIn() ? `<button class="comment-row__report" data-action="report" data-kind="comment" data-id="${escapeHtml(c.id)}" title="Report">${icon("flag", 13)}</button>` : ""}
+    </div>
+  `;
 }
 
 function ensurePaintNotesLoaded(key) {
@@ -3815,6 +3920,61 @@ document.addEventListener("click", async (e) => {
     return;
   }
 
+  const submitComment = t("[data-action='submit-comment']");
+  if (submitComment) {
+    const body = (commentForm.body || "").trim();
+    if (!body) { showToast("Write a comment first"); return; }
+    const { ownerId, recipeId } = submitComment.dataset;
+    const key = ownerId + "|" + recipeId;
+    if (commentForm.editingId) {
+      const editingId = commentForm.editingId;
+      const res = await editCommentRemote(editingId, body);
+      if (!res.ok) { showToast(res.message); return; }
+      const row = (commentsCache[key] || []).find((c) => c.id === editingId);
+      if (row) { row.body = body; row.edited = true; row.flagged = containsBlockedContent(body); }
+    } else {
+      const res = await submitCommentRemote(ownerId, recipeId, body);
+      if (!res.ok) { showToast(res.message); return; }
+      const now = new Date().toISOString();
+      commentsCache[key] = (commentsCache[key] || []).concat({
+        id: res.comment.id, recipeOwnerId: ownerId, recipeId, userId: currentUserId(), body: res.comment.body,
+        edited: false, flagged: res.comment.flagged, status: "visible", createdAt: now, updatedAt: now, deleted: false,
+      });
+    }
+    commentForm = { body: "", editingId: null };
+    render();
+    return;
+  }
+
+  const replyComment = t("[data-action='reply-comment']");
+  if (replyComment) {
+    commentForm.body = `@${authorName(replyComment.dataset.userId)} `;
+    render();
+    document.getElementById("comment-input")?.focus();
+    return;
+  }
+
+  const editComment = t("[data-action='edit-comment']");
+  if (editComment) {
+    commentForm = { body: editComment.dataset.body, editingId: editComment.dataset.id };
+    render();
+    document.getElementById("comment-input")?.focus();
+    return;
+  }
+
+  const deleteComment = t("[data-action='delete-comment']");
+  if (deleteComment) {
+    if (!(await showConfirm("Delete this comment?"))) return;
+    const id = deleteComment.dataset.id;
+    const res = await removeCommentRemote(id);
+    if (!res.ok) { showToast(res.message || "Couldn't delete that — try again."); return; }
+    Object.keys(commentsCache).forEach((key) => {
+      commentsCache[key] = (commentsCache[key] || []).filter((c) => c.id !== id);
+    });
+    render();
+    return;
+  }
+
   const paintCancel = t("[data-action='paint-cancel']");
   if (paintCancel) {
     const back = paintForm.returnToRecipe;
@@ -4120,6 +4280,11 @@ document.addEventListener("input", (e) => {
   }
   if (e.target.id === "note-input") {
     communityNoteForm.body = e.target.value;
+    render();
+    return;
+  }
+  if (e.target.id === "comment-input") {
+    commentForm.body = e.target.value;
     render();
   }
 });

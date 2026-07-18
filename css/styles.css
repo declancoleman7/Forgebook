@@ -3341,6 +3341,18 @@ main {
 }
 .comment-row__report:hover { color: var(--blood-bright); }
 
+.comment-row__linkrow { display: flex; gap: 12px; margin-top: 6px; }
+.comment-row__link {
+  background: none;
+  border: none;
+  padding: 0;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--ink);
+  cursor: pointer;
+}
+.comment-row__link:hover { color: var(--gold-bright); }
+
 /* A note/comment that's flagged, reported past threshold, or admin-hidden --
    only ever rendered at all for its own author (or an admin); everyone else
    simply never receives the row (enforced server-side by RLS), so there's

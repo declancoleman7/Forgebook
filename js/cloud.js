@@ -181,6 +181,7 @@ function onSignedOut() {
   // in next the previous person's session-scoped fetch, notes RLS is
   // per-viewer so that's a real staleness bug, not just a cosmetic one.
   if (typeof resetPaintNotesCache === "function") resetPaintNotesCache();
+  if (typeof resetCommentsCache === "function") resetCommentsCache();
   appBooted = false;
   if (typeof render === "function") render();
 }
@@ -690,6 +691,51 @@ async function reportContent(contentType, contentId, reason) {
     return { ok: false, message: "Couldn't send that report — try again." };
   }
   return { ok: true };
+}
+
+function toRemoteComment(c, userId) {
+  return { id: c.id, recipe_owner_id: c.recipeOwnerId, recipe_id: c.recipeId, user_id: userId, body: c.body, flagged: !!c.flagged, updated_at: nowIso() };
+}
+
+function fromRemoteComment(row) {
+  return {
+    id: row.id, recipeOwnerId: row.recipe_owner_id, recipeId: row.recipe_id, userId: row.user_id,
+    body: row.body, edited: !!row.edited, flagged: !!row.flagged, status: row.status,
+    createdAt: row.created_at, updatedAt: row.updated_at, deleted: !!row.deleted,
+  };
+}
+
+// Works signed-out too (the public share page has its own read of this),
+// since RLS gates visibility by the recipe's own published/deleted flags,
+// not by whether the caller has a session.
+async function fetchComments(ownerId, recipeId) {
+  if (!sb) return [];
+  const { data, error } = await sb.from("recipe_comments").select("*").eq("recipe_owner_id", ownerId).eq("recipe_id", recipeId).eq("deleted", false).order("created_at");
+  if (error) throw error;
+  return (data || []).map(fromRemoteComment);
+}
+
+async function submitCommentRemote(ownerId, recipeId, body) {
+  if (!sb || !isSignedIn()) return { ok: false, message: "Sign in to comment." };
+  const comment = { id: crypto.randomUUID(), recipeOwnerId: ownerId, recipeId, body, flagged: containsBlockedContent(body) };
+  const { error } = await sb.from("recipe_comments").insert(toRemoteComment(comment, session.user.id));
+  if (error) return { ok: false, message: "Couldn't post that comment — try again." };
+  return { ok: true, comment };
+}
+
+async function editCommentRemote(id, body) {
+  if (!sb || !isSignedIn()) return { ok: false, message: "Sign in to edit comments." };
+  const { error } = await sb.from("recipe_comments")
+    .update({ body, edited: true, flagged: containsBlockedContent(body), updated_at: nowIso() })
+    .eq("id", id).eq("user_id", session.user.id);
+  if (error) return { ok: false, message: "Couldn't save that edit — try again." };
+  return { ok: true };
+}
+
+async function removeCommentRemote(id) {
+  if (!sb || !isSignedIn()) return { ok: false };
+  const { error } = await sb.from("recipe_comments").update({ deleted: true, updated_at: nowIso() }).eq("id", id).eq("user_id", session.user.id);
+  return { ok: !error };
 }
 
 function syncStatusLabel() {
