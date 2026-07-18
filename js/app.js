@@ -107,6 +107,7 @@ function resolvedFactionArt(id) { return getFactionArt()[id] || getGlobalFaction
 function getSharedRecipes() { return readJSON(KEYS.sharedRecipes, []); }
 function getSharedPaints() { return readJSON(KEYS.sharedPaints, []); }
 function getProfiles() { return readJSON(KEYS.profiles, []); }
+function getNotifications() { return readJSON(KEYS.notifications, []); }
 
 function authorName(userId) {
   const p = getProfiles().find((x) => x.userId === userId);
@@ -3562,6 +3563,70 @@ function viewSettings() {
 }
 
 // ---------------------------------------------------------------
+// View: Notifications
+// ---------------------------------------------------------------
+// Resolves a notification's deep-link target and summary text. A mention
+// can point at either a recipe comment (recipeId set) or a paint note
+// (paintKey set, no recipe fields) -- comment/rating notifications always
+// point at a recipe, since a rating notification's recipe_owner_id/recipe_id
+// are the recipient's own published recipe that features the rated paint.
+function notificationRowHtml(n) {
+  const recipe = n.recipeId ? findRecipe(n.recipeId, n.recipeOwnerId === currentUserId() ? undefined : n.recipeOwnerId) : null;
+  const paint = !recipe && n.paintKey ? paintFromKey(n.paintKey) : null;
+
+  let text;
+  if (n.type === "comment") text = `commented on your recipe "${escapeHtml(recipe ? recipe.name : "a recipe")}"`;
+  else if (n.type === "rating") text = `rated a paint you feature in "${escapeHtml(recipe ? recipe.name : "a recipe")}"`;
+  else if (recipe) text = `mentioned you in a comment on "${escapeHtml(recipe.name)}"`;
+  else text = `mentioned you in a note on ${escapeHtml(paint ? paint.name : "a paint")}`;
+
+  // One data-action carries both effects (mark read + navigate) rather than
+  // pairing data-action with data-nav on the same element -- the generic
+  // [data-nav] delegate case is checked (and returns) before any data-action
+  // branch further down, so a dual-purpose element would never reach its
+  // own mark-read handling.
+  const linkAttrs = recipe
+    ? `data-recipe-id="${escapeHtml(n.recipeId)}" data-recipe-owner="${escapeHtml(n.recipeOwnerId)}"`
+    : paint
+    ? `data-paint-name="${escapeHtml(paint.name)}" data-paint-brand="${escapeHtml(paint.brand)}" data-paint-hex="${paint.hex}"`
+    : "";
+
+  return `
+    <div class="comment-row ${n.read ? "" : "is-unread"}" data-action="open-notification" data-id="${escapeHtml(n.id)}" ${linkAttrs} style="cursor:pointer">
+      <div class="comment-row__meta">
+        ${avatarHtml(n.actorId, 18)}
+        <span class="comment-row__author">${escapeHtml(authorName(n.actorId))}</span>
+        <span class="comment-row__time">${relativeTime(n.createdAt)}</span>
+        ${n.read ? "" : `<span class="notif-dot" aria-hidden="true"></span>`}
+      </div>
+      <div class="comment-row__body">${text}</div>
+    </div>
+  `;
+}
+
+function viewNotifications() {
+  const notifications = getNotifications();
+  const unread = notifications.filter((n) => !n.read).length;
+  return `
+    <div class="page-enter">
+      <div class="detail-header">
+        <button class="icon-btn" data-nav="home">${icon("back", 18)}</button>
+        <div class="page-title" style="margin:0">Notifications</div>
+        <div style="width:36px"></div>
+      </div>
+      ${unread ? `
+        <div style="display:flex; justify-content:flex-end; margin-bottom:10px">
+          <button class="btn btn-ghost btn-sm" data-action="mark-all-read">Mark all as read</button>
+        </div>
+      ` : ""}
+      ${notifications.length
+        ? notifications.map(notificationRowHtml).join("")
+        : emptyStateHtml("bell", "No notifications yet", "You'll hear about comments, ratings, and mentions here.")}
+    </div>
+  `;
+}
+
+// ---------------------------------------------------------------
 // View: Change password (signed-in users only)
 // ---------------------------------------------------------------
 function viewChangePassword() {
@@ -3653,6 +3718,7 @@ function render() {
   else if (route === "similar") { html = viewSimilarColours(params); showFab = false; }
   else if (route === "profile") { html = viewProfile(params); showFab = false; }
   else if (route === "settings") { html = viewSettings(); showFab = false; }
+  else if (route === "notifications") { html = viewNotifications(); showFab = false; }
   else if (route === "change-password") {
     if (!isSignedIn()) { navigate("settings"); return; }
     html = viewChangePassword();
@@ -3723,6 +3789,7 @@ function render() {
 
   document.getElementById("fab").classList.toggle("hidden", !showFab);
   updateSyncPill();
+  updateNotifBadge();
 
   bindAuthInputs(root);
 
@@ -3759,6 +3826,18 @@ function updateSyncPill() {
   if (label) {
     pill.innerHTML = (isLive ? '<span class="sync-pill__dot"></span>' : "") + escapeHtml(label);
   }
+}
+
+// Same "static shell element, updated by id" pattern as updateSyncPill —
+// the topbar bell is built once at boot (see buildShell), not re-rendered
+// per route. Reload-on-demand, not polling: this only reflects whatever
+// loadBook last fetched, matching every other cache in this app.
+function updateNotifBadge() {
+  const badge = document.getElementById("notif-badge");
+  if (!badge) return;
+  const count = getNotifications().filter((n) => !n.read).length;
+  badge.classList.toggle("hidden", count === 0);
+  badge.textContent = count > 9 ? "9+" : String(count);
 }
 
 // ---------------------------------------------------------------
@@ -4300,6 +4379,34 @@ document.addEventListener("click", async (e) => {
 
   const libSort = t("[data-action='lib-sort']");
   if (libSort) { state.paintLibSort = libSort.dataset.sort; render(); return; }
+
+  const openNotif = t("[data-action='open-notification']");
+  if (openNotif) {
+    const notifications = getNotifications();
+    const n = notifications.find((x) => x.id === openNotif.dataset.id);
+    if (n && !n.read) {
+      n.read = true;
+      save(KEYS.notifications, notifications);
+      updateNotifBadge();
+      markNotificationReadRemote(n.id); // fire-and-forget, like every other write in this app
+    }
+    if (openNotif.dataset.recipeId) {
+      navigate("recipe", { id: openNotif.dataset.recipeId, authorId: openNotif.dataset.recipeOwner !== currentUserId() ? openNotif.dataset.recipeOwner : undefined });
+    } else if (openNotif.dataset.paintName) {
+      navigate("similar", { name: openNotif.dataset.paintName, brand: openNotif.dataset.paintBrand });
+    } else {
+      render();
+    }
+    return;
+  }
+
+  const markAllRead = t("[data-action='mark-all-read']");
+  if (markAllRead) {
+    save(KEYS.notifications, getNotifications().map((n) => ({ ...n, read: true })));
+    render();
+    markAllNotificationsReadRemote(); // fire-and-forget
+    return;
+  }
 
   const rateBtn = t("[data-action='rate-paint']");
   if (rateBtn) {

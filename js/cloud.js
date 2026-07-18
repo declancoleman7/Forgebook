@@ -197,6 +197,7 @@ function clearLiveState() {
   save(KEYS.myRatings, []);
   save(KEYS.ratingSummary, []);
   save(KEYS.activityFeed, {});
+  save(KEYS.notifications, []);
   save(KEYS.globalArt, {});
   localStorage.removeItem(SYNC_KEYS.lastSync);
 }
@@ -425,6 +426,58 @@ async function fetchActivityFeed() {
   }
 
   return { comments, ratings, notes };
+}
+
+function fromRemoteNotification(row) {
+  return {
+    id: row.id,
+    actorId: row.actor_id,
+    type: row.type,
+    recipeOwnerId: row.recipe_owner_id,
+    recipeId: row.recipe_id,
+    commentId: row.comment_id,
+    paintNoteId: row.paint_note_id,
+    paintKey: row.paint_key,
+    read: !!row.read,
+    createdAt: row.created_at,
+  };
+}
+
+// Rows here are only ever created by the DB triggers in schema.sql (see
+// notify_on_recipe_comment/notify_on_paint_note/notify_on_paint_rating) --
+// there's no toRemoteNotification/push counterpart, just this read and the
+// two read-flag writes below.
+async function fetchNotifications() {
+  const { data, error } = await sb.from("notifications").select("*").order("created_at", { ascending: false }).limit(50);
+  if (error) throw error;
+  const notifications = (data || []).map(fromRemoteNotification);
+
+  // An actor's name isn't denormalized onto the row, so anyone who hasn't
+  // already surfaced via fetchSharedRecipes/fetchActivityFeed (e.g. they only
+  // ever mentioned you, never published or rated anything you'd have seen)
+  // needs their profile fetched here too.
+  const knownIds = new Set(readJSON(KEYS.profiles, []).map((p) => p.userId));
+  const missingIds = [...new Set(notifications.map((n) => n.actorId).filter(Boolean))].filter((id) => !knownIds.has(id));
+  if (missingIds.length) {
+    const { data: profRows } = await sb.from("profiles").select("user_id, display_name, avatar_path").in("user_id", missingIds);
+    const profiles = readJSON(KEYS.profiles, []);
+    (profRows || []).forEach((row) => profiles.push({ userId: row.user_id, displayName: row.display_name, avatarUrl: row.avatar_path ? avatarUrl(row.avatar_path) : null }));
+    save(KEYS.profiles, profiles);
+  }
+
+  return notifications;
+}
+
+async function markNotificationReadRemote(id) {
+  if (!sb || !isSignedIn()) return { ok: false };
+  const { error } = await sb.from("notifications").update({ read: true }).eq("id", id).eq("recipient_id", session.user.id);
+  return { ok: !error };
+}
+
+async function markAllNotificationsReadRemote() {
+  if (!sb || !isSignedIn()) return { ok: false };
+  const { error } = await sb.from("notifications").update({ read: true }).eq("recipient_id", session.user.id).eq("read", false);
+  return { ok: !error };
 }
 
 // The public share page's one query — deliberately separate from
@@ -672,6 +725,14 @@ async function loadBook() {
   // above so its profile cache is already warm for most feed authors.
   try {
     save(KEYS.activityFeed, await fetchActivityFeed());
+  } catch (e) {
+    // swallowed on purpose
+  }
+
+  // Same isolation again — a stale/empty notification list just means the
+  // bell badge under-counts until the next successful sync, not a broken load.
+  try {
+    save(KEYS.notifications, await fetchNotifications());
   } catch (e) {
     // swallowed on purpose
   }

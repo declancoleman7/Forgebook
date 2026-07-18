@@ -2162,6 +2162,10 @@ const KEYS = {
   // Raw material for the Home activity feed -- see fetchActivityFeed in
   // cloud.js and buildFeedItems in app.js.
   activityFeed: "forgebook.activityFeed",
+  // Comment/rating/mention notifications -- see fetchNotifications in
+  // cloud.js. Rows are never written by the client (see schema.sql), so
+  // there's nothing here to push back up, only read flags to sync.
+  notifications: "forgebook.notifications",
 };
 
 function readJSON(key, fallback) {

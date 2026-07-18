@@ -3440,6 +3440,19 @@ main {
   background: var(--bg-raised);
 }
 
+/* An unread notification row -- a brighter border rather than a filled
+   background, so it stands out without fighting the gold accent already
+   used elsewhere on the row (avatar fallback, timestamps). */
+.comment-row.is-unread { border-color: var(--gold); }
+.notif-dot {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--gold-bright);
+  flex-shrink: 0;
+}
+
 .colour-match-row {
   display: flex;
   align-items: center;
