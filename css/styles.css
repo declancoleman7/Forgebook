@@ -3415,6 +3415,31 @@ main {
   border-color: var(--line);
 }
 
+/* Avatars — an <img> (background-image, so a broken/slow-loading photo
+   never shows a broken-image glyph) when a profile has one, otherwise a
+   tinted initial-letter circle. Sized per call site via an inline
+   width/height, so one class covers a 16px inline badge through a 64px
+   profile-header portrait. */
+.avatar {
+  display: inline-block;
+  border-radius: 50%;
+  background-color: var(--bg-raised);
+  background-size: cover;
+  background-position: center;
+  border: 1px solid var(--line);
+  flex-shrink: 0;
+  vertical-align: middle;
+}
+.avatar--fallback {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-display);
+  font-weight: 600;
+  color: var(--gold-bright);
+  background: var(--bg-raised);
+}
+
 .colour-match-row {
   display: flex;
   align-items: center;

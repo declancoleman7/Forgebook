@@ -318,7 +318,7 @@ async function ensureProfile() {
     // own name immediately rather than waiting on the next full sync.
     const profiles = readJSON(KEYS.profiles, []);
     const idx = profiles.findIndex((p) => p.userId === userId);
-    const row = { userId, displayName: data.display_name, isAdmin: !!data.is_admin };
+    const row = { userId, displayName: data.display_name, isAdmin: !!data.is_admin, avatarUrl: data.avatar_path ? avatarUrl(data.avatar_path) : null };
     if (idx === -1) profiles.push(row); else profiles[idx] = row;
     save(KEYS.profiles, profiles);
     if (typeof render === "function") render();
@@ -343,10 +343,13 @@ async function updateDisplayName(name) {
     .update({ display_name: trimmed, updated_at: nowIso() })
     .eq("user_id", session.user.id);
   if (error) return { ok: false, message: "Couldn't save that — try again." };
+  // Merge, don't replace -- this profile's cached row may already carry
+  // isAdmin/avatarUrl from ensureProfile, and a plain object replace here
+  // would silently wipe both back to undefined.
   const profiles = readJSON(KEYS.profiles, []);
   const idx = profiles.findIndex((p) => p.userId === session.user.id);
-  const row = { userId: session.user.id, displayName: trimmed };
-  if (idx === -1) profiles.push(row); else profiles[idx] = row;
+  if (idx === -1) profiles.push({ userId: session.user.id, displayName: trimmed });
+  else profiles[idx] = { ...profiles[idx], displayName: trimmed };
   save(KEYS.profiles, profiles);
   return { ok: true };
 }
@@ -380,7 +383,7 @@ async function fetchSharedRecipes(userId) {
 
     (profRes.data || []).forEach((row) => {
       const found = profiles.find((p) => p.userId === row.user_id);
-      const mapped = { userId: row.user_id, displayName: row.display_name };
+      const mapped = { userId: row.user_id, displayName: row.display_name, avatarUrl: row.avatar_path ? avatarUrl(row.avatar_path) : null };
       if (found) Object.assign(found, mapped); else profiles.push(mapped);
     });
   }
@@ -415,9 +418,9 @@ async function fetchActivityFeed() {
   const knownIds = new Set(readJSON(KEYS.profiles, []).map((p) => p.userId));
   const missingIds = [...new Set([...comments.map((c) => c.userId), ...ratings.map((r) => r.userId), ...notes.map((n) => n.userId)])].filter((id) => !knownIds.has(id));
   if (missingIds.length) {
-    const { data } = await sb.from("profiles").select("user_id, display_name").in("user_id", missingIds);
+    const { data } = await sb.from("profiles").select("user_id, display_name, avatar_path").in("user_id", missingIds);
     const profiles = readJSON(KEYS.profiles, []);
-    (data || []).forEach((row) => profiles.push({ userId: row.user_id, displayName: row.display_name }));
+    (data || []).forEach((row) => profiles.push({ userId: row.user_id, displayName: row.display_name, avatarUrl: row.avatar_path ? avatarUrl(row.avatar_path) : null }));
     save(KEYS.profiles, profiles);
   }
 
@@ -446,12 +449,13 @@ async function fetchPublicRecipe(authorId, id) {
 
   const [pRes, profRes] = await Promise.all([
     sb.from("paints").select("*").eq("user_id", authorId),
-    sb.from("profiles").select("display_name").eq("user_id", authorId).maybeSingle(),
+    sb.from("profiles").select("display_name, avatar_path").eq("user_id", authorId).maybeSingle(),
   ]);
   const paints = (pRes.data || []).map(fromRemoteSharedPaint);
   const authorDisplayName = (profRes.data && profRes.data.display_name) || "Someone";
+  const authorAvatarUrl = profRes.data && profRes.data.avatar_path ? avatarUrl(profRes.data.avatar_path) : null;
 
-  return { recipe, paints, authorName: authorDisplayName };
+  return { recipe, paints, authorName: authorDisplayName, authorAvatarUrl };
 }
 
 // Reuses the exact same "read all profiles" RLS bar the app already relies
@@ -461,9 +465,9 @@ async function fetchPublicRecipe(authorId, id) {
 async function searchProfiles(query) {
   const q = String(query || "").trim();
   if (!sb || !q) return [];
-  const { data, error } = await sb.from("profiles").select("user_id,display_name").ilike("display_name", `%${q}%`).limit(20);
+  const { data, error } = await sb.from("profiles").select("user_id,display_name,avatar_path").ilike("display_name", `%${q}%`).limit(20);
   if (error) return [];
-  return (data || []).map((row) => ({ userId: row.user_id, displayName: row.display_name }));
+  return (data || []).map((row) => ({ userId: row.user_id, displayName: row.display_name, avatarUrl: row.avatar_path ? avatarUrl(row.avatar_path) : null }));
 }
 
 // A signed-in user's own profile page — recipes, notes, ratings, batched
@@ -480,6 +484,7 @@ async function fetchProfile(userId) {
   return {
     userId,
     displayName: profRes.data.display_name,
+    avatarUrl: profRes.data.avatar_path ? avatarUrl(profRes.data.avatar_path) : null,
     recipes: (recipesRes.data || []).map(fromRemoteRecipe),
     notes: (notesRes.data || []).map(fromRemotePaintNote),
     ratings: (ratingsRes.data || []).map(fromRemoteRating),
@@ -493,15 +498,26 @@ async function fetchProfile(userId) {
 async function fetchPublicProfile(userId) {
   if (!sb) return null;
   const [profRes, recipesRes] = await Promise.all([
-    sb.from("profiles").select("display_name").eq("user_id", userId).maybeSingle(),
+    sb.from("profiles").select("display_name, avatar_path").eq("user_id", userId).maybeSingle(),
     sb.from("recipes").select("*").eq("user_id", userId).eq("published", true).eq("deleted", false),
   ]);
   if (!profRes.data) return null;
-  return { userId, displayName: profRes.data.display_name, recipes: (recipesRes.data || []).map(fromRemoteRecipe) };
+  return {
+    userId,
+    displayName: profRes.data.display_name,
+    avatarUrl: profRes.data.avatar_path ? avatarUrl(profRes.data.avatar_path) : null,
+    recipes: (recipesRes.data || []).map(fromRemoteRecipe),
+  };
 }
 
 function photoUrl(path) {
   return `${CONFIG.supabaseUrl}/storage/v1/object/public/${CONFIG.photoBucket}/${path}`;
+}
+
+// A separate, fixed bucket (not CONFIG.photoBucket) so an avatar path can
+// never collide with or be confused for a recipe photo path — see schema.sql.
+function avatarUrl(path) {
+  return `${CONFIG.supabaseUrl}/storage/v1/object/public/avatar-photos/${path}`;
 }
 
 function factionEmblemUrl(path) {
@@ -571,6 +587,21 @@ async function uploadRecipePhoto(dataUrl, userId, recipeId) {
     .from(CONFIG.photoBucket)
     .upload(path, blob, { contentType: "image/jpeg", upsert: true });
   if (error) throw error;
+  return path;
+}
+
+// Uploads to storage, then points profiles.avatar_path at the new file —
+// the old file (if any) is just left orphaned in the bucket rather than
+// deleted, same tradeoff uploadRecipePhoto already makes for photo swaps.
+async function uploadAvatar(dataUrl, userId) {
+  const blob = await (await fetch(dataUrl)).blob();
+  const path = `${userId}/avatar-${Math.random().toString(36).slice(2, 10)}.jpg`;
+  const { error: upErr } = await sb.storage
+    .from("avatar-photos")
+    .upload(path, blob, { contentType: "image/jpeg", upsert: true });
+  if (upErr) throw upErr;
+  const { error: dbErr } = await sb.from("profiles").update({ avatar_path: path, updated_at: nowIso() }).eq("user_id", userId);
+  if (dbErr) throw dbErr;
   return path;
 }
 

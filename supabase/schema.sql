@@ -292,7 +292,7 @@ create policy "manage own profile" on public.profiles
 -- themselves up as admin through the app: is_admin can only ever be flipped
 -- by re-running the bootstrap block below directly in the SQL editor.
 revoke update on public.profiles from authenticated;
-grant update (display_name, updated_at) on public.profiles to authenticated;
+grant update (display_name, avatar_path, updated_at) on public.profiles to authenticated;
 
 -- Faction emblems: readable by anyone signed in, writable only by an admin.
 alter table public.faction_emblems enable row level security;

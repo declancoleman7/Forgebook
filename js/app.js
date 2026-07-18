@@ -113,6 +113,22 @@ function authorName(userId) {
   return (p && p.displayName) || "Someone";
 }
 
+// A small circular avatar wherever a name renders — an <img> when a profile
+// has uploaded one, otherwise a tinted initial-letter circle, so nobody ever
+// shows as a broken image. Takes the name/url directly (not a userId) so it
+// works equally for a cached profile lookup and a one-off fetched object
+// (search results, a public share page) that isn't in getProfiles() yet.
+function avatarGlyphHtml(displayName, url, size = 24) {
+  if (url) return `<span class="avatar" style="width:${size}px; height:${size}px; background-image:url('${escapeHtml(url)}')"></span>`;
+  const letter = escapeHtml(((displayName || "?").trim()[0] || "?").toUpperCase());
+  return `<span class="avatar avatar--fallback" style="width:${size}px; height:${size}px; font-size:${Math.round(size * 0.5)}px">${letter}</span>`;
+}
+
+function avatarHtml(userId, size = 24) {
+  const p = getProfiles().find((x) => x.userId === userId);
+  return avatarGlyphHtml((p && p.displayName) || "Someone", p && p.avatarUrl, size);
+}
+
 // Short relative timestamp for comments/notes ("2h ago", "3d ago") — falls
 // back to a plain date once it's old enough that "N days ago" stops being
 // more useful than just the date.
@@ -648,6 +664,32 @@ function downscaleImage(file, maxDim, cb) {
   reader.readAsDataURL(file);
 }
 
+// Sibling to downscaleImage, for avatars: center-crops to a square (the
+// larger of the two source dimensions is cropped away, not squeezed) before
+// downscaling, so an off-center or non-square source photo doesn't distort
+// into an oval.
+function downscaleImageSquare(file, size, cb) {
+  const reader = new FileReader();
+  reader.onload = () => {
+    const img = new Image();
+    img.onload = () => {
+      const side = Math.min(img.width, img.height);
+      const sx = (img.width - side) / 2;
+      const sy = (img.height - side) / 2;
+      const canvas = document.createElement("canvas");
+      canvas.width = size;
+      canvas.height = size;
+      const ctx = canvas.getContext("2d");
+      ctx.drawImage(img, sx, sy, side, side, 0, 0, size, size);
+      cb(canvas.toDataURL("image/jpeg", 0.85));
+    };
+    img.onerror = () => cb(null);
+    img.src = reader.result;
+  };
+  reader.onerror = () => cb(null);
+  reader.readAsDataURL(file);
+}
+
 // ---------------------------------------------------------------
 // Router
 // ---------------------------------------------------------------
@@ -877,7 +919,7 @@ function feedItemHtml(item) {
           <span class="comment-row__author">${icon("book", 12)} New recipe</span>
           <span class="comment-row__time">${relativeTime(item.at)}</span>
         </div>
-        <div class="comment-row__body">${escapeHtml(authorName(item.authorId))} published "${escapeHtml(r.name)}"</div>
+        <div class="comment-row__body">${avatarHtml(item.authorId, 16)} ${escapeHtml(authorName(item.authorId))} published "${escapeHtml(r.name)}"</div>
       </div>
     `;
   }
@@ -902,7 +944,7 @@ function feedItemHtml(item) {
           ${starRowHtml(item.stars, { size: 12 })}
           <span class="comment-row__time">${relativeTime(item.at)}</span>
         </div>
-        <div class="comment-row__body">${escapeHtml(authorName(item.raterId))} rated ${escapeHtml(p.name)} <span style="opacity:0.7">(${escapeHtml(p.brand)})</span></div>
+        <div class="comment-row__body">${avatarHtml(item.raterId, 16)} ${escapeHtml(authorName(item.raterId))} rated ${escapeHtml(p.name)} <span style="opacity:0.7">(${escapeHtml(p.brand)})</span></div>
       </div>
     `;
   }
@@ -914,7 +956,7 @@ function feedItemHtml(item) {
         <span class="comment-row__author">Note</span>
         <span class="comment-row__time">${relativeTime(item.at)}</span>
       </div>
-      <div class="comment-row__body">${escapeHtml(authorName(item.authorId))} on ${escapeHtml(p.name)}: "${escapeHtml(item.body)}"</div>
+      <div class="comment-row__body">${avatarHtml(item.authorId, 16)} ${escapeHtml(authorName(item.authorId))} on ${escapeHtml(p.name)}: "${escapeHtml(item.body)}"</div>
     </div>
   `;
 }
@@ -953,7 +995,7 @@ function recipeCardHtml(r) {
           ${difficultyDots(r.difficulty || 1)}
           <span class="recipe-card__steps">${(r.steps || []).length} steps</span>
         </div>
-        ${r.authorId ? `<div class="recipe-card__author" data-nav="profile" data-id="${escapeHtml(r.authorId)}">${icon("book", 11)} ${escapeHtml(authorName(r.authorId))}</div>` : ""}
+        ${r.authorId ? `<div class="recipe-card__author" data-nav="profile" data-id="${escapeHtml(r.authorId)}">${avatarHtml(r.authorId, 14)} ${escapeHtml(authorName(r.authorId))}</div>` : ""}
         ${r.published === false ? `<span class="pill-status pill-status--draft">Draft</span>` : ""}
       </div>
     </div>
@@ -1312,7 +1354,7 @@ function viewRecipeDetail(id, authorId) {
         <span data-open-unit="${r.unit ? escapeHtml(r.unit) : "_general"}" data-faction="${f.id}">${escapeHtml(r.unit || "General")}</span>
       </div>
       <div class="detail-title">${escapeHtml(r.name)}</div>
-      ${isShared ? `<div class="shared-badge">${icon("book", 12)} Shared by <span data-nav="profile" data-id="${escapeHtml(r.authorId)}" style="cursor:pointer; text-decoration:underline">${escapeHtml(authorName(r.authorId))}</span></div>` : ""}
+      ${isShared ? `<div class="shared-badge">${avatarHtml(r.authorId, 16)} Shared by <span data-nav="profile" data-id="${escapeHtml(r.authorId)}" style="cursor:pointer; text-decoration:underline">${escapeHtml(authorName(r.authorId))}</span></div>` : ""}
       <div class="metastrip">
         <div class="metastrip__cell">
           <div class="metastrip__n">${difficultyDots(r.difficulty || 1)}</div>
@@ -1473,7 +1515,7 @@ async function renderPublicRecipe(params) {
     return;
   }
 
-  const { recipe: r, paints, authorName: author } = result;
+  const { recipe: r, paints, authorName: author, authorAvatarUrl } = result;
   const f = faction(r.faction);
   const steps = r.steps || [];
 
@@ -1516,7 +1558,7 @@ async function renderPublicRecipe(params) {
       <span>${escapeHtml(r.unit || "General")}</span>
     </div>
     <div class="detail-title">${escapeHtml(r.name)}</div>
-    <div class="shared-badge">${icon("book", 12)} Shared by <a href="#/u/${encodeURIComponent(params.authorId)}" style="color:inherit">${escapeHtml(author)}</a></div>
+    <div class="shared-badge">${avatarGlyphHtml(author, authorAvatarUrl, 16)} Shared by <a href="#/u/${encodeURIComponent(params.authorId)}" style="color:inherit">${escapeHtml(author)}</a></div>
 
     <div class="metastrip">
       <div class="metastrip__cell">
@@ -2048,7 +2090,7 @@ function commentRowHtml(c, myId, readOnly = false) {
   return `
     <div class="comment-row ${pending ? "is-pending" : ""}">
       <div class="comment-row__meta">
-        <span class="comment-row__author" data-nav="profile" data-id="${escapeHtml(c.userId)}">${escapeHtml(authorName(c.userId))}</span>
+        <span class="comment-row__author" data-nav="profile" data-id="${escapeHtml(c.userId)}">${avatarHtml(c.userId, 16)} ${escapeHtml(authorName(c.userId))}</span>
         <span class="comment-row__time">${relativeTime(c.createdAt)}${c.edited ? " · edited" : ""}</span>
         ${pending ? `<span class="pill-status">${c.status === "hidden" ? "Hidden — reported" : "Hidden — pending review"}</span>` : ""}
       </div>
@@ -2093,7 +2135,10 @@ function paintFromKey(key) {
 function profileSearchResultRowHtml(p) {
   return `
     <div class="settings-row" data-nav="profile" data-id="${escapeHtml(p.userId)}" style="cursor:pointer">
-      <div class="settings-row__label">${escapeHtml(p.displayName)}</div>
+      <div style="display:flex; align-items:center; gap:10px">
+        ${avatarGlyphHtml(p.displayName, p.avatarUrl, 28)}
+        <div class="settings-row__label">${escapeHtml(p.displayName)}</div>
+      </div>
     </div>
   `;
 }
@@ -2172,8 +2217,13 @@ function viewProfile(params) {
         : p === null
         ? emptyStateHtml("search", "Painter not found", "This profile doesn't exist, or has no published work yet.")
         : `
-          <div class="detail-title">${escapeHtml(p.displayName)}</div>
-          <div class="detail-sub">${recipes.length} recipe${recipes.length === 1 ? "" : "s"}${isMe ? "" : " shared"}</div>
+          <div style="display:flex; align-items:center; gap:12px">
+            ${avatarGlyphHtml(p.displayName, p.avatarUrl, 56)}
+            <div>
+              <div class="detail-title">${escapeHtml(p.displayName)}</div>
+              <div class="detail-sub">${recipes.length} recipe${recipes.length === 1 ? "" : "s"}${isMe ? "" : " shared"}</div>
+            </div>
+          </div>
 
           ${isMe ? personalWorkspaceHtml(recipes) : ""}
 
@@ -2282,8 +2332,13 @@ async function renderPublicProfile(id) {
       <span>${icon("book", 15)} Made with Forgebook</span>
       <a href="./">Get the app</a>
     </div>
-    <div class="detail-title">${escapeHtml(result.displayName)}</div>
-    <div class="detail-sub">${recipes.length} recipe${recipes.length === 1 ? "" : "s"} shared</div>
+    <div style="display:flex; align-items:center; gap:12px">
+      ${avatarGlyphHtml(result.displayName, result.avatarUrl, 56)}
+      <div>
+        <div class="detail-title">${escapeHtml(result.displayName)}</div>
+        <div class="detail-sub">${recipes.length} recipe${recipes.length === 1 ? "" : "s"} shared</div>
+      </div>
+    </div>
 
     <div class="section-label">Published Recipes</div>
     ${recipes.length
@@ -2341,7 +2396,7 @@ function communityNoteRowHtml(n, myId) {
   return `
     <div class="comment-row ${pending ? "is-pending" : ""}">
       <div class="comment-row__meta">
-        <span class="comment-row__author" data-nav="profile" data-id="${escapeHtml(n.userId)}">${escapeHtml(authorName(n.userId))}</span>
+        <span class="comment-row__author" data-nav="profile" data-id="${escapeHtml(n.userId)}">${avatarHtml(n.userId, 16)} ${escapeHtml(authorName(n.userId))}</span>
         <span class="comment-row__time">${relativeTime(n.createdAt)}</span>
         ${pending ? `<span class="pill-status">${n.status === "hidden" ? "Hidden — reported" : "Hidden — pending review"}</span>` : ""}
       </div>
@@ -3410,6 +3465,17 @@ function viewSettings() {
           </div>
         </div>
         <div class="settings-row">
+          <div style="display:flex; align-items:center; gap:12px">
+            ${avatarHtml(currentUserId(), 44)}
+            <div>
+              <div class="settings-row__label">Profile picture</div>
+              <div class="settings-row__desc">Shown next to your name in comments and search.</div>
+            </div>
+          </div>
+          <button class="btn btn-ghost btn-sm" data-action="avatar-pick">Change</button>
+          <input type="file" id="avatar-input" accept="image/*" class="hidden" />
+        </div>
+        <div class="settings-row">
           <div>
             <div class="settings-row__label">Change password</div>
             <div class="settings-row__desc">Update the password you sign in with.</div>
@@ -3809,7 +3875,9 @@ document.addEventListener("click", async (e) => {
     const input = document.getElementById("display-name-input");
     const res = await updateDisplayName(input ? input.value : "");
     showToast(res.ok ? "Display name saved" : res.message || "Couldn't save that");
-    if (res.ok) render();
+    // Your own Profile page is served from profileCache, not getProfiles(),
+    // so it won't pick up the change until that stale entry is dropped.
+    if (res.ok) { delete profileCache[currentUserId()]; render(); }
     return;
   }
 
@@ -3982,6 +4050,9 @@ document.addEventListener("click", async (e) => {
 
   const photoPick = t("[data-action='photo-pick']");
   if (photoPick) { document.getElementById("photo-input").click(); return; }
+
+  const avatarPick = t("[data-action='avatar-pick']");
+  if (avatarPick) { document.getElementById("avatar-input").click(); return; }
 
   const photoRemove = t("[data-action='photo-remove']");
   if (photoRemove) { recipeForm.photo = null; render(); return; }
@@ -4496,6 +4567,31 @@ document.addEventListener("change", (e) => {
       if (!url) { showToast("That image could not be read"); return; }
       recipeForm.photo = url;
       render();
+    });
+    return;
+  }
+
+  if (e.target.id === "avatar-input") {
+    const file = e.target.files[0];
+    if (!file) return;
+    downscaleImageSquare(file, 240, async (url) => {
+      if (!url) { showToast("That image could not be read"); return; }
+      showToast("Uploading…");
+      try {
+        const path = await uploadAvatar(url, currentUserId());
+        const profiles = getProfiles();
+        const idx = profiles.findIndex((p) => p.userId === currentUserId());
+        const row = { userId: currentUserId(), displayName: authorName(currentUserId()), avatarUrl: avatarUrl(path) };
+        if (idx === -1) profiles.push(row); else profiles[idx] = { ...profiles[idx], avatarUrl: row.avatarUrl };
+        save(KEYS.profiles, profiles);
+        // Same staleness issue as save-display-name -- your own Profile page
+        // reads profileCache, not getProfiles(), so it needs dropping too.
+        delete profileCache[currentUserId()];
+        showToast("Profile picture updated");
+        render();
+      } catch (err) {
+        showToast("Couldn't upload that — try again");
+      }
     });
     return;
   }
