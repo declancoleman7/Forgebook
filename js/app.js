@@ -2217,6 +2217,100 @@ function resetPaintNotesCache() {
 }
 
 // ---------------------------------------------------------------
+// @mention autocomplete — shared by both the recipe comment composer and
+// the paint note composer (both feed the same mentioned_profile_ids/
+// notify_on_* mention pipeline in schema.sql, so both get the same
+// picker). Uses searchProfiles() (a live query), not the local getProfiles()
+// cache -- anyone site-wide can be mentioned, not just people already seen
+// via this session's shared recipes/notes/ratings.
+// ---------------------------------------------------------------
+let mentionAutocomplete = { composerId: null, query: "", results: [], triggerStart: null };
+let mentionAutocompleteDebounce = null;
+
+// Finds an "@" that starts right where the cursor is typing (preceded by
+// start-of-text or whitespace, so "name@example.com" doesn't trigger this),
+// returning where it starts and what's been typed after it so far.
+function detectMentionTrigger(text, cursorPos) {
+  const upToCursor = text.slice(0, cursorPos);
+  const match = upToCursor.match(/(?:^|\s)@([^\s@]*)$/);
+  if (!match) return null;
+  return { start: cursorPos - match[1].length - 1, query: match[1] };
+}
+
+function updateMentionAutocomplete(composerId, el) {
+  const trigger = detectMentionTrigger(el.value, el.selectionStart);
+  if (!trigger) {
+    mentionAutocomplete = { composerId: null, query: "", results: [], triggerStart: null };
+    return;
+  }
+  mentionAutocomplete.composerId = composerId;
+  mentionAutocomplete.triggerStart = trigger.start;
+  mentionAutocomplete.query = trigger.query;
+  clearTimeout(mentionAutocompleteDebounce);
+  if (!trigger.query) { mentionAutocomplete.results = []; return; }
+  // Same 250ms-debounce-then-check-staleness shape as #profile-search-input
+  // and the global search Accounts tab.
+  mentionAutocompleteDebounce = setTimeout(() => {
+    searchProfiles(trigger.query).then((results) => {
+      if (mentionAutocomplete.composerId !== composerId || mentionAutocomplete.query !== trigger.query) return;
+      mentionAutocomplete.results = results;
+      render();
+    });
+  }, 250);
+}
+
+function mentionDropdownHtml(composerId) {
+  if (mentionAutocomplete.composerId !== composerId || !mentionAutocomplete.query || !mentionAutocomplete.results.length) return "";
+  return `
+    <div class="mention-dropdown">
+      ${mentionAutocomplete.results.map((p) => `
+        <div class="mention-dropdown__item" data-action="pick-mention" data-name="${escapeHtml(p.displayName)}">
+          ${avatarGlyphHtml(p.displayName, p.avatarUrl, 22)}
+          <span>${escapeHtml(p.displayName)}</span>
+        </div>
+      `).join("")}
+    </div>
+  `;
+}
+
+// Longest-display-name-first, boundary-checked match -- mirrors
+// mentioned_profile_ids()'s own algorithm in schema.sql so a rendered
+// mention is highlighted exactly when the server would have actually
+// notified that person, not just wherever "@" happens to appear. Only
+// matches names already in the local profiles cache (getProfiles()) --
+// someone never seen via this session's shared recipes/notes/ratings/search
+// simply won't be highlighted, a graceful miss rather than a wrong render.
+function highlightMentions(text) {
+  const names = [...new Set(getProfiles().map((p) => p.displayName).filter(Boolean))].sort((a, b) => b.length - a.length);
+  if (!names.length) return escapeHtml(text);
+  let out = "";
+  let plainStart = 0;
+  let i = 0;
+  while (i < text.length) {
+    if (text[i] === "@") {
+      let matched = null;
+      for (const name of names) {
+        const candidate = text.slice(i + 1, i + 1 + name.length);
+        if (candidate.toLowerCase() === name.toLowerCase()) {
+          const boundary = text[i + 1 + name.length];
+          if (!boundary || !/[a-zA-Z0-9_]/.test(boundary)) { matched = name; break; }
+        }
+      }
+      if (matched) {
+        out += escapeHtml(text.slice(plainStart, i));
+        out += `<span class="mention">@${escapeHtml(matched)}</span>`;
+        i += 1 + matched.length;
+        plainStart = i;
+        continue;
+      }
+    }
+    i++;
+  }
+  out += escapeHtml(text.slice(plainStart));
+  return out;
+}
+
+// ---------------------------------------------------------------
 // Recipe comments — flat, chronological (newest first), fetched on demand
 // per recipe exactly like Community Notes above (same reasoning: no bulk
 // "every comment on everything" cache makes sense here either). Cache key
@@ -2263,7 +2357,10 @@ function commentListHtml(ownerId, recipeId, readOnly = false) {
     <div class="section-label">Comments${comments ? ` (${comments.length})` : ""}</div>
     ${canWrite ? `
       <div class="note-composer">
-        <textarea id="comment-input" maxlength="500" placeholder="Ask a question or share a tip...">${escapeHtml(commentForm.body)}</textarea>
+        <div style="position:relative">
+          <textarea id="comment-input" maxlength="500" placeholder="Ask a question or share a tip... (@ to mention someone)">${escapeHtml(commentForm.body)}</textarea>
+          ${mentionDropdownHtml("comment-input")}
+        </div>
         <div class="note-composer__footer">
           <span class="char-count">${commentForm.body.length}/500</span>
           <button class="btn btn-primary btn-sm" data-action="submit-comment" data-owner-id="${escapeHtml(ownerId)}" data-recipe-id="${escapeHtml(recipeId)}">${commentForm.editingId ? "Save edit" : "Post comment"}</button>
@@ -2294,7 +2391,7 @@ function commentRowHtml(c, myId, readOnly = false) {
         <span class="comment-row__time">${relativeTime(c.createdAt)}${c.edited ? " · edited" : ""}</span>
         ${pending ? `<span class="pill-status">${c.status === "hidden" ? "Hidden — reported" : "Hidden — pending review"}</span>` : ""}
       </div>
-      <div class="comment-row__body">${escapeHtml(c.body)}</div>
+      <div class="comment-row__body">${highlightMentions(c.body)}</div>
       ${links.length ? `<div class="comment-row__linkrow">${links.join("")}</div>` : ""}
       ${!readOnly && !isMine && isSignedIn() ? `<button class="comment-row__report" data-action="report" data-kind="comment" data-id="${escapeHtml(c.id)}" title="Report">${icon("flag", 13)}</button>` : ""}
     </div>
@@ -2651,7 +2748,10 @@ function communityNotesHtml(sourceName, sourceBrand) {
     </div>
     ${isSignedIn() ? `
       <div class="note-composer">
-        <textarea id="note-input" maxlength="500" placeholder="e.g. &quot;Similar to the old Citadel Goblin Green&quot;">${escapeHtml(communityNoteForm.body)}</textarea>
+        <div style="position:relative">
+          <textarea id="note-input" maxlength="500" placeholder="e.g. &quot;Similar to the old Citadel Goblin Green&quot; (@ to mention someone)">${escapeHtml(communityNoteForm.body)}</textarea>
+          ${mentionDropdownHtml("note-input")}
+        </div>
         <div class="note-composer__footer">
           <span class="char-count">${communityNoteForm.body.length}/500</span>
           <button class="btn btn-primary btn-sm" data-action="submit-note">Post note</button>
@@ -2676,7 +2776,7 @@ function communityNoteRowHtml(n, myId) {
         <span class="comment-row__time">${relativeTime(n.createdAt)}</span>
         ${pending ? `<span class="pill-status">${n.status === "hidden" ? "Hidden — reported" : "Hidden — pending review"}</span>` : ""}
       </div>
-      <div class="comment-row__body">${escapeHtml(n.body)}</div>
+      <div class="comment-row__body">${highlightMentions(n.body)}</div>
       ${!isMine ? `<button class="comment-row__report" data-action="report" data-kind="note" data-id="${escapeHtml(n.id)}" title="Report">${icon("flag", 13)}</button>` : ""}
     </div>
   `;
@@ -4971,6 +5071,20 @@ document.addEventListener("click", async (e) => {
     return;
   }
 
+  const pickMention = t("[data-action='pick-mention']");
+  if (pickMention) {
+    const name = pickMention.dataset.name;
+    const composerId = mentionAutocomplete.composerId;
+    const start = mentionAutocomplete.triggerStart;
+    const end = start + 1 + mentionAutocomplete.query.length; // "@" + what's been typed so far
+    const form = composerId === "comment-input" ? commentForm : communityNoteForm;
+    form.body = form.body.slice(0, start) + "@" + name + " " + form.body.slice(end);
+    mentionAutocomplete = { composerId: null, query: "", results: [], triggerStart: null };
+    render();
+    document.getElementById(composerId)?.focus();
+    return;
+  }
+
   const editComment = t("[data-action='edit-comment']");
   if (editComment) {
     commentForm = { body: editComment.dataset.body, editingId: editComment.dataset.id };
@@ -5316,11 +5430,13 @@ document.addEventListener("input", (e) => {
   if (e.target.id === "search-input") { runGlobalSearch(e.target.value); return; }
   if (e.target.id === "note-input") {
     communityNoteForm.body = e.target.value;
+    updateMentionAutocomplete("note-input", e.target);
     render();
     return;
   }
   if (e.target.id === "comment-input") {
     commentForm.body = e.target.value;
+    updateMentionAutocomplete("comment-input", e.target);
     render();
     return;
   }

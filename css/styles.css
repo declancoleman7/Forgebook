@@ -3414,6 +3414,38 @@ main {
 }
 .char-count { font-size: 11px; color: var(--ink-dim); font-family: var(--font-mono); }
 
+/* @mention autocomplete -- anchored under whichever composer textarea is
+   active (comment or note), same popover language as .search-dropdown. */
+.mention-dropdown {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  z-index: 15;
+  margin-top: 4px;
+  max-height: 220px;
+  overflow-y: auto;
+  background: var(--bg-raised-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-raised);
+  padding: 6px;
+}
+.mention-dropdown__item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  font-size: 13.5px;
+  color: var(--parchment);
+}
+.mention-dropdown__item:hover { background: var(--bg-raised); }
+
+/* A rendered @mention inside a posted comment/note body. */
+.mention { color: var(--gold-bright); font-weight: 600; }
+
 /* One row shape for both a paint's Community Notes and a recipe's comments
    -- .settings-row's two-slot (label+desc / trailing control) layout doesn't
    fit a multi-line body plus a trailing icon-button cleanly, so this is a
