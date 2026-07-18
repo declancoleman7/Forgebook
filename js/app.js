@@ -216,6 +216,19 @@ function pushRecent(id) {
   save(KEYS.recents, recents.slice(0, 8));
 }
 
+function getRecentSearches() { return readJSON(KEYS.recentSearches, []); }
+
+// Same dedupe-move-to-front-then-cap-at-8 shape as pushRecent above, except
+// case-insensitive: "Ork" and "ork" are the same search to a person, unlike
+// two recipe ids which are never expected to differ only by case.
+function pushRecentSearch(q) {
+  q = String(q || "").trim();
+  if (!q) return;
+  let recents = getRecentSearches().filter((r) => r.toLowerCase() !== q.toLowerCase());
+  recents.unshift(q);
+  save(KEYS.recentSearches, recents.slice(0, 8));
+}
+
 // authorId disambiguates a shared recipe from an own one with the same id —
 // recipe ids are only unique per-user, so two authors' seed data (or two
 // independently-created recipes) can collide on the same id string.
@@ -792,6 +805,81 @@ window.addEventListener("hashchange", () => {
 });
 
 // ---------------------------------------------------------------
+// Global search — matching/ranking helpers shared by getFilteredRecipes()
+// (the Recipes list's own inline search box) and viewSearch() (the topbar's
+// app-wide search). Kept as pure functions with no state/route awareness so
+// both call sites can reuse the exact same match rules.
+// ---------------------------------------------------------------
+function recipeMatchesQuery(r, q) {
+  return r.name.toLowerCase().includes(q) ||
+    r.id.toLowerCase().includes(q) ||
+    (r.unit || "").toLowerCase().includes(q) ||
+    faction(r.faction).label.toLowerCase().includes(q) ||
+    recipePaints(r).some((p) => p.name.toLowerCase().includes(q));
+}
+
+// Matches brand too (unlike viewPaintLibrary()'s own on-page search, which
+// only matches name+type) -- that page has clickable brand-filter chips as
+// an alternative, but the global search box has no such affordance, and
+// PAINT_LIBRARY spans many brands worth finding by typing them directly.
+function paintMatchesQuery(p, q) {
+  return p.name.toLowerCase().includes(q) ||
+    (p.brand || "").toLowerCase().includes(q) ||
+    (p.type || "").toLowerCase().includes(q);
+}
+
+function factionMatchesQuery(f, q) { return f.label.toLowerCase().includes(q); }
+
+// Same aggregation unitsForFaction() does for one faction, generalized
+// across all of them at once -- global search has no single faction to
+// scope to. Keyed on [facId, unit] via JSON.stringify rather than a
+// "|"-joined string, since a unit name is free text and could contain "|".
+function allUnitsMatching(q) {
+  const seen = new Map();
+  getVisibleRecipes().forEach((r) => {
+    if (!r.unit || !r.unit.toLowerCase().includes(q)) return;
+    const key = JSON.stringify([r.faction, r.unit]);
+    seen.set(key, (seen.get(key) || 0) + 1);
+  });
+  return [...seen.entries()].map(([key, count]) => {
+    const [facId, unit] = JSON.parse(key);
+    return { facId, unit, count };
+  });
+}
+
+// Ranking for the Top tab -- simple tier + length, not the Home feed's
+// time-decay formula (a different problem: text relevance, not recency).
+// Exact match beats prefix beats "matches somewhere"; ties broken by
+// shorter name (a tighter match for the same query).
+function matchTier(name, q) {
+  const n = (name || "").toLowerCase();
+  if (n === q) return 0;
+  if (n.startsWith(q)) return 1;
+  return 2;
+}
+function rankByTier(items, nameFn, q) {
+  return [...items].sort((a, b) => {
+    const at = matchTier(nameFn(a), q), bt = matchTier(nameFn(b), q);
+    return at !== bt ? at - bt : nameFn(a).length - nameFn(b).length;
+  });
+}
+// Round-robins a fixed count across already-ranked category lists, so Top
+// isn't dominated by whichever category happens to have the most rows.
+function interleaveTop(taggedLists, limit) {
+  const out = [];
+  let i = 0;
+  while (out.length < limit) {
+    let any = false;
+    for (const list of taggedLists) {
+      if (list[i]) { out.push(list[i]); any = true; if (out.length >= limit) break; }
+    }
+    if (!any) break;
+    i++;
+  }
+  return out;
+}
+
+// ---------------------------------------------------------------
 // The recipe list currently in context — drives both the Recipes
 // screen and the order you swipe through on a recipe page.
 // ---------------------------------------------------------------
@@ -809,13 +897,7 @@ function getFilteredRecipes() {
   }
   if (state.searchQuery) {
     const q = state.searchQuery.toLowerCase();
-    recipes = recipes.filter((r) =>
-      r.name.toLowerCase().includes(q) ||
-      r.id.toLowerCase().includes(q) ||
-      (r.unit || "").toLowerCase().includes(q) ||
-      faction(r.faction).label.toLowerCase().includes(q) ||
-      recipePaints(r).some((p) => p.name.toLowerCase().includes(q))
-    );
+    recipes = recipes.filter((r) => recipeMatchesQuery(r, q));
   }
   return recipes;
 }
@@ -2111,6 +2193,41 @@ let profileCache = {};
 let profileLoading = {};
 let profileSearch = { query: "", results: [] };
 let profileSearchDebounce = null;
+
+// ---------------------------------------------------------------
+// Global search — the topbar box's app-wide results page. Ephemeral UI
+// state, not part of `state`/the URL (mirrors profileSearch above) so
+// typing doesn't spam browser history with one entry per keystroke.
+// ---------------------------------------------------------------
+let globalSearch = { query: "", tab: "top", accountResults: [], accountResultsQuery: "" };
+let globalSearchDebounce = null;
+
+// Shared by the topbar input and by tapping a recent search — runs (or
+// re-runs) a global search and always lands on the search route. Accounts
+// is the one category that needs a network round trip (searchProfiles),
+// so it gets the exact same debounce-then-check-staleness shape
+// #profile-search-input's own handler already uses.
+function runGlobalSearch(q) {
+  globalSearch.query = q;
+  const input = document.getElementById("search-input");
+  if (input && input.value !== q) input.value = q;
+  clearTimeout(globalSearchDebounce);
+  const trimmed = q.trim();
+  if (!trimmed) {
+    globalSearch.accountResults = [];
+    globalSearch.accountResultsQuery = "";
+  } else {
+    globalSearchDebounce = setTimeout(() => {
+      searchProfiles(trimmed).then((results) => {
+        if (globalSearch.query.trim() !== trimmed) return; // superseded by more typing
+        globalSearch.accountResults = results;
+        globalSearch.accountResultsQuery = trimmed;
+        render();
+      });
+    }, 250);
+  }
+  if (state.route === "search") render(); else navigate("search");
+}
 
 function resetProfileCache() {
   profileCache = {};
@@ -3627,6 +3744,82 @@ function viewNotifications() {
 }
 
 // ---------------------------------------------------------------
+// View: Global search (topbar box) — flat per-category lists for now;
+// Stage 4 layers a tab bar + richer per-category rendering on top of this
+// same match logic without changing how results are computed.
+// ---------------------------------------------------------------
+function viewSearch() {
+  const q = globalSearch.query.trim().toLowerCase();
+  const header = `
+    <div class="detail-header">
+      <button class="icon-btn" data-nav="home">${icon("back", 18)}</button>
+      <div class="page-title" style="margin:0">Search</div>
+      <div style="width:36px"></div>
+    </div>
+  `;
+
+  if (!q) {
+    return `<div class="page-enter">${header}${emptyStateHtml("search", "Search Forgebook", "Search for a recipe, paint, army, unit, or painter.")}</div>`;
+  }
+
+  const recipes = getVisibleRecipes().filter((r) => recipeMatchesQuery(r, q));
+  const paints = PAINT_LIBRARY.filter((p) => paintMatchesQuery(p, q));
+  const armies = FACTIONS.filter((f) => factionMatchesQuery(f, q));
+  const units = allUnitsMatching(q);
+  const accountsReady = globalSearch.accountResultsQuery === q;
+  const accounts = accountsReady ? globalSearch.accountResults : [];
+
+  return `
+    <div class="page-enter">
+      ${header}
+
+      <div class="section-label">Recipes (${recipes.length})</div>
+      ${recipes.length
+        ? `<div class="recipe-grid">${recipes.map(recipeCardHtml).join("")}</div>`
+        : `<div class="empty-state__sub">No recipes match.</div>`}
+
+      <div class="section-label">Paints (${paints.length})</div>
+      ${paints.length
+        ? paints.slice(0, 20).map((p) => `
+            <div class="settings-row" data-action="find-similar-colour" data-name="${escapeHtml(p.name)}" data-brand="${escapeHtml(p.brand || "")}" data-hex="${p.hex}" style="cursor:pointer">
+              <div style="display:flex; align-items:center; gap:10px">
+                <span style="width:22px; height:22px; border-radius:6px; background:${p.hex}; flex-shrink:0; border:1px solid var(--line)"></span>
+                <div>
+                  <div class="settings-row__label">${escapeHtml(p.name)}</div>
+                  <div class="settings-row__desc">${escapeHtml(p.brand || "")}</div>
+                </div>
+              </div>
+            </div>
+          `).join("")
+        : `<div class="empty-state__sub">No paints match.</div>`}
+
+      <div class="section-label">Armies (${armies.length})</div>
+      ${armies.length
+        ? armies.map((f) => `<div class="settings-row" data-nav="faction" data-id="${f.id}" style="cursor:pointer"><div class="settings-row__label" style="color:${f.color}">${escapeHtml(f.label)}</div></div>`).join("")
+        : `<div class="empty-state__sub">No armies match.</div>`}
+
+      <div class="section-label">Units (${units.length})</div>
+      ${units.length
+        ? units.map((u) => `
+            <div class="settings-row" data-open-unit="${escapeHtml(u.unit)}" data-faction="${u.facId}" style="cursor:pointer">
+              <div>
+                <div class="settings-row__label">${escapeHtml(u.unit)}</div>
+                <div class="settings-row__desc">${escapeHtml(faction(u.facId).label)}</div>
+              </div>
+              <div class="settings-row__desc">${u.count}</div>
+            </div>
+          `).join("")
+        : `<div class="empty-state__sub">No units match.</div>`}
+
+      <div class="section-label">Accounts (${accountsReady ? accounts.length : "…"})</div>
+      ${accounts.length
+        ? accounts.map(profileSearchResultRowHtml).join("")
+        : `<div class="empty-state__sub">${accountsReady ? "No painters match." : "Searching…"}</div>`}
+    </div>
+  `;
+}
+
+// ---------------------------------------------------------------
 // View: Change password (signed-in users only)
 // ---------------------------------------------------------------
 function viewChangePassword() {
@@ -3719,6 +3912,7 @@ function render() {
   else if (route === "profile") { html = viewProfile(params); showFab = false; }
   else if (route === "settings") { html = viewSettings(); showFab = false; }
   else if (route === "notifications") { html = viewNotifications(); showFab = false; }
+  else if (route === "search") { html = viewSearch(); showFab = false; }
   else if (route === "change-password") {
     if (!isSignedIn()) { navigate("settings"); return; }
     html = viewChangePassword();
@@ -3790,6 +3984,13 @@ function render() {
   document.getElementById("fab").classList.toggle("hidden", !showFab);
   updateSyncPill();
   updateNotifBadge();
+  // Leaving the search route (nav tap, back button, tapping a result) clears
+  // the topbar box, so it doesn't show a stale query next time it's opened.
+  if (state.route !== "search" && globalSearch.query) {
+    globalSearch.query = "";
+    const si = document.getElementById("search-input");
+    if (si) si.value = "";
+  }
 
   bindAuthInputs(root);
 
@@ -4821,13 +5022,7 @@ document.addEventListener("keydown", (e) => {
 // Search
 // ---------------------------------------------------------------
 document.addEventListener("input", (e) => {
-  if (e.target.id === "search-input") {
-    state.searchQuery = e.target.value;
-    // search means different things on different screens, so stay put where it makes sense
-    if (["paints", "paint-library", "factions", "recipes"].includes(state.route)) render();
-    else navigate("recipes");
-    return;
-  }
+  if (e.target.id === "search-input") { runGlobalSearch(e.target.value); return; }
   if (e.target.id === "note-input") {
     communityNoteForm.body = e.target.value;
     render();

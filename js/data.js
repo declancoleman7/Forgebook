@@ -2166,6 +2166,10 @@ const KEYS = {
   // cloud.js. Rows are never written by the client (see schema.sql), so
   // there's nothing here to push back up, only read flags to sync.
   notifications: "forgebook.notifications",
+  // Past global-search terms, most-recent-first -- per-device, not synced,
+  // same treatment as `recents`/`art` below. See getRecentSearches/
+  // pushRecentSearch in app.js.
+  recentSearches: "forgebook.recentSearches",
 };
 
 function readJSON(key, fallback) {
