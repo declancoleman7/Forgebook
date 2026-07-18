@@ -243,6 +243,7 @@ img {
 }
 
 .topbar__search {
+  position: relative; /* anchors .search-dropdown below */
   flex: 1;
   min-width: 0; /* see main{} for why: a flex item's min-width is auto by
     default, and without this override its <input> child's own intrinsic
@@ -255,6 +256,50 @@ img {
   border-radius: var(--radius-md);
   padding: 0 10px;
   height: 36px;
+}
+
+/* Recent-searches popover, anchored under the topbar box -- shown on focus
+   while it's empty (see bindGlobalSearchShell in app.js). z-index sits
+   above the topbar itself but below the toast/modal layers, since this is
+   a lightweight contextual popover, not a blocking dialog. */
+.search-dropdown {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  right: 0;
+  z-index: 25;
+  max-height: 60vh;
+  overflow-y: auto;
+  background: var(--bg-raised-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-raised);
+  padding: 6px;
+}
+.search-dropdown__label {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--ink-dim);
+  padding: 6px 8px 4px;
+}
+.search-dropdown__item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 8px;
+  border-radius: var(--radius-sm);
+  color: var(--parchment);
+  font-size: 13.5px;
+  cursor: pointer;
+}
+.search-dropdown__item:hover { background: var(--bg-raised); }
+.search-dropdown__item svg { flex-shrink: 0; opacity: 0.6; }
+.search-dropdown__empty {
+  padding: 10px 8px;
+  font-size: 13px;
+  color: var(--ink-dim);
 }
 
 .topbar__search input {

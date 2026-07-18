@@ -2218,6 +2218,47 @@ function runGlobalSearch(q) {
   if (state.route === "search") render(); else navigate("search");
 }
 
+function searchDropdownHtml() {
+  const recents = getRecentSearches();
+  if (!recents.length) return `<div class="search-dropdown__empty">No recent searches yet.</div>`;
+  return `
+    <div class="search-dropdown__label">Recent searches</div>
+    ${recents.map((q) => `<div class="search-dropdown__item" data-action="search-recent" data-q="${escapeHtml(q)}">${icon("search", 13)} ${escapeHtml(q)}</div>`).join("")}
+  `;
+}
+
+// One-time binding on the persistent shell's search box (buildShell() only
+// ever runs once, at boot -- this can't live inside render(), which only
+// ever touches #view-root). Shown whenever the box is focused AND empty,
+// recomputed on both focus and input (not a one-way latch), so clearing it
+// back to empty while still focused re-summons the dropdown.
+function bindGlobalSearchShell() {
+  const input = document.getElementById("search-input");
+  const dropdown = document.getElementById("search-dropdown");
+  if (!input || !dropdown) return;
+
+  const sync = () => {
+    if (input.value.trim()) { dropdown.classList.add("hidden"); return; }
+    dropdown.innerHTML = searchDropdownHtml();
+    dropdown.classList.remove("hidden");
+  };
+  input.addEventListener("focus", sync);
+  // Separate from the always-live document-level "input" delegate's own
+  // "#search-input" branch (which handles navigation/debounce) -- this one
+  // only toggles the dropdown's visibility, so the two aren't merged.
+  input.addEventListener("input", sync);
+
+  document.addEventListener("click", (e) => {
+    if (!dropdown.classList.contains("hidden") && !e.target.closest(".topbar__search")) {
+      dropdown.classList.add("hidden");
+      input.blur();
+    }
+  });
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && !dropdown.classList.contains("hidden")) { dropdown.classList.add("hidden"); input.blur(); }
+  });
+}
+
 function resetProfileCache() {
   profileCache = {};
   profileLoading = {};
@@ -4026,10 +4067,16 @@ function render() {
   updateNotifBadge();
   // Leaving the search route (nav tap, back button, tapping a result) clears
   // the topbar box, so it doesn't show a stale query next time it's opened.
+  // Blurring matters too, not just clearing the value: a search result is a
+  // plain (non-focusable) element, so clicking one never naturally blurs the
+  // still-focused box on its own -- without an explicit blur here, a second
+  // tap on the box later wouldn't fire a fresh "focus" event (it's already
+  // the activeElement), so bindGlobalSearchShell's dropdown would never
+  // re-open.
   if (state.route !== "search" && globalSearch.query) {
     globalSearch.query = "";
     const si = document.getElementById("search-input");
-    if (si) si.value = "";
+    if (si) { si.value = ""; si.blur(); }
   }
 
   bindAuthInputs(root);
@@ -4086,6 +4133,20 @@ function updateNotifBadge() {
 // ---------------------------------------------------------------
 document.addEventListener("click", async (e) => {
   const t = (sel) => e.target.closest(sel);
+
+  // Records a search once its result is actually tapped -- the one
+  // unambiguous "this search worked" signal. Checked first, before any
+  // branch below can return early: viewSearch() is the only thing rendered
+  // while route==="search", so matching these existing selectors is enough
+  // to know a search result specifically was tapped, without threading a
+  // new attribute through every shared row builder (recipeCardHtml,
+  // profileSearchResultRowHtml, etc.) that also renders outside of search.
+  // Deliberately no `return` here -- whichever branch below actually
+  // performs the navigation still needs to run.
+  if (state.route === "search" && globalSearch.query.trim() &&
+      t("[data-nav], [data-open-unit], [data-action='find-similar-colour']")) {
+    pushRecentSearch(globalSearch.query.trim());
+  }
 
   // --- account ---
   if (t("[data-action='sign-in']")) {
@@ -4652,6 +4713,9 @@ document.addEventListener("click", async (e) => {
   const searchTab = t("[data-action='search-tab']");
   if (searchTab) { globalSearch.tab = searchTab.dataset.tab; render(); return; }
 
+  const searchRecent = t("[data-action='search-recent']");
+  if (searchRecent) { runGlobalSearch(searchRecent.dataset.q); return; }
+
   const rateBtn = t("[data-action='rate-paint']");
   if (rateBtn) {
     if (!isSignedIn()) { showToast("Sign in to rate paints"); return; }
@@ -5126,7 +5190,8 @@ function buildShell() {
       <div class="topbar__brand"><span class="glyph">${icon("book", 16)}</span> Forgebook</div>
       <div class="topbar__search">
         ${icon("search", 16)}
-        <input type="text" id="search-input" placeholder="Search recipes, armies or paints" />
+        <input type="text" id="search-input" placeholder="Search recipes, paints, armies, painters…" />
+        <div class="search-dropdown hidden" id="search-dropdown"></div>
       </div>
       <button class="topbar__bell" data-nav="notifications" aria-label="Notifications">
         ${icon("bell", 18)}
@@ -5273,6 +5338,7 @@ async function bootIntoApp() {
   bootingIntoApp = false;
   appBooted = true;
   buildShell();
+  bindGlobalSearchShell();
   const { route, params } = parseHash();
   state.route = route;
   state.params = params;
