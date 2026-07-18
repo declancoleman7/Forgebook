@@ -672,6 +672,10 @@ function buildHash(route, p) {
   // URL keeps the same "similar to X" context; with neither, it's the
   // pick-a-colour tool instead.
   if (route === "similar") return `#/similar${p.name ? "/" + encodeURIComponent(p.name) + "/" + encodeURIComponent(p.brand || "") : ""}`;
+  // No id = the search/browse mode of the same page (mirrors "similar"'s own
+  // colour-picker-vs-anchored-to-a-paint duality) — deliberately one route,
+  // not two, so there's only one render function to keep in sync.
+  if (route === "profile") return `#/u${p.id ? "/" + encodeURIComponent(p.id) : ""}`;
   return `#/${route}`;
 }
 
@@ -705,6 +709,9 @@ function parseHash() {
     if (parts[1]) return { route: "similar", params: { name: decodeURIComponent(parts[1]), brand: decodeURIComponent(parts[2] || "") } };
     return { route: "similar", params: {} };
   }
+  if (parts[0] === "u") {
+    return { route: "profile", params: parts[1] ? { id: decodeURIComponent(parts[1]) } : {} };
+  }
   if (parts[0] === "recipe-new" || parts[0] === "paint-new") {
     return { route: parts[0], params: {} };
   }
@@ -726,6 +733,12 @@ window.addEventListener("hashchange", () => {
   // this, render()'s route dispatch has no case for "public-recipe" and
   // silently falls back to the home screen instead.
   if (route === "public-recipe") { renderPublicRecipe(params); return; }
+  // Unlike public-recipe (a permanently separate route from "recipe"),
+  // "profile" is ONE route serving both the full-shell in-app page and the
+  // bare signed-out share link — so the bypass only applies to a genuinely
+  // signed-out visitor with a specific id; everyone else (including a
+  // bare "#/u" search page) gets the normal state/render() pipeline below.
+  if (route === "profile" && params.id && !isSignedIn()) { renderPublicProfile(params.id); return; }
   state.route = route;
   state.params = params;
   render();
@@ -857,7 +870,7 @@ function recipeCardHtml(r) {
           ${difficultyDots(r.difficulty || 1)}
           <span class="recipe-card__steps">${(r.steps || []).length} steps</span>
         </div>
-        ${r.authorId ? `<div class="recipe-card__author">${icon("book", 11)} ${escapeHtml(authorName(r.authorId))}</div>` : ""}
+        ${r.authorId ? `<div class="recipe-card__author" data-nav="profile" data-id="${escapeHtml(r.authorId)}">${icon("book", 11)} ${escapeHtml(authorName(r.authorId))}</div>` : ""}
       </div>
     </div>
   `;
@@ -1215,7 +1228,7 @@ function viewRecipeDetail(id, authorId) {
         <span data-open-unit="${r.unit ? escapeHtml(r.unit) : "_general"}" data-faction="${f.id}">${escapeHtml(r.unit || "General")}</span>
       </div>
       <div class="detail-title">${escapeHtml(r.name)}</div>
-      ${isShared ? `<div class="shared-badge">${icon("book", 12)} Shared by ${escapeHtml(authorName(r.authorId))}</div>` : ""}
+      ${isShared ? `<div class="shared-badge">${icon("book", 12)} Shared by <span data-nav="profile" data-id="${escapeHtml(r.authorId)}" style="cursor:pointer; text-decoration:underline">${escapeHtml(authorName(r.authorId))}</span></div>` : ""}
       <div class="metastrip">
         <div class="metastrip__cell">
           <div class="metastrip__n">${difficultyDots(r.difficulty || 1)}</div>
@@ -1419,7 +1432,7 @@ async function renderPublicRecipe(params) {
       <span>${escapeHtml(r.unit || "General")}</span>
     </div>
     <div class="detail-title">${escapeHtml(r.name)}</div>
-    <div class="shared-badge">${icon("book", 12)} Shared by ${escapeHtml(author)}</div>
+    <div class="shared-badge">${icon("book", 12)} Shared by <a href="#/u/${encodeURIComponent(params.authorId)}" style="color:inherit">${escapeHtml(author)}</a></div>
 
     <div class="metastrip">
       <div class="metastrip__cell">
@@ -1960,6 +1973,197 @@ function commentRowHtml(c, myId, readOnly = false) {
       ${!readOnly && !isMine && isSignedIn() ? `<button class="comment-row__report" data-action="report" data-kind="comment" data-id="${escapeHtml(c.id)}" title="Report">${icon("flag", 13)}</button>` : ""}
     </div>
   `;
+}
+
+// ---------------------------------------------------------------
+// User profiles — a hub for someone's published recipes, community notes,
+// and ratings. One route serves two modes (mirrors viewSimilarColours'
+// isColourMode duality): no id = search/browse, an id = that person's page.
+// ---------------------------------------------------------------
+let profileCache = {};
+let profileLoading = {};
+let profileSearch = { query: "", results: [] };
+let profileSearchDebounce = null;
+
+function resetProfileCache() {
+  profileCache = {};
+  profileLoading = {};
+}
+
+function ensureProfileLoaded(userId) {
+  if (profileCache[userId] !== undefined || profileLoading[userId]) return;
+  profileLoading[userId] = true;
+  fetchProfile(userId)
+    .then((p) => { profileCache[userId] = p; })
+    .catch((e) => { profileCache[userId] = null; })
+    .finally(() => { profileLoading[userId] = false; render(); });
+}
+
+// Reverses a paint_key back to a real PAINT_LIBRARY entry for display —
+// notes/ratings are only ever stored keyed by paint_key, never a name/brand
+// pair, so this is the one place that needs to go the other way.
+function paintFromKey(key) {
+  return PAINT_LIBRARY.find((p) => paintKey(p.name, p.brand) === key) || null;
+}
+
+function profileSearchResultRowHtml(p) {
+  return `
+    <div class="settings-row" data-nav="profile" data-id="${escapeHtml(p.userId)}" style="cursor:pointer">
+      <div class="settings-row__label">${escapeHtml(p.displayName)}</div>
+    </div>
+  `;
+}
+
+function profileNoteRowHtml(n) {
+  const paint = paintFromKey(n.paintKey);
+  return `
+    <div class="comment-row">
+      <div class="comment-row__meta">
+        ${paint
+          ? `<span class="comment-row__author" data-action="find-similar-colour" data-name="${escapeHtml(paint.name)}" data-brand="${escapeHtml(paint.brand)}" data-hex="${paint.hex}" style="cursor:pointer">${escapeHtml(paint.name)}</span>`
+          : `<span class="comment-row__author">Unknown paint</span>`}
+        <span class="comment-row__time">${relativeTime(n.createdAt)}</span>
+      </div>
+      <div class="comment-row__body">${escapeHtml(n.body)}</div>
+    </div>
+  `;
+}
+
+function profileRatingRowHtml(r) {
+  const paint = paintFromKey(r.paintKey);
+  return `
+    <div class="settings-row">
+      <div>
+        <div class="settings-row__label">${paint ? escapeHtml(paint.name) : "Unknown paint"}</div>
+        <div class="settings-row__desc">${paint ? escapeHtml(paint.brand) : ""}</div>
+      </div>
+      ${starRowHtml(r.stars, { size: 14 })}
+    </div>
+  `;
+}
+
+function viewProfile(params) {
+  if (!params.id) {
+    return `
+      <div class="page-enter">
+        <div class="detail-header">
+          <button class="icon-btn" data-nav="settings">${icon("back", 18)}</button>
+          <div class="page-title" style="margin:0">Find a Painter</div>
+          <div style="width:36px"></div>
+        </div>
+        <div class="field" style="margin-bottom:14px">
+          <input type="text" id="profile-search-input" placeholder="Search by display name" value="${escapeHtml(profileSearch.query)}" autocomplete="off" />
+        </div>
+        ${profileSearch.results.length
+          ? profileSearch.results.map(profileSearchResultRowHtml).join("")
+          : profileSearch.query
+          ? emptyStateHtml("search", "No painters found", "Try a different name.")
+          : `<div class="empty-state__sub">Type a name to search.</div>`}
+      </div>
+    `;
+  }
+
+  ensureProfileLoaded(params.id);
+  const p = profileCache[params.id];
+  const isMe = params.id === currentUserId();
+  // My own published recipes live in the own-recipe cache (getSharedRecipes()
+  // explicitly excludes the caller's own rows) -- everyone else's come from
+  // the fetched profile, tagged with authorId so recipeCardHtml links them
+  // through the existing shared-recipe nav path.
+  const recipes = isMe
+    ? getRecipes().filter((r) => r.published)
+    : p ? p.recipes.map((r) => ({ ...r, authorId: params.id })) : [];
+
+  return `
+    <div class="page-enter">
+      <div class="detail-header">
+        <button class="icon-btn" data-nav="home">${icon("back", 18)}</button>
+        <div style="width:36px"></div>
+      </div>
+      ${p === undefined
+        ? `<div class="empty-state__sub">Loading…</div>`
+        : p === null
+        ? emptyStateHtml("search", "Painter not found", "This profile doesn't exist, or has no published work yet.")
+        : `
+          <div class="detail-title">${escapeHtml(p.displayName)}</div>
+          <div class="detail-sub">${recipes.length} recipe${recipes.length === 1 ? "" : "s"} shared</div>
+
+          <div class="section-label">Published Recipes</div>
+          ${recipes.length
+            ? `<div class="recipe-grid">${recipes.map(recipeCardHtml).join("")}</div>`
+            : emptyStateHtml("book", "No recipes yet", "Nothing published so far.")}
+
+          <div class="section-label">Notes Written</div>
+          ${p.notes.length ? p.notes.map(profileNoteRowHtml).join("") : `<div class="empty-state__sub">No community notes yet.</div>`}
+
+          <div class="section-label">Ratings Given</div>
+          ${p.ratings.length ? p.ratings.map(profileRatingRowHtml).join("") : `<div class="empty-state__sub">No ratings yet.</div>`}
+        `}
+    </div>
+  `;
+}
+
+// The signed-out share-link variant — recipes only (see fetchPublicProfile),
+// same bare-shell/no-render()-cycle posture as renderPublicRecipe. Recipe
+// cards here are real <a href="#/r/..."> anchors, not data-nav elements —
+// this page has no click-delegate reliance at all, matching every other
+// interactive-looking thing on it.
+function publicProfileRecipeCardHtml(r, authorId) {
+  const fac = faction(r.faction);
+  return `
+    <a class="recipe-card" href="#/r/${encodeURIComponent(authorId)}/${encodeURIComponent(r.id)}" style="--faction-color:${fac.color}">
+      <div class="recipe-card__hero ${r.photo ? "has-photo" : ""}"${r.photo ? ` style="background-image:url('${escapeHtml(r.photo)}')"` : ""}>
+        ${r.photo ? "" : `<span class="recipe-card__emblem emblem-badge emblem-badge--lg">${emblemSvg(fac.emblem, 26)}</span>`}
+        <div class="recipe-card__stack">
+          ${(r.steps || []).slice(0, 6).map(() => `<span style="background:${fac.color}"></span>`).join("")}
+        </div>
+      </div>
+      <div class="recipe-card__body">
+        <div class="recipe-card__id">${escapeHtml(r.unit || "General")}</div>
+        <div class="recipe-card__name">${escapeHtml(r.name)}</div>
+        <div class="recipe-card__meta">
+          ${difficultyDots(r.difficulty || 1)}
+          <span class="recipe-card__steps">${(r.steps || []).length} steps</span>
+        </div>
+      </div>
+    </a>
+  `;
+}
+
+async function renderPublicProfile(id) {
+  document.getElementById("app").innerHTML = publicRecipeShellHtml(`
+    <div class="gate__brand">${icon("book", 26)} Forgebook</div>
+    <div class="detail-sub" style="margin-top:14px">Loading painter…</div>
+  `);
+
+  const result = await fetchPublicProfile(id);
+  if (!result) {
+    document.getElementById("app").innerHTML = publicRecipeShellHtml(`
+      <div class="gate__brand">${icon("book", 26)} Forgebook</div>
+      <div class="gate__tagline">This painter isn't available — they may not exist, or have no published work.</div>
+      <a class="btn btn-primary btn-block" style="margin-top:20px" href="./">Open Forgebook</a>
+    `);
+    return;
+  }
+
+  const recipes = result.recipes;
+  document.getElementById("app").innerHTML = publicRecipeShellHtml(`
+    <div class="public-recipe__banner">
+      <span>${icon("book", 15)} Made with Forgebook</span>
+      <a href="./">Get the app</a>
+    </div>
+    <div class="detail-title">${escapeHtml(result.displayName)}</div>
+    <div class="detail-sub">${recipes.length} recipe${recipes.length === 1 ? "" : "s"} shared</div>
+
+    <div class="section-label">Published Recipes</div>
+    ${recipes.length
+      ? `<div class="recipe-grid">${recipes.map((r) => publicProfileRecipeCardHtml(r, id)).join("")}</div>`
+      : emptyStateHtml("book", "No recipes yet", "Nothing published so far.")}
+
+    <a class="btn btn-primary btn-block" style="margin-top:24px" href="./">
+      ${icon("book", 16)} Track your own recipes with Forgebook
+    </a>
+  `);
 }
 
 function ensurePaintNotesLoaded(key) {
@@ -3080,6 +3284,13 @@ function viewSettings() {
         </div>
         <div class="settings-row">
           <div>
+            <div class="settings-row__label">Find a painter</div>
+            <div class="settings-row__desc">Look up someone else's profile by display name.</div>
+          </div>
+          <button class="btn btn-ghost btn-sm" data-nav="profile">Search</button>
+        </div>
+        <div class="settings-row">
+          <div>
             <div class="settings-row__label">Sign out</div>
             <div class="settings-row__desc">You'll need to sign in again to use Forgebook.</div>
           </div>
@@ -3240,6 +3451,7 @@ function render() {
     showFab = false;
   } else if (route === "paint-library") { html = viewPaintLibrary(); showFab = false; }
   else if (route === "similar") { html = viewSimilarColours(params); showFab = false; }
+  else if (route === "profile") { html = viewProfile(params); showFab = false; }
   else if (route === "settings") { html = viewSettings(); showFab = false; }
   else if (route === "change-password") {
     if (!isSignedIn()) { navigate("settings"); return; }
@@ -3483,6 +3695,7 @@ document.addEventListener("click", async (e) => {
     if (route === "recipe" && id) navigate("recipe", { id, authorId: navEl.dataset.author || undefined, edit: navEl.dataset.edit === "1" });
     else if (route === "faction" && id) navigate("faction", { id });
     else if (route === "paint" && id) navigate("paint", { id });
+    else if (route === "profile") navigate("profile", id ? { id } : {});
     else if (route === "paint-new") { initPaintForm(null); navigate("paint-new"); }
     else if (route === "recipe-new") { recipeForm = null; navigate("recipe-new"); }
     else {
@@ -4286,6 +4499,21 @@ document.addEventListener("input", (e) => {
   if (e.target.id === "comment-input") {
     commentForm.body = e.target.value;
     render();
+    return;
+  }
+  if (e.target.id === "profile-search-input") {
+    profileSearch.query = e.target.value;
+    clearTimeout(profileSearchDebounce);
+    const q = e.target.value.trim();
+    if (!q) { profileSearch.results = []; render(); return; }
+    profileSearchDebounce = setTimeout(() => {
+      searchProfiles(q).then((results) => {
+        // Stale response from a query that's since been superseded by more typing.
+        if (profileSearch.query.trim() !== q) return;
+        profileSearch.results = results;
+        render();
+      });
+    }, 250);
   }
 });
 
@@ -4504,6 +4732,9 @@ async function init() {
   // visitor with no Forgebook account can open it.
   const { route, params } = parseHash();
   if (route === "public-recipe") { renderPublicRecipe(params); return; }
+  // See the matching comment on the hashchange listener — this only bypasses
+  // decideBootState() for a genuinely signed-out visitor.
+  if (route === "profile" && params.id && !isSignedIn()) { renderPublicProfile(params.id); return; }
 
   decideBootState();
 }

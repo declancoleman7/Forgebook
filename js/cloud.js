@@ -182,6 +182,7 @@ function onSignedOut() {
   // per-viewer so that's a real staleness bug, not just a cosmetic one.
   if (typeof resetPaintNotesCache === "function") resetPaintNotesCache();
   if (typeof resetCommentsCache === "function") resetCommentsCache();
+  if (typeof resetProfileCache === "function") resetProfileCache();
   appBooted = false;
   if (typeof render === "function") render();
 }
@@ -413,6 +414,52 @@ async function fetchPublicRecipe(authorId, id) {
   const authorDisplayName = (profRes.data && profRes.data.display_name) || "Someone";
 
   return { recipe, paints, authorName: authorDisplayName };
+}
+
+// Reuses the exact same "read all profiles" RLS bar the app already relies
+// on elsewhere: a signed-in caller matches any display name; a signed-out
+// one only matches users with >=1 published recipe. No new policy needed —
+// this is just a filtered query on top of that existing bar.
+async function searchProfiles(query) {
+  const q = String(query || "").trim();
+  if (!sb || !q) return [];
+  const { data, error } = await sb.from("profiles").select("user_id,display_name").ilike("display_name", `%${q}%`).limit(20);
+  if (error) return [];
+  return (data || []).map((row) => ({ userId: row.user_id, displayName: row.display_name }));
+}
+
+// A signed-in user's own profile page — recipes, notes, ratings, batched
+// like fetchPublicRecipe already batches paints+profile.
+async function fetchProfile(userId) {
+  if (!sb) return null;
+  const [profRes, recipesRes, notesRes, ratingsRes] = await Promise.all([
+    sb.from("profiles").select("*").eq("user_id", userId).maybeSingle(),
+    sb.from("recipes").select("*").eq("user_id", userId).eq("published", true).eq("deleted", false),
+    sb.from("paint_notes").select("*").eq("user_id", userId).eq("deleted", false),
+    sb.from("paint_ratings").select("*").eq("user_id", userId).eq("deleted", false),
+  ]);
+  if (!profRes.data) return null;
+  return {
+    userId,
+    displayName: profRes.data.display_name,
+    recipes: (recipesRes.data || []).map(fromRemoteRecipe),
+    notes: (notesRes.data || []).map(fromRemotePaintNote),
+    ratings: (ratingsRes.data || []).map(fromRemoteRating),
+  };
+}
+
+// The signed-out variant — recipes only, deliberately narrower than
+// fetchProfile above (mirrors fetchPublicRecipe's own narrow scope), so this
+// route doesn't have to re-derive the hidden/pending-note visibility rules
+// in a second, session-less code path.
+async function fetchPublicProfile(userId) {
+  if (!sb) return null;
+  const [profRes, recipesRes] = await Promise.all([
+    sb.from("profiles").select("display_name").eq("user_id", userId).maybeSingle(),
+    sb.from("recipes").select("*").eq("user_id", userId).eq("published", true).eq("deleted", false),
+  ]);
+  if (!profRes.data) return null;
+  return { userId, displayName: profRes.data.display_name, recipes: (recipesRes.data || []).map(fromRemoteRecipe) };
 }
 
 function photoUrl(path) {
