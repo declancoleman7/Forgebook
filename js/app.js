@@ -39,6 +39,7 @@ const ICONS = {
   check: '<path d="M5 12l5 5L20 6" />',
   cart: '<circle cx="9" cy="20" r="1.4" fill="currentColor" /><circle cx="18" cy="20" r="1.4" fill="currentColor" /><path d="M2 3h3l2.5 12h11l2-8H6" />',
   filter: '<path d="M4 6h16" /><path d="M7 12h10" /><path d="M10 18h4" />',
+  flag: '<path d="M5 21V4" /><path d="M5 4h13l-3 4 3 4H5" />',
 };
 
 function icon(name, size = 20) {
@@ -106,6 +107,22 @@ function getProfiles() { return readJSON(KEYS.profiles, []); }
 function authorName(userId) {
   const p = getProfiles().find((x) => x.userId === userId);
   return (p && p.displayName) || "Someone";
+}
+
+// Short relative timestamp for comments/notes ("2h ago", "3d ago") — falls
+// back to a plain date once it's old enough that "N days ago" stops being
+// more useful than just the date.
+function relativeTime(iso) {
+  if (!iso) return "";
+  const diffMs = Date.now() - new Date(iso).getTime();
+  const mins = Math.round(diffMs / 60000);
+  if (mins < 1) return "just now";
+  if (mins < 60) return mins + "m ago";
+  const hours = Math.round(mins / 60);
+  if (hours < 24) return hours + "h ago";
+  const days = Math.round(hours / 24);
+  if (days < 14) return days + "d ago";
+  return new Date(iso).toLocaleDateString();
 }
 
 // Own recipes plus (when the shared toggle is on) everyone else's shared
@@ -536,6 +553,41 @@ function showConfirm(message, opts = {}) {
     wrap.querySelector("[data-confirm='cancel']").onclick = () => close(false);
     wrap.querySelector("[data-confirm='ok']").onclick = () => close(true);
     wrap.querySelector("[data-confirm='ok']").focus();
+  });
+}
+
+// Same self-contained overlay pattern as showConfirm, but resolves to a
+// reason string (possibly empty) on submit, or null on cancel — shared by
+// both comments and paint notes via data-action="report" data-kind.
+function showReportDialog(kind) {
+  return new Promise((resolve) => {
+    const noun = kind === "comment" ? "comment" : "note";
+    const wrap = document.createElement("div");
+    wrap.className = "confirm-overlay";
+    wrap.innerHTML = `
+      <div class="confirm-overlay__backdrop"></div>
+      <div class="confirm-dialog" role="alertdialog" aria-modal="true">
+        <div class="confirm-dialog__message">Report this ${noun}? Let us know what's wrong (optional).</div>
+        <textarea id="report-reason-input" class="report-reason-input" maxlength="200" placeholder="Reason (optional)"></textarea>
+        <div class="confirm-dialog__actions">
+          <button type="button" class="btn btn-ghost" data-confirm="cancel">Cancel</button>
+          <button type="button" class="btn btn-danger" data-confirm="ok">Report</button>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(wrap);
+
+    const close = (result) => {
+      wrap.remove();
+      document.removeEventListener("keydown", onKeydown);
+      resolve(result);
+    };
+    const onKeydown = (e) => { if (e.key === "Escape") close(null); };
+    document.addEventListener("keydown", onKeydown);
+
+    wrap.querySelector(".confirm-overlay__backdrop").onclick = () => close(null);
+    wrap.querySelector("[data-confirm='cancel']").onclick = () => close(null);
+    wrap.querySelector("[data-confirm='ok']").onclick = () => close(wrap.querySelector("#report-reason-input").value.trim());
   });
 }
 
@@ -1784,6 +1836,82 @@ function openSimilarColours(name, brand, hex) {
   navigate("similar", { name, brand });
 }
 
+// ---------------------------------------------------------------
+// Community Notes — freeform tips on a library paint, fetched on demand
+// (there's no bulk "everyone's notes on everything" cache the way ratings
+// have one, since that would mean downloading every note on every paint up
+// front for a page most people will only ever view a handful of). Loaded by
+// ensurePaintNotesLoaded, called from bindSimilarColours once the page is on
+// screen; undefined = not fetched yet, an array = loaded (possibly empty).
+// ---------------------------------------------------------------
+let paintNotesCache = {};
+let paintNotesLoading = {};
+let communityNoteForm = { body: "" };
+let communityNoteFormSeenSig = null;
+
+// Called by cloud.js's onSignedOut — notes visibility is per-viewer (RLS
+// hides a flagged/reported note from everyone but its author), so a stale
+// cache from the previous session must not leak into the next one.
+function resetPaintNotesCache() {
+  paintNotesCache = {};
+  paintNotesLoading = {};
+}
+
+function ensurePaintNotesLoaded(key) {
+  if (paintNotesCache[key] !== undefined || paintNotesLoading[key]) return;
+  paintNotesLoading[key] = true;
+  fetchPaintNotes(key)
+    .then((notes) => { paintNotesCache[key] = notes; })
+    .catch((e) => { paintNotesCache[key] = []; })
+    .finally(() => { paintNotesLoading[key] = false; render(); });
+}
+
+function communityNotesHtml(sourceName, sourceBrand) {
+  const key = paintKey(sourceName, sourceBrand);
+  if (communityNoteFormSeenSig !== key) {
+    communityNoteFormSeenSig = key;
+    communityNoteForm = { body: "" };
+  }
+  const notes = paintNotesCache[key];
+  const myId = currentUserId();
+  return `
+    <div class="section-label">Community Notes</div>
+    <div class="detail-sub" style="margin:2px 2px 12px">
+      Freeform tips from other painters on this paint — comparisons to old ranges, texture, anything that doesn't fit the fields above.
+    </div>
+    ${isSignedIn() ? `
+      <div class="note-composer">
+        <textarea id="note-input" maxlength="500" placeholder="e.g. &quot;Similar to the old Citadel Goblin Green&quot;">${escapeHtml(communityNoteForm.body)}</textarea>
+        <div class="note-composer__footer">
+          <span class="char-count">${communityNoteForm.body.length}/500</span>
+          <button class="btn btn-primary btn-sm" data-action="submit-note">Post note</button>
+        </div>
+      </div>
+    ` : `<div class="fine-print" style="margin-bottom:14px">Sign in to leave a note.</div>`}
+    ${notes === undefined
+      ? `<div class="empty-state__sub">Loading notes…</div>`
+      : notes.length
+      ? notes.map((n) => communityNoteRowHtml(n, myId)).join("")
+      : `<div class="empty-state__sub">No notes yet — be the first.</div>`}
+  `;
+}
+
+function communityNoteRowHtml(n, myId) {
+  const isMine = n.userId === myId;
+  const pending = n.flagged || n.status === "hidden";
+  return `
+    <div class="comment-row ${pending ? "is-pending" : ""}">
+      <div class="comment-row__meta">
+        <span class="comment-row__author" data-nav="profile" data-id="${escapeHtml(n.userId)}">${escapeHtml(authorName(n.userId))}</span>
+        <span class="comment-row__time">${relativeTime(n.createdAt)}</span>
+        ${pending ? `<span class="pill-status">${n.status === "hidden" ? "Hidden — reported" : "Hidden — pending review"}</span>` : ""}
+      </div>
+      <div class="comment-row__body">${escapeHtml(n.body)}</div>
+      ${!isMine ? `<button class="comment-row__report" data-action="report" data-kind="note" data-id="${escapeHtml(n.id)}" title="Report">${icon("flag", 13)}</button>` : ""}
+    </div>
+  `;
+}
+
 // A primary action on the page, not buried like Community Notes further
 // down — sits right under the "here's the paint you looked up" row.
 function paintRatingWidgetHtml(sourceName, sourceBrand) {
@@ -1879,6 +2007,8 @@ function viewSimilarColours(params) {
       </div>
 
       <div id="matches-container">${colourMatchListHtml(matches)}</div>
+
+      ${!isColourMode ? communityNotesHtml(st.sourceName, st.sourceBrand) : ""}
     </div>
   `;
 }
@@ -2111,6 +2241,13 @@ function viewPaintLibrary() {
 // would replace the canvas out from under an in-progress pointer capture and
 // silently kill the drag.
 function bindSimilarColours(root) {
+  // Runs regardless of colour-picker vs anchored-to-a-paint mode (the wheel
+  // canvas below only exists in the former), since Community Notes only
+  // makes sense when there's an actual paint to fetch notes for.
+  if (similarColours.sourceName) {
+    ensurePaintNotesLoaded(paintKey(similarColours.sourceName, similarColours.sourceBrand));
+  }
+
   const canvas = root.querySelector("#wheel-canvas");
   if (!canvas) return;
 
@@ -3649,6 +3786,35 @@ document.addEventListener("click", async (e) => {
     return;
   }
 
+  const submitNote = t("[data-action='submit-note']");
+  if (submitNote) {
+    const body = (communityNoteForm.body || "").trim();
+    if (!body) { showToast("Write a note first"); return; }
+    const key = paintKey(similarColours.sourceName, similarColours.sourceBrand);
+    const res = await pushPaintNote(key, body);
+    if (!res.ok) { showToast(res.message); return; }
+    const now = new Date().toISOString();
+    paintNotesCache[key] = (paintNotesCache[key] || []).concat({
+      id: res.note.id, paintKey: key, userId: currentUserId(), body: res.note.body,
+      flagged: res.note.flagged, status: "visible", createdAt: now, updatedAt: now, deleted: false,
+    });
+    communityNoteForm = { body: "" };
+    showToast("Note posted");
+    render();
+    return;
+  }
+
+  const reportBtn = t("[data-action='report']");
+  if (reportBtn) {
+    if (!isSignedIn()) { showToast("Sign in to report content"); return; }
+    const { kind, id } = reportBtn.dataset;
+    const reason = await showReportDialog(kind);
+    if (reason === null) return;
+    const res = await reportContent(kind === "comment" ? "recipe_comment" : "paint_note", id, reason);
+    showToast(res.ok ? (res.alreadyReported ? "You've already reported this" : "Reported — thanks for flagging this") : res.message);
+    return;
+  }
+
   const paintCancel = t("[data-action='paint-cancel']");
   if (paintCancel) {
     const back = paintForm.returnToRecipe;
@@ -3945,11 +4111,17 @@ document.addEventListener("keydown", (e) => {
 // Search
 // ---------------------------------------------------------------
 document.addEventListener("input", (e) => {
-  if (e.target.id !== "search-input") return;
-  state.searchQuery = e.target.value;
-  // search means different things on different screens, so stay put where it makes sense
-  if (["paints", "paint-library", "factions", "recipes"].includes(state.route)) render();
-  else navigate("recipes");
+  if (e.target.id === "search-input") {
+    state.searchQuery = e.target.value;
+    // search means different things on different screens, so stay put where it makes sense
+    if (["paints", "paint-library", "factions", "recipes"].includes(state.route)) render();
+    else navigate("recipes");
+    return;
+  }
+  if (e.target.id === "note-input") {
+    communityNoteForm.body = e.target.value;
+    render();
+  }
 });
 
 // A mobile on-screen keyboard opening/closing fires a resize event too (it

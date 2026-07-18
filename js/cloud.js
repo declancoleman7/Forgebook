@@ -176,6 +176,11 @@ function onSignedIn() {
 function onSignedOut() {
   // Don't leave one person's book sitting on a shared device.
   clearLiveState();
+  // paintNotesCache is an app.js-level, per-paint on-demand cache (not a
+  // KEYS/localStorage one) -- without this it'd keep serving whoever signs
+  // in next the previous person's session-scoped fetch, notes RLS is
+  // per-viewer so that's a real staleness bug, not just a cosmetic one.
+  if (typeof resetPaintNotesCache === "function") resetPaintNotesCache();
   appBooted = false;
   if (typeof render === "function") render();
 }
@@ -630,6 +635,61 @@ async function fetchRatingSummary() {
   const { data, error } = await sb.from("paint_rating_summary").select("*");
   if (error) throw error;
   return (data || []).map((row) => ({ paintKey: row.paint_key, avgStars: row.avg_stars, ratingCount: row.rating_count }));
+}
+
+function toRemotePaintNote(n, userId) {
+  return { id: n.id, paint_key: n.paintKey, user_id: userId, body: n.body, flagged: !!n.flagged, updated_at: nowIso() };
+}
+
+function fromRemotePaintNote(row) {
+  return {
+    id: row.id, paintKey: row.paint_key, userId: row.user_id, body: row.body,
+    flagged: !!row.flagged, status: row.status, createdAt: row.created_at,
+    updatedAt: row.updated_at, deleted: !!row.deleted,
+  };
+}
+
+// Anyone can read a paint's notes (RLS already hides reported-past-threshold
+// rows for everyone but the author/an admin), so this works whether or not
+// the visitor is signed in.
+async function fetchPaintNotes(paintKey) {
+  if (!sb) return [];
+  const { data, error } = await sb.from("paint_notes").select("*").eq("paint_key", paintKey).eq("deleted", false).order("created_at");
+  if (error) throw error;
+  return (data || []).map(fromRemotePaintNote);
+}
+
+// Runs the client-side profanity filter before the write (see
+// containsBlockedContent in moderation.js) — a hit sets `flagged` rather
+// than blocking the submit, so a false positive still posts, just hidden-
+// pending like an auto-reported note would.
+async function pushPaintNote(paintKey, body) {
+  if (!sb || !isSignedIn()) return { ok: false, message: "Sign in to leave a note." };
+  const note = { id: crypto.randomUUID(), paintKey, body, flagged: containsBlockedContent(body) };
+  const { error } = await sb.from("paint_notes").insert(toRemotePaintNote(note, session.user.id));
+  if (error) return { ok: false, message: "Couldn't post that note — try again." };
+  return { ok: true, note };
+}
+
+async function removePaintNoteRemote(id) {
+  if (!sb || !isSignedIn()) return { ok: false };
+  const { error } = await sb.from("paint_notes").update({ deleted: true, updated_at: nowIso() }).eq("id", id).eq("user_id", session.user.id);
+  return { ok: !error };
+}
+
+// Shared by paint notes and recipe comments. A unique-violation means this
+// person already reported this exact item — treat that as a soft success
+// ("thanks, already noted") rather than surfacing a raw DB error.
+async function reportContent(contentType, contentId, reason) {
+  if (!sb || !isSignedIn()) return { ok: false, message: "Sign in to report content." };
+  const { error } = await sb.from("reports").insert({
+    content_type: contentType, content_id: contentId, reporter_id: session.user.id, reason: reason || null,
+  });
+  if (error) {
+    if (error.code === "23505") return { ok: true, alreadyReported: true };
+    return { ok: false, message: "Couldn't send that report — try again." };
+  }
+  return { ok: true };
 }
 
 function syncStatusLabel() {

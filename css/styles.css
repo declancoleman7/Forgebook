@@ -2804,6 +2804,21 @@ main {
   margin-bottom: 18px;
 }
 
+.report-reason-input {
+  width: 100%;
+  min-height: 64px;
+  resize: vertical;
+  margin-bottom: 14px;
+  background: var(--bg-raised);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  color: var(--parchment);
+  font-family: var(--font-body);
+  font-size: 13px;
+  padding: 8px 10px;
+}
+.report-reason-input:focus { outline: none; border-color: var(--gold); }
+
 .confirm-dialog__actions {
   display: flex;
   gap: 10px;
@@ -3259,6 +3274,90 @@ main {
 .rating-widget__avg { font-family: var(--font-display); font-size: 16px; color: var(--parchment); margin-right: 4px; }
 .rating-widget__count { font-size: 12px; color: var(--ink); }
 .rating-widget__mine { font-size: 11.5px; color: var(--ink-dim); }
+
+/* Note/comment composer -- shared shape for both Community Notes (paints)
+   and recipe comments. */
+.note-composer {
+  background: var(--bg-panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  padding: 10px;
+  margin-bottom: 14px;
+}
+.note-composer textarea {
+  width: 100%;
+  min-height: 60px;
+  resize: vertical;
+  background: transparent;
+  border: none;
+  color: var(--parchment);
+  font-family: var(--font-body);
+  font-size: 14px;
+}
+.note-composer textarea:focus { outline: none; }
+.note-composer__footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 6px;
+}
+.char-count { font-size: 11px; color: var(--ink-dim); font-family: var(--font-mono); }
+
+/* One row shape for both a paint's Community Notes and a recipe's comments
+   -- .settings-row's two-slot (label+desc / trailing control) layout doesn't
+   fit a multi-line body plus a trailing icon-button cleanly, so this is a
+   purpose-built row rather than a repurposed one. */
+.comment-row {
+  background: var(--bg-panel);
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-md);
+  padding: 10px 12px;
+  margin-bottom: 8px;
+  position: relative;
+}
+.comment-row__meta {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+.comment-row__author {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--gold-bright);
+  cursor: pointer;
+}
+.comment-row__time { font-size: 11px; color: var(--ink-dim); }
+.comment-row__body { font-size: 13.5px; line-height: 1.5; color: var(--parchment); padding-right: 26px; }
+.comment-row__report {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  background: none;
+  border: none;
+  color: var(--ink-dim);
+  cursor: pointer;
+  padding: 2px;
+}
+.comment-row__report:hover { color: var(--blood-bright); }
+
+/* A note/comment that's flagged, reported past threshold, or admin-hidden --
+   only ever rendered at all for its own author (or an admin); everyone else
+   simply never receives the row (enforced server-side by RLS), so there's
+   no separate "hidden entirely" style needed here. */
+.comment-row.is-pending { opacity: 0.55; }
+.pill-status {
+  display: inline-block;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--danger);
+  background: var(--blood-dim);
+  border: 1px solid var(--blood);
+  border-radius: 999px;
+  padding: 1px 7px;
+}
 
 .colour-match-row {
   display: flex;

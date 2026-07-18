@@ -371,17 +371,25 @@ create policy "admin manage reports" on public.reports
 -- report threshold (3 distinct reporters), which only its own author and an
 -- admin can still see. The threshold check happens right here, at read
 -- time — no denormalized counter, no trigger.
+-- A note is visible to everyone only while it's status='visible', NOT
+-- flagged by the client-side filter, and under the report threshold; its own
+-- author (and an admin) can always see it regardless, which is what lets the
+-- author's own view show a "pending review" note instead of it just
+-- vanishing on them.
 drop policy if exists "read visible paint notes" on public.paint_notes;
 create policy "read visible paint notes" on public.paint_notes
   for select
   using (
     deleted = false
     and (
-      status = 'visible'
-      and (
-        select count(*) from public.reports rep
-        where rep.content_type = 'paint_note' and rep.content_id = paint_notes.id
-      ) < 3
+      (
+        status = 'visible'
+        and flagged = false
+        and (
+          select count(*) from public.reports rep
+          where rep.content_type = 'paint_note' and rep.content_id = paint_notes.id
+        ) < 3
+      )
       or user_id = auth.uid()
       or exists (select 1 from public.profiles p where p.user_id = auth.uid() and p.is_admin)
     )
