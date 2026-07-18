@@ -461,16 +461,62 @@ function myRatingFor(name, brand) {
 function getRatingSummary(name, brand) {
   return readJSON(KEYS.ratingSummary, []).find((x) => x.paintKey === paintKey(name, brand)) || null;
 }
-// Same optimistic-local-then-fire-and-forget shape as toggleWanted above —
-// a star tap shouldn't wait on a round trip before it reflects on screen.
-function ratePaint(name, brand, stars) {
+
+// Keeps the displayed avg+count in step with your own rating instantly,
+// rather than waiting for the next loadBook() to refresh paint_rating_summary.
+// Either side can be null: oldStars === null means "this rating didn't exist
+// before" (count+1, e.g. a brand-new rating), newStars === null means "it
+// doesn't exist after" (count-1 -- only reachable by rolling back a failed
+// brand-new rating, see ratePaint below; there's no user-facing "remove my
+// rating" action). The recomputed average is an approximation of the
+// server's round(avg(stars), 2) -- close enough to display, and self-
+// corrects at the next real sync regardless.
+function adjustRatingSummary(name, brand, oldStars, newStars) {
   const key = paintKey(name, brand);
+  const rows = readJSON(KEYS.ratingSummary, []);
+  const idx = rows.findIndex((x) => x.paintKey === key);
+  const row = idx > -1 ? { ...rows[idx] } : { paintKey: key, avgStars: 0, ratingCount: 0 };
+  let total = (row.avgStars || 0) * row.ratingCount;
+  if (oldStars !== null) total -= oldStars;
+  if (newStars !== null) total += newStars;
+  row.ratingCount = Math.max(0, row.ratingCount + (newStars !== null ? 1 : 0) - (oldStars !== null ? 1 : 0));
+  row.avgStars = row.ratingCount > 0 ? Math.round((total / row.ratingCount) * 100) / 100 : 0;
+  // Drop the row entirely at zero, rather than leaving a stale {avgStars:0,
+  // ratingCount:0} -- paintRatingWidgetHtml treats "no row" as "No ratings
+  // yet", so a zeroed row (only reachable by rolling back the very first
+  // rating on a paint) would otherwise misdisplay as "0.0 (0)" until the
+  // next sync quietly fixes it.
+  const kept = idx > -1 ? rows.filter((r) => r.paintKey !== key) : rows;
+  if (row.ratingCount > 0) kept.push(row);
+  save(KEYS.ratingSummary, kept);
+}
+
+// Optimistic-then-reconciled -- see voteOnRecipe's comment above for the
+// full shape (this mirrors it exactly): your own rating and the aggregate
+// avg+count both update before the caller's un-awaited render(), the real
+// push happens in the background, and a failure rolls back both, but only
+// if a faster second tap hasn't already replaced this one.
+async function ratePaint(name, brand, stars) {
+  const key = paintKey(name, brand);
+  const oldStars = myRatingFor(name, brand);
   const rows = getMyRatings();
   const idx = rows.findIndex((r) => r.paintKey === key);
   if (idx > -1) rows[idx] = { paintKey: key, stars };
   else rows.push({ paintKey: key, stars });
   save(KEYS.myRatings, rows);
-  pushRating(key, stars);
+  adjustRatingSummary(name, brand, oldStars, stars);
+
+  const res = await pushRating(key, stars);
+  if (res.ok) return;
+
+  if (myRatingFor(name, brand) !== stars) return; // a newer tap has since replaced this one
+  const revert = getMyRatings();
+  const i = revert.findIndex((r) => r.paintKey === key);
+  if (oldStars === null) revert.splice(i, 1); else revert[i] = { paintKey: key, stars: oldStars };
+  save(KEYS.myRatings, revert);
+  adjustRatingSummary(name, brand, stars, oldStars); // exact reverse of the optimistic call above
+  showToast(res.message || "Couldn't save that rating — try again.");
+  render();
 }
 
 function getMyRecipeVotes() { return readJSON(KEYS.myRecipeVotes, []); }
@@ -481,22 +527,55 @@ function myRecipeVoteFor(ownerId, recipeId) {
 function getRecipeVoteSummary(ownerId, recipeId) {
   return readJSON(KEYS.recipeVoteSummary, []).find((x) => x.recipeOwnerId === ownerId && x.recipeId === recipeId) || null;
 }
-// Same optimistic-local-then-fire-and-forget shape as ratePaint above.
+
+// Keeps the displayed net score in step with your own vote instantly,
+// rather than waiting for the next loadBook() to refresh recipe_vote_summary
+// -- called both to apply a vote optimistically and to reverse one on a
+// failed push (see voteOnRecipe below).
+function adjustRecipeVoteSummary(ownerId, recipeId, oldValue, newValue) {
+  const rows = readJSON(KEYS.recipeVoteSummary, []);
+  const idx = rows.findIndex((x) => x.recipeOwnerId === ownerId && x.recipeId === recipeId);
+  const row = idx > -1 ? { ...rows[idx] } : { recipeOwnerId: ownerId, recipeId, likeCount: 0, dislikeCount: 0 };
+  if (oldValue === 1) row.likeCount--; else if (oldValue === -1) row.dislikeCount--;
+  if (newValue === 1) row.likeCount++; else if (newValue === -1) row.dislikeCount++;
+  row.likeCount = Math.max(0, row.likeCount);
+  row.dislikeCount = Math.max(0, row.dislikeCount);
+  if (idx > -1) rows[idx] = row; else rows.push(row);
+  save(KEYS.recipeVoteSummary, rows);
+}
+
+// Optimistic-then-reconciled: your own vote AND the aggregate net score both
+// update instantly (everything below runs before the first await, so it's
+// already reflected by the render() the caller fires right after calling
+// this un-awaited), then the real push happens in the background. On
+// failure, both are rolled back and a toast explains why -- but only if
+// nothing newer (a fast second tap) has since replaced this vote, so a
+// stale failure can't stomp a more recent optimistic state.
 // Tapping the same button you already voted retracts it instead of no-op'ing
 // -- that's what makes like/dislike a toggle rather than a one-way action.
-function voteOnRecipe(ownerId, recipeId, value) {
-  const rows = getMyRecipeVotes();
-  const idx = rows.findIndex((v) => v.recipeOwnerId === ownerId && v.recipeId === recipeId);
-  if (idx > -1 && rows[idx].value === value) {
-    rows.splice(idx, 1);
-    save(KEYS.myRecipeVotes, rows);
-    removeRecipeVoteRemote(ownerId, recipeId);
-  } else {
-    if (idx > -1) rows[idx] = { recipeOwnerId: ownerId, recipeId, value };
-    else rows.push({ recipeOwnerId: ownerId, recipeId, value });
-    save(KEYS.myRecipeVotes, rows);
-    pushRecipeVote(ownerId, recipeId, value);
-  }
+async function voteOnRecipe(ownerId, recipeId, value) {
+  const votes = getMyRecipeVotes();
+  const idx = votes.findIndex((v) => v.recipeOwnerId === ownerId && v.recipeId === recipeId);
+  const oldValue = idx > -1 ? votes[idx].value : null;
+  const retract = oldValue === value;
+  const newValue = retract ? null : value;
+
+  if (retract) votes.splice(idx, 1);
+  else if (idx > -1) votes[idx] = { recipeOwnerId: ownerId, recipeId, value: newValue };
+  else votes.push({ recipeOwnerId: ownerId, recipeId, value: newValue });
+  save(KEYS.myRecipeVotes, votes);
+  adjustRecipeVoteSummary(ownerId, recipeId, oldValue, newValue);
+
+  const res = retract ? await removeRecipeVoteRemote(ownerId, recipeId) : await pushRecipeVote(ownerId, recipeId, newValue);
+  if (res.ok) return;
+
+  if (myRecipeVoteFor(ownerId, recipeId) !== newValue) return; // a newer tap has since replaced this one
+  const rows = getMyRecipeVotes().filter((v) => !(v.recipeOwnerId === ownerId && v.recipeId === recipeId));
+  if (oldValue !== null) rows.push({ recipeOwnerId: ownerId, recipeId, value: oldValue });
+  save(KEYS.myRecipeVotes, rows);
+  adjustRecipeVoteSummary(ownerId, recipeId, newValue, oldValue);
+  showToast(res.message || "Couldn't save that — try again.");
+  render();
 }
 
 // A flag on an owned paint itself, so it rides along with that paint's
