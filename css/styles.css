@@ -3481,7 +3481,7 @@ main {
    stars use --gold-bright rather than --kinship, which is already the
    colour-matching UI's own accent -- reusing it here would read as "another
    colour-match control" instead of a rating. */
-.star-row { display: inline-flex; gap: 2px; color: var(--line); }
+.star-row { display: inline-flex; flex-direction: row-reverse; gap: 2px; color: var(--line); }
 .star-row__star { display: inline-flex; color: inherit; }
 .star-row__star.is-filled { color: var(--gold-bright); }
 .star-row--interactive .star-row__star { cursor: pointer; }

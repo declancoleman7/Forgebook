@@ -399,7 +399,12 @@ const STAR_PATH = "M12 2l2.9 6.6 7.1.6-5.4 4.7 1.6 7-6.2-3.7-6.2 3.7 1.6-7L2 9.2
 function starRowHtml(value, opts = {}) {
   const size = opts.size || 16;
   const interactive = !!opts.interactive;
-  const stars = [1, 2, 3, 4, 5]
+  // Emitted 5-down-to-1: paired with .star-row's row-reverse, this puts
+  // stars back in the correct 1-5 left-to-right visual order while making
+  // ":hover ~" (which only selects *later* DOM siblings) land on the stars
+  // to the hovered one's left -- the CSS hack that makes "hover star 3"
+  // preview "stars 1-3 filled" instead of highlighting 3-5 by mistake.
+  const stars = [5, 4, 3, 2, 1]
     .map((n) => {
       const filled = value != null && n <= Math.round(value);
       const cls = "star-row__star" + (filled ? " is-filled" : "");
@@ -416,6 +421,20 @@ function starRowHtml(value, opts = {}) {
 // ---------------------------------------------------------------
 function ownedPaintFor(name, brand) {
   return getPaints().find((p) => paintKey(p.name, p.brand) === paintKey(name, brand));
+}
+
+// A rack row is "library-backed" when its name+brand still matches a
+// PAINT_LIBRARY entry -- true for anything added via "add to rack" from the
+// library or a recipe step, since that's where its name/brand/hex/type were
+// copied from in the first place. Freely editing those fields on the rack
+// row (the old behaviour) silently forked it from the catalogue entry,
+// breaking every paintKey()-based lookup (ownership badges, ratings, notes,
+// "find similar") without any indication why. Only a genuinely custom paint
+// (never in the library, or renamed away from any library match) should
+// still get the full editor -- library-backed rows edit name/brand/hex/type
+// at the library level, and the rack itself only tracks quantity/restock.
+function libraryPaintFor(name, brand) {
+  return PAINT_LIBRARY.find((p) => paintKey(p.name, p.brand) === paintKey(name, brand));
 }
 
 // Shared by every "add this paint to my rack" entry point (the Paint
@@ -2378,13 +2397,14 @@ function viewPaint(id) {
   const p = findPaint(id);
   if (!p) return emptyStateHtml("palette", "Paint not found", "It may have been removed from the rack.");
   const used = recipesUsingPaint(p);
+  const fromLibrary = !!libraryPaintFor(p.name, p.brand);
 
   return `
     <div class="page-enter">
       <div class="detail-header">
         <button class="icon-btn" data-nav="paints">${icon("back", 18)}</button>
         <div style="display:flex; gap:8px;">
-          <button class="icon-btn" data-action="edit-paint" data-id="${p.id}">${icon("edit", 16)}</button>
+          ${fromLibrary ? "" : `<button class="icon-btn" data-action="edit-paint" data-id="${p.id}">${icon("edit", 16)}</button>`}
           <button class="icon-btn" data-action="delete-paint" data-id="${p.id}">${icon("trash", 16)}</button>
         </div>
       </div>
@@ -2392,6 +2412,7 @@ function viewPaint(id) {
       <div class="paint-hero" style="background:${p.hex}"></div>
       <div class="detail-title">${escapeHtml(p.name)}</div>
       <div class="detail-sub">${escapeHtml(p.brand || "Unbranded")} \u00b7 ${escapeHtml(p.type || "Other")} \u00b7 <span class="paint-row__hex">${escapeHtml(p.hex)}</span></div>
+      ${fromLibrary ? `<div class="fine-print" style="margin-top:4px">From the paint library \u2014 your rack only tracks whether you own it.</div>` : ""}
 
       <div class="settings-group" style="margin:16px 0">
         <div class="settings-row">
