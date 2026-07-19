@@ -280,6 +280,21 @@ create table if not exists public.saved_paints (
   primary key (user_id, paint_key)
 );
 
+-- ------------------------------------------------------------
+-- Follows -- unlike saved_recipes/saved_paints above, this is inherently
+-- public-facing: the whole point of a follower/following count and list is
+-- that other people can see it, same as recipe_votes/paint_ratings' fully
+-- public shape (see the read policy below), not saves' private one.
+-- ------------------------------------------------------------
+create table if not exists public.follows (
+  follower_id uuid        not null references auth.users (id) on delete cascade,
+  followed_id uuid        not null references auth.users (id) on delete cascade,
+  created_at  timestamptz not null default now(),
+  primary key (follower_id, followed_id),
+  check (follower_id <> followed_id)
+);
+create index if not exists follows_followed_idx on public.follows (followed_id);
+
 -- Sync pulls "everything changed since X", so index that.
 create index if not exists recipes_user_updated_idx     on public.recipes     (user_id, updated_at);
 create index if not exists paints_user_updated_idx      on public.paints      (user_id, updated_at);
@@ -599,6 +614,23 @@ create policy "own saved paints" on public.saved_paints
   for all
   using      (auth.uid() = user_id)
   with check (auth.uid() = user_id);
+
+-- Fully public (to any signed-in user), same rationale as "read all recipe
+-- votes"/"read all paint ratings" above -- the whole point of a follower/
+-- following count and list is that other people can see it. Self-follow is
+-- blocked by the table's own check constraint, not RLS.
+alter table public.follows enable row level security;
+
+drop policy if exists "read all follows" on public.follows;
+create policy "read all follows" on public.follows
+  for select
+  using (auth.role() = 'authenticated');
+
+drop policy if exists "manage own follows" on public.follows;
+create policy "manage own follows" on public.follows
+  for all
+  using      (auth.uid() = follower_id)
+  with check (auth.uid() = follower_id);
 
 -- ------------------------------------------------------------
 -- Notifications — this codebase's first DB triggers, and the first RLS

@@ -561,17 +561,36 @@ async function searchProfiles(query) {
   return (data || []).map((row) => ({ userId: row.user_id, displayName: row.display_name, avatarUrl: row.avatar_path ? avatarUrl(row.avatar_path) : null }));
 }
 
-// A signed-in user's own profile page — recipes, notes, ratings, batched
-// like fetchPublicRecipe already batches paints+profile.
+// A signed-in user's own profile page — recipes, notes, ratings, follower/
+// following ids, batched like fetchPublicRecipe already batches
+// paints+profile.
 async function fetchProfile(userId) {
   if (!sb) return null;
-  const [profRes, recipesRes, notesRes, ratingsRes] = await Promise.all([
+  const [profRes, recipesRes, notesRes, ratingsRes, followerRes, followingRes] = await Promise.all([
     sb.from("profiles").select("*").eq("user_id", userId).maybeSingle(),
     sb.from("recipes").select("*").eq("user_id", userId).eq("published", true).eq("deleted", false),
     sb.from("paint_notes").select("*").eq("user_id", userId).eq("deleted", false),
     sb.from("paint_ratings").select("*").eq("user_id", userId).eq("deleted", false),
+    sb.from("follows").select("follower_id").eq("followed_id", userId),
+    sb.from("follows").select("followed_id").eq("follower_id", userId),
   ]);
   if (!profRes.data) return null;
+  const followerIds = (followerRes.data || []).map((row) => row.follower_id);
+  const followingIds = (followingRes.data || []).map((row) => row.followed_id);
+
+  // Same as fetchNotifications' own backfill: names aren't denormalized onto
+  // follows rows, so anyone not already in the local profiles cache (e.g.
+  // they've never published/rated/commented on anything you'd have seen)
+  // needs fetching here too, or their row would show a fallback name.
+  const knownIds = new Set(readJSON(KEYS.profiles, []).map((p) => p.userId));
+  const missingIds = [...new Set([...followerIds, ...followingIds])].filter((id) => !knownIds.has(id));
+  if (missingIds.length) {
+    const { data: profRows } = await sb.from("profiles").select("user_id, display_name, avatar_path").in("user_id", missingIds);
+    const profiles = readJSON(KEYS.profiles, []);
+    (profRows || []).forEach((row) => profiles.push({ userId: row.user_id, displayName: row.display_name, avatarUrl: row.avatar_path ? avatarUrl(row.avatar_path) : null }));
+    save(KEYS.profiles, profiles);
+  }
+
   return {
     userId,
     displayName: profRes.data.display_name,
@@ -579,7 +598,22 @@ async function fetchProfile(userId) {
     recipes: (recipesRes.data || []).map(fromRemoteRecipe),
     notes: (notesRes.data || []).map(fromRemotePaintNote),
     ratings: (ratingsRes.data || []).map(fromRemoteRating),
+    followerIds,
+    followingIds,
+    amIFollowing: isSignedIn() ? followerIds.includes(session.user.id) : false,
   };
+}
+
+async function followUser(followedId) {
+  if (!sb || !isSignedIn()) return { ok: false, message: "Sign in to follow people." };
+  const { error } = await sb.from("follows").upsert({ follower_id: session.user.id, followed_id: followedId });
+  if (error) return { ok: false, message: "Couldn't follow — try again." };
+  return { ok: true };
+}
+async function unfollowUser(followedId) {
+  if (!sb || !isSignedIn()) return { ok: false };
+  const { error } = await sb.from("follows").delete().eq("follower_id", session.user.id).eq("followed_id", followedId);
+  return { ok: !error };
 }
 
 // The signed-out variant — recipes only, deliberately narrower than

@@ -2752,6 +2752,36 @@ function ensureProfileLoaded(userId) {
     .finally(() => { profileLoading[userId] = false; render(); });
 }
 
+// Optimistic-then-reconciled, same shape as toggleSaveRecipe/voteOnRecipe --
+// but follow state lives on the fetched profile object in profileCache, not
+// a KEYS.*-backed array, so this mutates that directly instead.
+async function toggleFollow(profileId) {
+  const p = profileCache[profileId];
+  if (!p) return;
+  const wasFollowing = !!p.amIFollowing;
+  p.amIFollowing = !wasFollowing;
+  p.followerIds = wasFollowing
+    ? p.followerIds.filter((id) => id !== currentUserId())
+    : p.followerIds.concat(currentUserId());
+  render();
+
+  const res = wasFollowing ? await unfollowUser(profileId) : await followUser(profileId);
+  if (res.ok) return;
+
+  const stillP = profileCache[profileId];
+  if (!stillP || stillP.amIFollowing === wasFollowing) return; // a newer tap already changed this
+  stillP.amIFollowing = wasFollowing;
+  stillP.followerIds = wasFollowing
+    ? stillP.followerIds.concat(currentUserId())
+    : stillP.followerIds.filter((id) => id !== currentUserId());
+  showToast(res.message || "Couldn't update that — try again.");
+  render();
+}
+
+function followToggleHtml(profileId, amIFollowing) {
+  return `<button class="btn ${amIFollowing ? "btn-ghost" : "btn-primary"} btn-sm" data-action="toggle-follow" data-id="${escapeHtml(profileId)}">${amIFollowing ? "Following" : "Follow"}</button>`;
+}
+
 // Reverses a paint_key back to a real PAINT_LIBRARY entry for display —
 // notes/ratings are only ever stored keyed by paint_key, never a name/brand
 // pair, so this is the one place that needs to go the other way.
@@ -2814,7 +2844,19 @@ function computeProfileLists(id, isMe, p) {
         .filter(Boolean)
     : [];
   const savedPaintObjs = isMe ? getSavedPaintKeys().map(paintFromKey).filter(Boolean) : [];
-  return { recipes, savedRecipeObjs, savedPaintObjs };
+
+  // Follower/following ids aren't denormalized with names -- resolve them
+  // through the local profiles cache into the same {userId, displayName,
+  // avatarUrl} shape profileSearchResultRowHtml already renders, so that
+  // existing row component can be reused as-is for both lists.
+  const resolvePeople = (ids) => ids.map((uid) => {
+    const prof = getProfiles().find((x) => x.userId === uid);
+    return { userId: uid, displayName: (prof && prof.displayName) || "Someone", avatarUrl: prof ? prof.avatarUrl : null };
+  });
+  const followerObjs = p ? resolvePeople(p.followerIds) : [];
+  const followingObjs = p ? resolvePeople(p.followingIds) : [];
+
+  return { recipes, savedRecipeObjs, savedPaintObjs, followerObjs, followingObjs };
 }
 
 // A section-label row with a "See all (N)" link once there's more than the
@@ -2866,7 +2908,7 @@ function viewProfile(params) {
   // (getSharedRecipes() explicitly excludes the caller's own rows) --
   // everyone else's come from the fetched profile, tagged with authorId so
   // recipeCardHtml links them through the existing shared-recipe nav path.
-  const { recipes, savedRecipeObjs, savedPaintObjs } = computeProfileLists(params.id, isMe, p);
+  const { recipes, savedRecipeObjs, savedPaintObjs, followerObjs, followingObjs } = computeProfileLists(params.id, isMe, p);
 
   return `
     <div class="page-enter">
@@ -2881,10 +2923,14 @@ function viewProfile(params) {
         : `
           <div style="display:flex; align-items:center; gap:12px">
             ${avatarGlyphHtml(p.displayName, p.avatarUrl, 56)}
-            <div>
+            <div style="flex:1">
               <div class="detail-title">${escapeHtml(p.displayName)}</div>
-              <div class="detail-sub">${recipes.length} recipe${recipes.length === 1 ? "" : "s"}${isMe ? "" : " shared"}</div>
+              <div class="detail-sub">${recipes.length} recipe${recipes.length === 1 ? "" : "s"}${isMe ? "" : " shared"} ·
+                <span data-nav="profile-section" data-kind="followers" data-id="${escapeHtml(params.id)}" style="cursor:pointer; text-decoration:underline">${followerObjs.length} follower${followerObjs.length === 1 ? "" : "s"}</span> ·
+                <span data-nav="profile-section" data-kind="following" data-id="${escapeHtml(params.id)}" style="cursor:pointer; text-decoration:underline">${followingObjs.length} following</span>
+              </div>
             </div>
+            ${!isMe ? followToggleHtml(params.id, !!p.amIFollowing) : ""}
           </div>
 
           ${isMe ? personalWorkspaceHtml(recipes) : ""}
@@ -2920,7 +2966,7 @@ function viewProfileSection(params) {
   ensureProfileLoaded(id);
   const p = profileCache[id];
   const isMe = id === currentUserId();
-  const { recipes, savedRecipeObjs, savedPaintObjs } = computeProfileLists(id, isMe, p);
+  const { recipes, savedRecipeObjs, savedPaintObjs, followerObjs, followingObjs } = computeProfileLists(id, isMe, p);
 
   const sections = {
     recipes: {
@@ -2952,6 +2998,18 @@ function viewProfileSection(params) {
       items: savedPaintObjs,
       body: (items) => items.map(searchPaintRowHtml).join(""),
       empty: `<div class="empty-state__sub">Nothing saved yet.</div>`,
+    },
+    followers: {
+      label: "Followers",
+      items: followerObjs,
+      body: (items) => items.map(profileSearchResultRowHtml).join(""),
+      empty: `<div class="empty-state__sub">No followers yet.</div>`,
+    },
+    following: {
+      label: "Following",
+      items: followingObjs,
+      body: (items) => items.map(profileSearchResultRowHtml).join(""),
+      empty: `<div class="empty-state__sub">Not following anyone yet.</div>`,
     },
   };
   const section = sections[kind];
@@ -5482,6 +5540,14 @@ document.addEventListener("click", async (e) => {
   if (saveRecipeBtn) {
     if (!isSignedIn()) { showToast("Sign in to save recipes"); return; }
     toggleSaveRecipe(saveRecipeBtn.dataset.ownerId, saveRecipeBtn.dataset.recipeId);
+    render();
+    return;
+  }
+
+  const followBtn = t("[data-action='toggle-follow']");
+  if (followBtn) {
+    if (!isSignedIn()) { showToast("Sign in to follow people"); return; }
+    toggleFollow(followBtn.dataset.id);
     render();
     return;
   }
