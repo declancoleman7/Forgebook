@@ -2667,7 +2667,7 @@ function commentListHtml(ownerId, recipeId, readOnly = false) {
           </div>
         ` : ""}
         <div style="position:relative">
-          <textarea id="comment-input" maxlength="500" placeholder="Ask a question or share a tip... (@ to mention someone)">${escapeHtml(commentForm.body)}</textarea>
+          <textarea id="comment-input" maxlength="500" spellcheck="true" autocapitalize="sentences" placeholder="Ask a question or share a tip... (@ to mention someone)">${escapeHtml(commentForm.body)}</textarea>
           ${mentionDropdownHtml("comment-input")}
         </div>
         <div class="note-composer__footer">
@@ -3233,7 +3233,7 @@ function communityNotesHtml(sourceName, sourceBrand) {
     ${isSignedIn() ? `
       <div class="note-composer">
         <div style="position:relative">
-          <textarea id="note-input" maxlength="500" placeholder="e.g. &quot;Similar to the old Citadel Goblin Green&quot; (@ to mention someone)">${escapeHtml(communityNoteForm.body)}</textarea>
+          <textarea id="note-input" maxlength="500" spellcheck="true" autocapitalize="sentences" placeholder="e.g. &quot;Similar to the old Citadel Goblin Green&quot; (@ to mention someone)">${escapeHtml(communityNoteForm.body)}</textarea>
           ${mentionDropdownHtml("note-input")}
         </div>
         <div class="note-composer__footer">
