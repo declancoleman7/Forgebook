@@ -1092,13 +1092,14 @@ async function reportContent(contentType, contentId, reason) {
 }
 
 function toRemoteComment(c, userId) {
-  return { id: c.id, recipe_owner_id: c.recipeOwnerId, recipe_id: c.recipeId, user_id: userId, body: c.body, flagged: !!c.flagged, updated_at: nowIso() };
+  return { id: c.id, recipe_owner_id: c.recipeOwnerId, recipe_id: c.recipeId, user_id: userId, body: c.body, flagged: !!c.flagged, parent_comment_id: c.parentCommentId || null, updated_at: nowIso() };
 }
 
 function fromRemoteComment(row) {
   return {
     id: row.id, recipeOwnerId: row.recipe_owner_id, recipeId: row.recipe_id, userId: row.user_id,
     body: row.body, edited: !!row.edited, flagged: !!row.flagged, status: row.status,
+    parentCommentId: row.parent_comment_id || null,
     createdAt: row.created_at, updatedAt: row.updated_at, deleted: !!row.deleted,
   };
 }
@@ -1113,9 +1114,9 @@ async function fetchComments(ownerId, recipeId) {
   return (data || []).map(fromRemoteComment);
 }
 
-async function submitCommentRemote(ownerId, recipeId, body) {
+async function submitCommentRemote(ownerId, recipeId, body, parentCommentId) {
   if (!sb || !isSignedIn()) return { ok: false, message: "Sign in to comment." };
-  const comment = { id: crypto.randomUUID(), recipeOwnerId: ownerId, recipeId, body, flagged: containsBlockedContent(body) };
+  const comment = { id: crypto.randomUUID(), recipeOwnerId: ownerId, recipeId, body, flagged: containsBlockedContent(body), parentCommentId: parentCommentId || null };
   const { error } = await sb.from("recipe_comments").insert(toRemoteComment(comment, session.user.id));
   if (error) return { ok: false, message: "Couldn't post that comment — try again." };
   return { ok: true, comment };

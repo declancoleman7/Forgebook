@@ -134,6 +134,16 @@ create table if not exists public.recipe_comments (
 -- this column needs its own explicit migration to reach an existing table.
 alter table public.recipe_comments add column if not exists flagged boolean not null default false;
 
+-- One level deep only -- enforced as a UI convention (the composer never
+-- offers "Reply" on a comment that's itself a reply), not a DB constraint;
+-- a check constraint can't see a parent's own parent_comment_id without a
+-- trigger, and depth-limiting isn't a security boundary worth that
+-- complexity. The "post comments" insert policy below does still check
+-- that a reply's parent belongs to the same recipe, which is a real
+-- integrity concern (not just a nicety).
+alter table public.recipe_comments add column if not exists parent_comment_id uuid references public.recipe_comments (id) on delete cascade;
+create index if not exists recipe_comments_parent_idx on public.recipe_comments (parent_comment_id);
+
 -- ------------------------------------------------------------
 -- Reports — one shared table for both recipe comments and paint notes,
 -- rather than a bespoke table per content type. content_id is deliberately
@@ -469,6 +479,20 @@ create policy "post comments on published recipes" on public.recipe_comments
       where r.user_id = recipe_owner_id and r.id = recipe_id
         and r.published = true and r.deleted = false
     )
+    -- A reply's parent must belong to the same recipe -- otherwise a
+    -- buggy or malicious client could link a reply to a comment on an
+    -- entirely different recipe, producing a nonsensical cross-recipe
+    -- thread. This is the one part of "one level deep" actually worth an
+    -- RLS check (see the parent_comment_id column comment above).
+    and (
+      parent_comment_id is null
+      or exists (
+        select 1 from public.recipe_comments pc
+        where pc.id = parent_comment_id
+          and pc.recipe_owner_id = recipe_owner_id
+          and pc.recipe_id = recipe_id
+      )
+    )
   );
 
 -- Covers both a text edit (edited=true) and the author's own soft-delete
@@ -654,7 +678,7 @@ create table if not exists public.notifications (
   id              uuid        not null default gen_random_uuid(),
   recipient_id    uuid        not null references auth.users (id) on delete cascade,
   actor_id        uuid        references auth.users (id) on delete set null,
-  type            text        not null check (type in ('comment', 'rating', 'mention', 'like')),
+  type            text        not null check (type in ('comment', 'rating', 'mention', 'like', 'reply')),
   recipe_owner_id uuid,
   recipe_id       text,
   comment_id      uuid        references public.recipe_comments (id) on delete cascade,
@@ -669,9 +693,9 @@ create index if not exists notifications_recipient_idx on public.notifications (
 
 -- create table if not exists is a permanent no-op on a database that
 -- already has this table, so widening the inline check above needs its own
--- explicit migration to reach one that predates the 'like' type.
+-- explicit migration to reach one that predates the 'like'/'reply' types.
 alter table public.notifications drop constraint if exists notifications_type_check;
-alter table public.notifications add constraint notifications_type_check check (type in ('comment', 'rating', 'mention', 'like'));
+alter table public.notifications add constraint notifications_type_check check (type in ('comment', 'rating', 'mention', 'like', 'reply'));
 
 -- Lets the rating trigger's steps @> ... containment check (below) use an
 -- index instead of scanning every published recipe row it's handed.
@@ -772,8 +796,11 @@ begin
 end;
 $$;
 
--- Notifies the recipe owner (skipped if commenting on your own recipe) plus
--- anyone @mentioned in the body. flagged=false guards both: a filtered
+-- Notifies the recipe owner (skipped if commenting on your own recipe),
+-- the parent comment's author if this is a reply (skipped if that's the
+-- same person as the recipe owner, already notified above, or the replier
+-- themselves), plus anyone @mentioned in the body who isn't already
+-- covered by one of those two. flagged=false guards all three: a filtered
 -- (hidden-pending) comment must not ping anyone, since the recipient's own
 -- read policy on recipe_comments would hide it from them anyway -- a dead
 -- deep-link, not a leak, but confusing, and this is exactly the kind of
@@ -787,17 +814,27 @@ set search_path = public, pg_temp
 as $$
 declare
   mentioned uuid;
+  parent_author uuid;
 begin
   if new.user_id <> new.recipe_owner_id and new.flagged = false then
     insert into public.notifications (recipient_id, actor_id, type, recipe_owner_id, recipe_id, comment_id)
     values (new.recipe_owner_id, new.user_id, 'comment', new.recipe_owner_id, new.recipe_id, new.id);
   end if;
 
+  if new.parent_comment_id is not null and new.flagged = false then
+    select user_id into parent_author from public.recipe_comments where id = new.parent_comment_id;
+    if parent_author is not null and parent_author <> new.user_id and parent_author <> new.recipe_owner_id then
+      insert into public.notifications (recipient_id, actor_id, type, recipe_owner_id, recipe_id, comment_id)
+      values (parent_author, new.user_id, 'reply', new.recipe_owner_id, new.recipe_id, new.id);
+    end if;
+  end if;
+
   if new.flagged = false then
     for mentioned in select public.mentioned_profile_ids(new.body, new.user_id) loop
-      -- Don't double-notify the recipe owner if they were already notified
-      -- above for this exact comment.
+      -- Don't double-notify the recipe owner or the parent comment's
+      -- author if they were already notified above for this exact comment.
       continue when mentioned = new.recipe_owner_id and new.user_id <> new.recipe_owner_id;
+      continue when mentioned = parent_author and new.parent_comment_id is not null;
       insert into public.notifications (recipient_id, actor_id, type, recipe_owner_id, recipe_id, comment_id)
       values (mentioned, new.user_id, 'mention', new.recipe_owner_id, new.recipe_id, new.id);
     end loop;

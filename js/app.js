@@ -2588,7 +2588,7 @@ function highlightMentions(text) {
 // ---------------------------------------------------------------
 let commentsCache = {};
 let commentsLoading = {};
-let commentForm = { body: "", editingId: null };
+let commentForm = { body: "", editingId: null, replyingTo: null };
 let commentFormSeenSig = null;
 
 function resetCommentsCache() {
@@ -2617,16 +2617,30 @@ function commentListHtml(ownerId, recipeId, readOnly = false) {
   const key = ownerId + "|" + recipeId;
   if (commentFormSeenSig !== key) {
     commentFormSeenSig = key;
-    commentForm = { body: "", editingId: null };
+    commentForm = { body: "", editingId: null, replyingTo: null };
   }
   const comments = commentsCache[key];
   const myId = currentUserId();
   const sorted = comments ? [...comments].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)) : comments;
+  // Top-level comments keep their existing newest-first order; each one's
+  // replies (one level deep -- see commentRowHtml's isReply param) render
+  // directly under it, oldest-first so the thread reads top to bottom like
+  // a real conversation.
+  const top = sorted ? sorted.filter((c) => !c.parentCommentId) : sorted;
+  const repliesFor = (id) => (comments || [])
+    .filter((c) => c.parentCommentId === id)
+    .sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
   const canWrite = !readOnly && isSignedIn();
   return `
     <div class="section-label">Comments${comments ? ` (${comments.length})` : ""}</div>
     ${canWrite ? `
       <div class="note-composer">
+        ${commentForm.replyingTo ? `
+          <div class="reply-indicator">
+            Replying to <strong>${escapeHtml(commentForm.replyingTo.authorName)}</strong>
+            <button type="button" class="reply-indicator__cancel" data-action="cancel-reply" aria-label="Cancel reply">&times;</button>
+          </div>
+        ` : ""}
         <div style="position:relative">
           <textarea id="comment-input" maxlength="500" placeholder="Ask a question or share a tip... (@ to mention someone)">${escapeHtml(commentForm.body)}</textarea>
           ${mentionDropdownHtml("comment-input")}
@@ -2637,25 +2651,27 @@ function commentListHtml(ownerId, recipeId, readOnly = false) {
         </div>
       </div>
     ` : readOnly ? `<div class="fine-print" style="margin-bottom:14px">Sign in to comment — <a href="./">open Forgebook</a>.</div>` : `<div class="fine-print" style="margin-bottom:14px">Sign in to comment.</div>`}
-    ${sorted === undefined
+    ${top === undefined
       ? `<div class="empty-state__sub">Loading comments…</div>`
-      : sorted.length
-      ? sorted.map((c) => commentRowHtml(c, myId, readOnly)).join("")
+      : top.length
+      ? top.map((c) => commentRowHtml(c, myId, readOnly) + repliesFor(c.id).map((r) => commentRowHtml(r, myId, readOnly, true)).join("")).join("")
       : `<div class="empty-state__sub">No comments yet.</div>`}
   `;
 }
 
-function commentRowHtml(c, myId, readOnly = false) {
+// isReply gates the "Reply" action -- that's what keeps threading one level
+// deep, since a reply is never itself offered as something to reply to.
+function commentRowHtml(c, myId, readOnly = false, isReply = false) {
   const isMine = !readOnly && c.userId === myId;
   const pending = c.flagged || c.status === "hidden";
   const links = [];
-  if (!readOnly && isSignedIn() && !isMine) links.push(`<button class="comment-row__link" data-action="reply-comment" data-user-id="${escapeHtml(c.userId)}">Reply</button>`);
+  if (!readOnly && isSignedIn() && !isMine && !isReply) links.push(`<button class="comment-row__link" data-action="reply-comment" data-id="${escapeHtml(c.id)}" data-user-id="${escapeHtml(c.userId)}">Reply</button>`);
   if (isMine) {
     links.push(`<button class="comment-row__link" data-action="edit-comment" data-id="${escapeHtml(c.id)}" data-body="${escapeHtml(c.body)}">Edit</button>`);
     links.push(`<button class="comment-row__link" data-action="delete-comment" data-id="${escapeHtml(c.id)}">Delete</button>`);
   }
   return `
-    <div class="comment-row ${pending ? "is-pending" : ""}">
+    <div class="comment-row ${pending ? "is-pending" : ""} ${isReply ? "comment-row--reply" : ""}">
       <div class="comment-row__meta">
         <span class="comment-row__author" data-nav="profile" data-id="${escapeHtml(c.userId)}">${avatarHtml(c.userId, 16)} ${escapeHtml(authorName(c.userId))}</span>
         <span class="comment-row__time">${relativeTime(c.createdAt)}${c.edited ? " · edited" : ""}</span>
@@ -4462,6 +4478,7 @@ function notificationRowHtml(n) {
   if (n.type === "comment") text = `commented on your recipe "${escapeHtml(recipe ? recipe.name : "a recipe")}"`;
   else if (n.type === "rating") text = `rated a paint you feature in "${escapeHtml(recipe ? recipe.name : "a recipe")}"`;
   else if (n.type === "like") text = `liked your recipe "${escapeHtml(recipe ? recipe.name : "a recipe")}"`;
+  else if (n.type === "reply") text = `replied to your comment on "${escapeHtml(recipe ? recipe.name : "a recipe")}"`;
   else if (recipe) text = `mentioned you in a comment on "${escapeHtml(recipe.name)}"`;
   else text = `mentioned you in a note on ${escapeHtml(paint ? paint.name : "a paint")}`;
 
@@ -5634,26 +5651,29 @@ document.addEventListener("click", async (e) => {
       const row = (commentsCache[key] || []).find((c) => c.id === editingId);
       if (row) { row.body = body; row.edited = true; row.flagged = containsBlockedContent(body); }
     } else {
-      const res = await submitCommentRemote(ownerId, recipeId, body);
+      const parentCommentId = commentForm.replyingTo ? commentForm.replyingTo.id : null;
+      const res = await submitCommentRemote(ownerId, recipeId, body, parentCommentId);
       if (!res.ok) { showToast(res.message); return; }
       const now = new Date().toISOString();
       commentsCache[key] = (commentsCache[key] || []).concat({
         id: res.comment.id, recipeOwnerId: ownerId, recipeId, userId: currentUserId(), body: res.comment.body,
-        edited: false, flagged: res.comment.flagged, status: "visible", createdAt: now, updatedAt: now, deleted: false,
+        edited: false, flagged: res.comment.flagged, parentCommentId, status: "visible", createdAt: now, updatedAt: now, deleted: false,
       });
     }
-    commentForm = { body: "", editingId: null };
+    commentForm = { body: "", editingId: null, replyingTo: null };
     render();
     return;
   }
 
   const replyComment = t("[data-action='reply-comment']");
   if (replyComment) {
-    commentForm.body = `@${authorName(replyComment.dataset.userId)} `;
+    commentForm.replyingTo = { id: replyComment.dataset.id, authorName: authorName(replyComment.dataset.userId) };
     render();
     document.getElementById("comment-input")?.focus();
     return;
   }
+
+  if (t("[data-action='cancel-reply']")) { commentForm.replyingTo = null; render(); return; }
 
   const pickMention = t("[data-action='pick-mention']");
   if (pickMention) {
@@ -5671,7 +5691,7 @@ document.addEventListener("click", async (e) => {
 
   const editComment = t("[data-action='edit-comment']");
   if (editComment) {
-    commentForm = { body: editComment.dataset.body, editingId: editComment.dataset.id };
+    commentForm = { body: editComment.dataset.body, editingId: editComment.dataset.id, replyingTo: null };
     render();
     document.getElementById("comment-input")?.focus();
     return;

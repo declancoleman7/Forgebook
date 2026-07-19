@@ -3674,6 +3674,42 @@ main {
 }
 .comment-row__link:hover { color: var(--gold-bright); }
 
+/* One level deep only (see commentRowHtml's isReply param) -- indented and
+   tied visually to its parent with a left border, rather than a second
+   full-width card that reads as just another top-level comment. */
+.comment-row--reply {
+  margin-left: 22px;
+  margin-top: -2px;
+  border-left: 2px solid var(--line);
+  border-top-left-radius: 0;
+  border-bottom-left-radius: 0;
+}
+
+.reply-indicator {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--ink-dim);
+  background: var(--bg-raised);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  padding: 6px 10px;
+  margin-bottom: 8px;
+}
+.reply-indicator strong { color: var(--parchment); font-weight: 600; }
+.reply-indicator__cancel {
+  background: none;
+  border: none;
+  color: var(--ink-dim);
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0 2px;
+}
+.reply-indicator__cancel:hover { color: var(--blood-bright); }
+
 /* Activity feed preview cards -- image-forward (Reddit-style: the photo or
    paint swatch is the first thing that catches your eye scrolling past),
    not the small thumbnail-left text row this used to be. Vote/comment
