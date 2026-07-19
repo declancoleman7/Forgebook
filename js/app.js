@@ -1802,7 +1802,7 @@ function viewRecipeDetail(id, authorId) {
       </div>
       <div class="detail-title">${escapeHtml(r.name)}</div>
       ${isShared ? `<div class="shared-badge">${avatarHtml(r.authorId, 16)} Shared by <span data-nav="profile" data-id="${escapeHtml(r.authorId)}" style="cursor:pointer; text-decoration:underline">${escapeHtml(authorName(r.authorId))}</span></div>` : ""}
-      ${r.published ? `<div style="display:flex; align-items:center; gap:10px">${recipeVoteWidgetHtml(r, ownerId)}${saveRecipeToggleHtml(ownerId, r.id)}</div>` : ""}
+      ${r.published ? recipeVoteWidgetHtml(r, ownerId) : ""}
       <div class="metastrip">
         <div class="metastrip__cell">
           <div class="metastrip__n">${difficultyDots(r.difficulty || 1)}</div>
@@ -3153,7 +3153,10 @@ function paintRatingWidgetHtml(sourceName, sourceBrand) {
   `;
 }
 
-// Mirrors saveRecipeToggleHtml above, for a paint.
+// A paint's save/unsave toggle -- rendered next to paintRatingWidgetHtml on
+// the Similar Colours page, same plain icon-btn shape as before (recipes'
+// own save toggle got folded into recipeVoteWidgetHtml's unified strip
+// above, but a paint has no vote widget for it to share a container with).
 function savePaintToggleHtml(name, brand) {
   const saved = isPaintSaved(name, brand);
   return `<button class="icon-btn ${saved ? "is-active" : ""}" data-action="toggle-save-paint" data-name="${escapeHtml(name)}" data-brand="${escapeHtml(brand)}" aria-label="${saved ? "Remove from saved" : "Save this paint"}" title="${saved ? "Saved" : "Save"}">${icon("bookmark", 18)}</button>`;
@@ -3164,34 +3167,42 @@ function savePaintToggleHtml(name, brand) {
 // product decision. Read-only (net score, no buttons) on your own recipe:
 // voting on your own work doesn't make sense, and RLS would reject it
 // anyway -- this just avoids a confusing silent-fail tap.
+// One unified strip for a published recipe's engagement controls: the
+// like/dislike vote (net score only, no separate counts, per product
+// decision) and the save/unsave toggle, side by side in a single bordered
+// panel separated by a thin divider -- these used to be two separate boxes
+// (a vote pill next to a plain square icon-btn) with mismatched heights and
+// corner radii, which read as clutter; one shared container fixes that.
+// Read-only (net score, no buttons) on your own recipe: voting on your own
+// work doesn't make sense, and RLS would reject it anyway -- this just
+// avoids a confusing silent-fail tap. Saving is available regardless of
+// ownership, unlike voting -- there's no reason you shouldn't be able to
+// bookmark your own published recipe too.
 function recipeVoteWidgetHtml(recipe, ownerId) {
   const summary = getRecipeVoteSummary(ownerId, recipe.id);
   const net = summary ? summary.likeCount - summary.dislikeCount : 0;
   const isOwn = ownerId === currentUserId();
+  const saved = isRecipeSaved(ownerId, recipe.id);
+
+  let votesHtml;
   if (isOwn) {
-    return `
-      <div class="vote-widget vote-widget--readonly">
-        <span class="vote-widget__net">${net}</span>
-        <span class="vote-widget__label">net score</span>
-      </div>
+    votesHtml = `<span class="vote-widget__net-group">${icon("thumb-up", 14)}<span class="vote-widget__net">${net}</span></span>`;
+  } else {
+    const mine = myRecipeVoteFor(ownerId, recipe.id);
+    votesHtml = `
+      <button class="vote-widget__btn ${mine === 1 ? "is-active" : ""}" data-action="vote-recipe" data-owner-id="${escapeHtml(ownerId)}" data-recipe-id="${escapeHtml(recipe.id)}" data-value="1" aria-label="Like">${icon("thumb-up", 16)}</button>
+      <span class="vote-widget__net">${net}</span>
+      <button class="vote-widget__btn ${mine === -1 ? "is-active" : ""}" data-action="vote-recipe" data-owner-id="${escapeHtml(ownerId)}" data-recipe-id="${escapeHtml(recipe.id)}" data-value="-1" aria-label="Dislike">${icon("thumb-down", 16)}</button>
     `;
   }
-  const mine = myRecipeVoteFor(ownerId, recipe.id);
+
   return `
     <div class="vote-widget">
-      <button class="vote-widget__btn ${mine === 1 ? "is-active" : ""}" data-action="vote-recipe" data-owner-id="${escapeHtml(ownerId)}" data-recipe-id="${escapeHtml(recipe.id)}" data-value="1" aria-label="Like">${icon("thumb-up", 18)}</button>
-      <span class="vote-widget__net">${net}</span>
-      <button class="vote-widget__btn ${mine === -1 ? "is-active" : ""}" data-action="vote-recipe" data-owner-id="${escapeHtml(ownerId)}" data-recipe-id="${escapeHtml(recipe.id)}" data-value="-1" aria-label="Dislike">${icon("thumb-down", 18)}</button>
+      <div class="vote-widget__votes">${votesHtml}</div>
+      <span class="vote-widget__divider"></span>
+      <button class="vote-widget__save ${saved ? "is-active" : ""}" data-action="toggle-save-recipe" data-owner-id="${escapeHtml(ownerId)}" data-recipe-id="${escapeHtml(recipe.id)}" aria-label="${saved ? "Remove from saved" : "Save this recipe"}" title="${saved ? "Saved" : "Save"}">${icon("bookmark", 17)}</button>
     </div>
   `;
-}
-
-// The one real save/unsave toggle for a recipe -- available regardless of
-// ownership (unlike voting, there's no reason you shouldn't be able to
-// bookmark your own published recipe too), placed next to the vote widget.
-function saveRecipeToggleHtml(ownerId, recipeId) {
-  const saved = isRecipeSaved(ownerId, recipeId);
-  return `<button class="icon-btn ${saved ? "is-active" : ""}" data-action="toggle-save-recipe" data-owner-id="${escapeHtml(ownerId)}" data-recipe-id="${escapeHtml(recipeId)}" aria-label="${saved ? "Remove from saved" : "Save this recipe"}" title="${saved ? "Saved" : "Save"}">${icon("bookmark", 18)}</button>`;
 }
 
 function viewSimilarColours(params) {
