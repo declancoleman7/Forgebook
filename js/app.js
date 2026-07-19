@@ -77,6 +77,7 @@ let state = {
   recipeFactionFilters: [], // multi-select — the Recipes list's filter window; empty = any
   recipeDifficultyFilters: [], // multi-select — same window; empty = any
   recipeFilterOpen: false,
+  recipeSort: "new", // "new" | "old" | "rating" — the Recipes list's sort order
   searchQuery: "", // the Recipes list's own inline #recipe-list-search box only -- the topbar box drives globalSearch (a separate, non-state variable) instead
   paintLibFilter: "all", // "all" | "owned" | "want" — Paint Library ownership filter
   paintLibBrands: [], // multi-select — empty = all brands
@@ -1012,6 +1013,23 @@ function getFilteredRecipes() {
     const q = state.searchQuery.toLowerCase();
     recipes = recipes.filter((r) => recipeMatchesQuery(r, q));
   }
+
+  // "new"/"old" both use updatedAt -- recipes have no separate createdAt, so
+  // it's the only timestamp there is to sort by (and edits bumping a recipe
+  // back to the top of "new" is a reasonable reading of the field anyway).
+  // "rating" reuses the same net like/dislike score recipeCardHtml already
+  // shows -- recipes don't have a star rating of their own, only paints do.
+  if (state.recipeSort === "old") {
+    recipes = [...recipes].sort((a, b) => new Date(a.updatedAt || 0) - new Date(b.updatedAt || 0));
+  } else if (state.recipeSort === "rating") {
+    const netFor = (r) => {
+      const s = getRecipeVoteSummary(r.authorId || currentUserId(), r.id);
+      return s ? s.likeCount - s.dislikeCount : 0;
+    };
+    recipes = [...recipes].sort((a, b) => netFor(b) - netFor(a));
+  } else {
+    recipes = [...recipes].sort((a, b) => new Date(b.updatedAt || 0) - new Date(a.updatedAt || 0));
+  }
   return recipes;
 }
 
@@ -1617,6 +1635,20 @@ function viewUnit(facId, unit) {
   `;
 }
 
+// Shared by both the mobile grid and desktop list column below, same
+// convention as recipeFilterTriggerHtml -- three-way instead of the Home
+// feed's two-way Popular/New toggle, since a recipe library reasonably
+// wants both sort directions on date plus a rating option, not just one.
+function recipeSortToggleHtml() {
+  return `
+    <div class="lib-filter-seg" style="margin-bottom:12px">
+      <button class="${state.recipeSort === "new" ? "is-active" : ""}" data-action="recipe-sort" data-sort="new">Newest</button>
+      <button class="${state.recipeSort === "old" ? "is-active" : ""}" data-action="recipe-sort" data-sort="old">Oldest</button>
+      <button class="${state.recipeSort === "rating" ? "is-active" : ""}" data-action="recipe-sort" data-sort="rating">Top Rated</button>
+    </div>
+  `;
+}
+
 // ---------------------------------------------------------------
 // View: All recipes
 // ---------------------------------------------------------------
@@ -1625,6 +1657,7 @@ function viewRecipes() {
   const recipes = getFilteredRecipes();
   const used = [...new Set(getVisibleRecipes().map((r) => r.faction))];
   const filterTrigger = recipeFilterTriggerHtml();
+  const sortToggle = recipeSortToggleHtml();
   const noMatch = emptyStateHtml("search", "No matches", "Try different filters or a different search term.");
 
   // Mobile keeps the existing full-width card grid unchanged. Desktop
@@ -1643,6 +1676,7 @@ function viewRecipes() {
           </div>
           ${filterTrigger}
         </div>
+        ${sortToggle}
         ${recipes.length ? `<div class="recipe-grid">${recipes.map(recipeCardHtml).join("")}</div>` : noMatch}
       </div>
       <div class="recipe-master__list">
@@ -1655,6 +1689,7 @@ function viewRecipes() {
           </div>
           ${filterTrigger}
         </div>
+        ${sortToggle}
         ${recipes.length ? recipes.map((r) => recipeCompactRowHtml(r, false)).join("") : noMatch}
       </div>
       <div class="recipe-master__placeholder">
@@ -5210,6 +5245,9 @@ document.addEventListener("click", async (e) => {
 
   const feedSort = t("[data-action='feed-sort']");
   if (feedSort) { state.feedSort = feedSort.dataset.sort; render(); return; }
+
+  const recipeSort = t("[data-action='recipe-sort']");
+  if (recipeSort) { state.recipeSort = recipeSort.dataset.sort; render(); return; }
 
   const openNotif = t("[data-action='open-notification']");
   if (openNotif) {
