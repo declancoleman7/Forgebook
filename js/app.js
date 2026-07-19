@@ -2524,7 +2524,7 @@ function updateMentionAutocomplete(composerId, el) {
     searchProfiles(trigger.query).then((results) => {
       if (mentionAutocomplete.composerId !== composerId || mentionAutocomplete.query !== trigger.query) return;
       mentionAutocomplete.results = results;
-      render();
+      refreshComposerLiveUi(composerId, (composerId === "comment-input" ? commentForm : communityNoteForm).body.length);
     });
   }, 250);
 }
@@ -2541,6 +2541,31 @@ function mentionDropdownHtml(composerId) {
       `).join("")}
     </div>
   `;
+}
+
+// Bypasses the usual render()-on-every-keystroke path for the comment/note
+// composers: a full innerHTML rebuild while someone's mid-keystroke destroys
+// and recreates the textarea itself, and on real mobile keyboards that can
+// visibly stutter or eat the next keystroke while it happens (render()'s
+// focus/selection-restore puts the cursor back, but not before the
+// destroy-recreate cycle has already disturbed the OS keyboard/IME state).
+// Only the char count and mention dropdown actually need to reflect each
+// keystroke -- the textarea's own value is already correct, since the
+// browser is typing straight into it -- so patch just those two spots.
+function refreshComposerLiveUi(composerId, bodyLength) {
+  const textarea = document.getElementById(composerId);
+  if (!textarea) return;
+  const wrapper = textarea.parentElement;
+  const existingDropdown = wrapper.querySelector(".mention-dropdown");
+  const dropdownHtml = mentionDropdownHtml(composerId);
+  if (existingDropdown) {
+    if (dropdownHtml) existingDropdown.outerHTML = dropdownHtml;
+    else existingDropdown.remove();
+  } else if (dropdownHtml) {
+    wrapper.insertAdjacentHTML("beforeend", dropdownHtml);
+  }
+  const countEl = textarea.closest(".note-composer")?.querySelector(".char-count");
+  if (countEl) countEl.textContent = `${bodyLength}/500`;
 }
 
 // Longest-display-name-first, boundary-checked match -- mirrors
@@ -6036,13 +6061,13 @@ document.addEventListener("input", (e) => {
   if (e.target.id === "note-input") {
     communityNoteForm.body = e.target.value;
     updateMentionAutocomplete("note-input", e.target);
-    render();
+    refreshComposerLiveUi("note-input", communityNoteForm.body.length);
     return;
   }
   if (e.target.id === "comment-input") {
     commentForm.body = e.target.value;
     updateMentionAutocomplete("comment-input", e.target);
-    render();
+    refreshComposerLiveUi("comment-input", commentForm.body.length);
     return;
   }
   if (e.target.id === "profile-search-input") {
