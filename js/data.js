@@ -2183,6 +2183,12 @@ const KEYS = {
   // saved_paints in schema.sql).
   savedRecipes: "forgebook.savedRecipes",
   savedPaints: "forgebook.savedPaints",
+  // Who you follow -- just your own side of the follows table, kept
+  // separately from the per-profile follower/following lists in
+  // profileCache (see cloud.js fetchProfile), since this is needed broadly
+  // (e.g. the Home feed's "Following" filter) independent of whether
+  // you've ever actually opened that person's profile page this session.
+  myFollowing: "forgebook.myFollowing",
 };
 
 function readJSON(key, fallback) {

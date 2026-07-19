@@ -88,7 +88,7 @@ let state = {
   paintLibFilterOpen: false, // brand+category filter overlay (mirrors recipeFilterOpen)
   rackQuery: "", // My Rack's own inline #rack-search box -- same reasoning again, scoped to just the paints you own
   includeShared: true, // whether other users' shared recipes appear in lists/browsing
-  feedSort: "popular", // "popular" | "new" — Community Feed sort order
+  feedSort: "following", // "following" | "popular" | "new" — Community Feed sort order
   showAvatarNudge: false, // one-time "add a profile photo" card on Home, set true only right after a brand-new account's first sign-in
 };
 
@@ -1198,18 +1198,34 @@ function buildFeedItems() {
       if (paint) items.push({ type: "paint_note", paint, authorId: n.userId, body: n.body, at: n.createdAt, engagement: 1 });
     });
 
-  if (state.feedSort === "new") {
+  // "Following" narrows to activity from people you follow before sorting --
+  // everything else about the item (its type, engagement, etc.) is unchanged.
+  const visible = state.feedSort === "following"
+    ? items.filter((it) => isFollowing(feedItemActorId(it)))
+    : items;
+
+  if (state.feedSort === "new" || state.feedSort === "following") {
     // Pure recency -- a full bypass of the decay/engagement scoring below,
     // not a variant of it.
-    items.sort((a, b) => new Date(b.at) - new Date(a.at));
+    visible.sort((a, b) => new Date(b.at) - new Date(a.at));
   } else {
     // 48h half-life decay, boosted by engagement so a still-active thread
     // can outrank a quieter, slightly newer item.
     const decay = (iso) => Math.pow(0.5, (now - new Date(iso).getTime()) / FEED_HALF_LIFE_MS);
-    items.forEach((it) => { it.score = decay(it.at) * (1 + Math.log2(1 + it.engagement)); });
-    items.sort((a, b) => b.score - a.score);
+    visible.forEach((it) => { it.score = decay(it.at) * (1 + Math.log2(1 + it.engagement)); });
+    visible.sort((a, b) => b.score - a.score);
   }
-  return items.slice(0, 30);
+  return visible.slice(0, 30);
+}
+
+// Who a feed item is "about," for the Following filter -- a comment-burst
+// item has no single commenter (it's an aggregate), so it's attributed to
+// the recipe's own owner, same as feedRecipeCardHtml already does.
+function feedItemActorId(it) {
+  if (it.type === "recipe_published") return it.authorId;
+  if (it.type === "recipe_comments") return it.recipeOwnerId;
+  if (it.type === "paint_rating") return it.raterId;
+  return it.authorId; // paint_note
 }
 
 // A recipe-tied feed card (recipe_published/recipe_comments) -- photo/emblem
@@ -1341,11 +1357,14 @@ function viewHome() {
       <div style="font-size:13px; opacity:0.75; margin:0 2px 10px">What's happening across Forgebook right now.</div>
       ${state.showAvatarNudge ? avatarNudgeHtml() : ""}
       <div class="lib-filter-seg" style="margin-bottom:14px">
+        <button class="${state.feedSort === "following" ? "is-active" : ""}" data-action="feed-sort" data-sort="following">Following</button>
         <button class="${state.feedSort === "popular" ? "is-active" : ""}" data-action="feed-sort" data-sort="popular">Popular</button>
         <button class="${state.feedSort === "new" ? "is-active" : ""}" data-action="feed-sort" data-sort="new">New</button>
       </div>
       ${items.length
         ? items.map(feedItemHtml).join("")
+        : state.feedSort === "following"
+        ? emptyStateHtml("book", "Follow some painters", "Nothing from people you follow yet -- check Popular or New to find some.")
         : emptyStateHtml("book", "Nothing yet", "Publish a recipe, or leave a note or rating, to get the community feed moving.")}
     </div>
   `;
@@ -2752,28 +2771,41 @@ function ensureProfileLoaded(userId) {
     .finally(() => { profileLoading[userId] = false; render(); });
 }
 
-// Optimistic-then-reconciled, same shape as toggleSaveRecipe/voteOnRecipe --
-// but follow state lives on the fetched profile object in profileCache, not
-// a KEYS.*-backed array, so this mutates that directly instead.
+// Your own side of the follows table -- the single source of truth for "do
+// I follow X," used both by the follow button (any profile, whether or not
+// its own page has been loaded into profileCache) and the Home feed's
+// "Following" filter.
+function getMyFollowingIds() { return readJSON(KEYS.myFollowing, []); }
+function isFollowing(userId) { return getMyFollowingIds().includes(userId); }
+
+// Optimistic-then-reconciled, same shape as toggleSaveRecipe/voteOnRecipe.
+// Mutates KEYS.myFollowing (the source of truth) plus, if this profile
+// happens to already be loaded, its own followerIds too, so that profile's
+// own follower count updates immediately without waiting on a re-fetch.
 async function toggleFollow(profileId) {
+  const wasFollowing = isFollowing(profileId);
+  const mine = getMyFollowingIds();
+  save(KEYS.myFollowing, wasFollowing ? mine.filter((id) => id !== profileId) : mine.concat(profileId));
   const p = profileCache[profileId];
-  if (!p) return;
-  const wasFollowing = !!p.amIFollowing;
-  p.amIFollowing = !wasFollowing;
-  p.followerIds = wasFollowing
-    ? p.followerIds.filter((id) => id !== currentUserId())
-    : p.followerIds.concat(currentUserId());
+  if (p) {
+    p.followerIds = wasFollowing
+      ? p.followerIds.filter((id) => id !== currentUserId())
+      : p.followerIds.concat(currentUserId());
+  }
   render();
 
   const res = wasFollowing ? await unfollowUser(profileId) : await followUser(profileId);
   if (res.ok) return;
 
+  if (isFollowing(profileId) === wasFollowing) return; // a newer tap already changed this
+  const stillMine = getMyFollowingIds();
+  save(KEYS.myFollowing, wasFollowing ? stillMine.concat(profileId) : stillMine.filter((id) => id !== profileId));
   const stillP = profileCache[profileId];
-  if (!stillP || stillP.amIFollowing === wasFollowing) return; // a newer tap already changed this
-  stillP.amIFollowing = wasFollowing;
-  stillP.followerIds = wasFollowing
-    ? stillP.followerIds.concat(currentUserId())
-    : stillP.followerIds.filter((id) => id !== currentUserId());
+  if (stillP) {
+    stillP.followerIds = wasFollowing
+      ? stillP.followerIds.concat(currentUserId())
+      : stillP.followerIds.filter((id) => id !== currentUserId());
+  }
   showToast(res.message || "Couldn't update that — try again.");
   render();
 }
@@ -2930,7 +2962,7 @@ function viewProfile(params) {
                 <span data-nav="profile-section" data-kind="following" data-id="${escapeHtml(params.id)}" style="cursor:pointer; text-decoration:underline">${followingObjs.length} following</span>
               </div>
             </div>
-            ${!isMe ? followToggleHtml(params.id, !!p.amIFollowing) : ""}
+            ${!isMe ? followToggleHtml(params.id, isFollowing(params.id)) : ""}
           </div>
 
           ${isMe ? personalWorkspaceHtml(recipes) : ""}

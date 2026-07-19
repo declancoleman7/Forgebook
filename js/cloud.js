@@ -220,6 +220,7 @@ function clearLiveState() {
   save(KEYS.recipeCommentCounts, []);
   save(KEYS.savedRecipes, []);
   save(KEYS.savedPaints, []);
+  save(KEYS.myFollowing, []);
   save(KEYS.activityFeed, {});
   save(KEYS.notifications, []);
   save(KEYS.globalArt, {});
@@ -600,7 +601,6 @@ async function fetchProfile(userId) {
     ratings: (ratingsRes.data || []).map(fromRemoteRating),
     followerIds,
     followingIds,
-    amIFollowing: isSignedIn() ? followerIds.includes(session.user.id) : false,
   };
 }
 
@@ -614,6 +614,18 @@ async function unfollowUser(followedId) {
   if (!sb || !isSignedIn()) return { ok: false };
   const { error } = await sb.from("follows").delete().eq("follower_id", session.user.id).eq("followed_id", followedId);
   return { ok: !error };
+}
+
+// Just your own side of the follows table -- who you follow, independent
+// of any one profile's own follower/following lists (see fetchProfile's
+// followerIds/followingIds, which only load once that specific profile
+// page is visited). Needed broadly enough (the Home feed's "Following"
+// filter) that it's synced eagerly in loadBook() rather than lazily.
+async function fetchMyFollowing() {
+  if (!sb || !isSignedIn()) return [];
+  const { data, error } = await sb.from("follows").select("followed_id").eq("follower_id", session.user.id);
+  if (error) throw error;
+  return (data || []).map((row) => row.followed_id);
 }
 
 // The signed-out variant — recipes only, deliberately narrower than
@@ -820,6 +832,12 @@ async function loadBook() {
 
   try {
     save(KEYS.savedPaints, await fetchMySavedPaints());
+  } catch (e) {
+    // swallowed on purpose
+  }
+
+  try {
+    save(KEYS.myFollowing, await fetchMyFollowing());
   } catch (e) {
     // swallowed on purpose
   }
