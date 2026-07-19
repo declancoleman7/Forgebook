@@ -449,15 +449,30 @@ alter table public.recipe_votes    enable row level security;
 -- client-filter hit doesn't block the post, it just starts it hidden-pending
 -- (status='visible' alone isn't enough to be seen by others; not-flagged is
 -- also required), same as an admin explicitly hiding it via status.
+-- The "deleted = true and user_id = auth.uid()" branch exists purely so a
+-- soft-delete (an UPDATE setting deleted=true) doesn't 42501 -- Postgres
+-- needs to re-select the row it just wrote to confirm the write, and that
+-- re-select is subject to this same SELECT policy; if the row you just
+-- deleted became invisible to you too, Postgres reports that as "new row
+-- violates row-level security policy" rather than quietly hiding it. This
+-- does NOT resurface deleted comments anywhere: fetchComments() (cloud.js)
+-- already filters .eq("deleted", false) itself, so the client never
+-- actually requests (or displays) a comment once it's been deleted --
+-- this only unblocks the deletion itself.
 drop policy if exists "read comments on visible recipes" on public.recipe_comments;
 create policy "read comments on visible recipes" on public.recipe_comments
   for select
   using (
-    deleted = false
-    and (
-      (status = 'visible' and flagged = false)
-      or user_id = auth.uid()
-      or exists (select 1 from public.profiles p where p.user_id = auth.uid() and p.is_admin)
+    (
+      (
+        deleted = false
+        and (
+          (status = 'visible' and flagged = false)
+          or user_id = auth.uid()
+          or exists (select 1 from public.profiles p where p.user_id = auth.uid() and p.is_admin)
+        )
+      )
+      or (deleted = true and user_id = auth.uid())
     )
     and exists (
       select 1 from public.recipes r
@@ -469,6 +484,28 @@ create policy "read comments on visible recipes" on public.recipe_comments
 
 -- auth.uid() = user_id can never be satisfied by an anonymous request, so
 -- this is authenticated-only without needing an explicit role check.
+-- A raw correlated subquery on recipe_comments directly inside that table's
+-- own policy (see below) trips Postgres's RLS engine into "infinite
+-- recursion detected in policy for relation" (42P17) -- a well-known
+-- gotcha, not an actual logical loop: evaluating the policy re-applies RLS
+-- to the inner query, which needs the same policy again. A security
+-- definer function sidesteps it by running the inner check without RLS,
+-- same reasoning as mentioned_profile_ids() below.
+create or replace function public.comment_parent_in_same_recipe(p_parent_id uuid, p_recipe_owner_id uuid, p_recipe_id text)
+returns boolean
+language sql
+security definer
+set search_path = public
+stable
+as $$
+  select exists (
+    select 1 from public.recipe_comments pc
+    where pc.id = p_parent_id
+      and pc.recipe_owner_id = p_recipe_owner_id
+      and pc.recipe_id = p_recipe_id
+  );
+$$;
+
 drop policy if exists "post comments on published recipes" on public.recipe_comments;
 create policy "post comments on published recipes" on public.recipe_comments
   for insert
@@ -486,12 +523,7 @@ create policy "post comments on published recipes" on public.recipe_comments
     -- RLS check (see the parent_comment_id column comment above).
     and (
       parent_comment_id is null
-      or exists (
-        select 1 from public.recipe_comments pc
-        where pc.id = parent_comment_id
-          and pc.recipe_owner_id = recipe_owner_id
-          and pc.recipe_id = recipe_id
-      )
+      or public.comment_parent_in_same_recipe(parent_comment_id, recipe_owner_id, recipe_id)
     )
   );
 
@@ -537,23 +569,34 @@ create policy "admin manage reports" on public.reports
 -- author (and an admin) can always see it regardless, which is what lets the
 -- author's own view show a "pending review" note instead of it just
 -- vanishing on them.
+-- Same "deleted = true and user_id = auth.uid()" carve-out as recipe_comments'
+-- read policy above, and for the identical reason: removePaintNoteRemote()
+-- soft-deletes via UPDATE, which needs to re-select the row it just wrote
+-- to confirm the write -- without this, that re-select fails RLS the
+-- instant deleted flips to true, even for the note's own author, and
+-- Postgres reports it as "new row violates row-level security policy"
+-- instead of just going through. fetchPaintNotes() already filters
+-- deleted=false itself, so this doesn't resurface deleted notes anywhere.
 drop policy if exists "read visible paint notes" on public.paint_notes;
 create policy "read visible paint notes" on public.paint_notes
   for select
   using (
-    deleted = false
-    and (
-      (
-        status = 'visible'
-        and flagged = false
-        and (
-          select count(*) from public.reports rep
-          where rep.content_type = 'paint_note' and rep.content_id = paint_notes.id
-        ) < 3
+    (
+      deleted = false
+      and (
+        (
+          status = 'visible'
+          and flagged = false
+          and (
+            select count(*) from public.reports rep
+            where rep.content_type = 'paint_note' and rep.content_id = paint_notes.id
+          ) < 3
+        )
+        or user_id = auth.uid()
+        or exists (select 1 from public.profiles p where p.user_id = auth.uid() and p.is_admin)
       )
-      or user_id = auth.uid()
-      or exists (select 1 from public.profiles p where p.user_id = auth.uid() and p.is_admin)
     )
+    or (deleted = true and user_id = auth.uid())
   );
 
 drop policy if exists "post paint notes" on public.paint_notes;
