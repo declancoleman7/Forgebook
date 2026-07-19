@@ -893,6 +893,9 @@ function buildHash(route, p) {
   // colour-picker-vs-anchored-to-a-paint duality) — deliberately one route,
   // not two, so there's only one render function to keep in sync.
   if (route === "profile") return `#/u${p.id ? "/" + encodeURIComponent(p.id) : ""}`;
+  // The full, unpaginated view of one Profile section ("See all" on Your
+  // Recipes/Notes Written/etc, which only shows the top 4 inline).
+  if (route === "profile-section") return `#/u/${encodeURIComponent(p.id)}/section/${encodeURIComponent(p.kind)}`;
   return `#/${route}`;
 }
 
@@ -925,6 +928,9 @@ function parseHash() {
   if (parts[0] === "similar") {
     if (parts[1]) return { route: "similar", params: { name: decodeURIComponent(parts[1]), brand: decodeURIComponent(parts[2] || "") } };
     return { route: "similar", params: {} };
+  }
+  if (parts[0] === "u" && parts[1] && parts[2] === "section" && parts[3]) {
+    return { route: "profile-section", params: { id: decodeURIComponent(parts[1]), kind: decodeURIComponent(parts[3]) } };
   }
   if (parts[0] === "u") {
     return { route: "profile", params: parts[1] ? { id: decodeURIComponent(parts[1]) } : {} };
@@ -2792,6 +2798,43 @@ function profileRatingRowHtml(r) {
   `;
 }
 
+// Shared by viewProfile() (top-4 preview) and viewProfileSection() (the
+// full "See all" list) so the two can never compute a different set of
+// items for the same profile.
+function computeProfileLists(id, isMe, p) {
+  const recipes = isMe
+    ? getRecipes()
+    : p ? p.recipes.map((r) => ({ ...r, authorId: id })) : [];
+  // Saves are private -- there's no "everyone else's saves" concept the way
+  // recipes/notes/ratings have, so this only ever computes (and only ever
+  // shows) on your own profile, never a stranger's.
+  const savedRecipeObjs = isMe
+    ? getSavedRecipes()
+        .map((s) => s.recipeOwnerId === currentUserId() ? findRecipe(s.recipeId) : findRecipe(s.recipeId, s.recipeOwnerId))
+        .filter(Boolean)
+    : [];
+  const savedPaintObjs = isMe ? getSavedPaintKeys().map(paintFromKey).filter(Boolean) : [];
+  return { recipes, savedRecipeObjs, savedPaintObjs };
+}
+
+// A section-label row with a "See all (N)" link once there's more than the
+// 4 items shown inline -- keeps Profile from becoming one long scroll.
+// Deliberately doesn't touch .section-label's own margin/first-child
+// styling (see styles.css): the wrapper here carries no margin of its own,
+// so spacing is identical to a bare .section-label, just with a sibling
+// button alongside it.
+function profileSectionLabelHtml(label, count, kind, profileId) {
+  const seeAll = count > 4
+    ? `<button type="button" class="section-see-all" data-nav="profile-section" data-kind="${kind}" data-id="${escapeHtml(profileId)}">See all (${count})</button>`
+    : "";
+  return `
+    <div style="display:flex; align-items:center; gap:10px">
+      <div class="section-label" style="flex:1">${escapeHtml(label)}</div>
+      ${seeAll}
+    </div>
+  `;
+}
+
 function viewProfile(params) {
   if (!params.id) {
     return `
@@ -2823,19 +2866,7 @@ function viewProfile(params) {
   // (getSharedRecipes() explicitly excludes the caller's own rows) --
   // everyone else's come from the fetched profile, tagged with authorId so
   // recipeCardHtml links them through the existing shared-recipe nav path.
-  const recipes = isMe
-    ? getRecipes()
-    : p ? p.recipes.map((r) => ({ ...r, authorId: params.id })) : [];
-
-  // Saves are private -- there's no "everyone else's saves" concept the way
-  // recipes/notes/ratings have, so this only ever computes (and only ever
-  // shows) on your own profile, never a stranger's.
-  const savedRecipeObjs = isMe
-    ? getSavedRecipes()
-        .map((s) => s.recipeOwnerId === currentUserId() ? findRecipe(s.recipeId) : findRecipe(s.recipeId, s.recipeOwnerId))
-        .filter(Boolean)
-    : [];
-  const savedPaintObjs = isMe ? getSavedPaintKeys().map(paintFromKey).filter(Boolean) : [];
+  const { recipes, savedRecipeObjs, savedPaintObjs } = computeProfileLists(params.id, isMe, p);
 
   return `
     <div class="page-enter">
@@ -2858,25 +2889,81 @@ function viewProfile(params) {
 
           ${isMe ? personalWorkspaceHtml(recipes) : ""}
 
-          <div class="section-label">${isMe ? "Your Recipes" : "Published Recipes"}</div>
+          ${profileSectionLabelHtml(isMe ? "Your Recipes" : "Published Recipes", recipes.length, "recipes", params.id)}
           ${recipes.length
-            ? `<div class="recipe-grid">${recipes.map(recipeCardHtml).join("")}</div>`
+            ? `<div class="recipe-grid">${recipes.slice(0, 4).map(recipeCardHtml).join("")}</div>`
             : emptyStateHtml("book", "No recipes yet", isMe ? "Tap the + button to record your first paint recipe." : "Nothing published so far.")}
 
-          <div class="section-label">Notes Written</div>
-          ${p.notes.length ? p.notes.map(profileNoteRowHtml).join("") : `<div class="empty-state__sub">No community notes yet.</div>`}
+          ${profileSectionLabelHtml("Notes Written", p.notes.length, "notes", params.id)}
+          ${p.notes.length ? p.notes.slice(0, 4).map(profileNoteRowHtml).join("") : `<div class="empty-state__sub">No community notes yet.</div>`}
 
-          <div class="section-label">Ratings Given</div>
-          ${p.ratings.length ? p.ratings.map(profileRatingRowHtml).join("") : `<div class="empty-state__sub">No ratings yet.</div>`}
+          ${profileSectionLabelHtml("Ratings Given", p.ratings.length, "ratings", params.id)}
+          ${p.ratings.length ? p.ratings.slice(0, 4).map(profileRatingRowHtml).join("") : `<div class="empty-state__sub">No ratings yet.</div>`}
 
           ${isMe ? `
-            <div class="section-label">Saved Recipes</div>
-            ${savedRecipeObjs.length ? `<div class="recipe-grid">${savedRecipeObjs.map(recipeCardHtml).join("")}</div>` : `<div class="empty-state__sub">Nothing saved yet.</div>`}
+            ${profileSectionLabelHtml("Saved Recipes", savedRecipeObjs.length, "saved-recipes", params.id)}
+            ${savedRecipeObjs.length ? `<div class="recipe-grid">${savedRecipeObjs.slice(0, 4).map(recipeCardHtml).join("")}</div>` : `<div class="empty-state__sub">Nothing saved yet.</div>`}
 
-            <div class="section-label">Saved Paints</div>
-            ${savedPaintObjs.length ? savedPaintObjs.map(searchPaintRowHtml).join("") : `<div class="empty-state__sub">Nothing saved yet.</div>`}
+            ${profileSectionLabelHtml("Saved Paints", savedPaintObjs.length, "saved-paints", params.id)}
+            ${savedPaintObjs.length ? savedPaintObjs.slice(0, 4).map(searchPaintRowHtml).join("") : `<div class="empty-state__sub">Nothing saved yet.</div>`}
           ` : ""}
         `}
+    </div>
+  `;
+}
+
+// The "See all" destination for any Profile section that only shows its
+// first 4 items inline -- reuses computeProfileLists so this can never
+// drift out of sync with what viewProfile()'s preview actually shows.
+function viewProfileSection(params) {
+  const { id, kind } = params;
+  ensureProfileLoaded(id);
+  const p = profileCache[id];
+  const isMe = id === currentUserId();
+  const { recipes, savedRecipeObjs, savedPaintObjs } = computeProfileLists(id, isMe, p);
+
+  const sections = {
+    recipes: {
+      label: isMe ? "Your Recipes" : "Published Recipes",
+      items: recipes,
+      body: (items) => `<div class="recipe-grid">${items.map(recipeCardHtml).join("")}</div>`,
+      empty: emptyStateHtml("book", "No recipes yet", isMe ? "Tap the + button to record your first paint recipe." : "Nothing published so far."),
+    },
+    notes: {
+      label: "Notes Written",
+      items: p ? p.notes : [],
+      body: (items) => items.map(profileNoteRowHtml).join(""),
+      empty: `<div class="empty-state__sub">No community notes yet.</div>`,
+    },
+    ratings: {
+      label: "Ratings Given",
+      items: p ? p.ratings : [],
+      body: (items) => items.map(profileRatingRowHtml).join(""),
+      empty: `<div class="empty-state__sub">No ratings yet.</div>`,
+    },
+    "saved-recipes": {
+      label: "Saved Recipes",
+      items: savedRecipeObjs,
+      body: (items) => `<div class="recipe-grid">${items.map(recipeCardHtml).join("")}</div>`,
+      empty: `<div class="empty-state__sub">Nothing saved yet.</div>`,
+    },
+    "saved-paints": {
+      label: "Saved Paints",
+      items: savedPaintObjs,
+      body: (items) => items.map(searchPaintRowHtml).join(""),
+      empty: `<div class="empty-state__sub">Nothing saved yet.</div>`,
+    },
+  };
+  const section = sections[kind];
+
+  return `
+    <div class="page-enter">
+      <div class="detail-header">
+        <button class="icon-btn" data-nav="profile" data-id="${escapeHtml(id)}">${icon("back", 18)}</button>
+        <div class="page-title" style="margin:0">${escapeHtml(section ? section.label : "")}</div>
+        <div style="width:36px"></div>
+      </div>
+      ${!section ? "" : section.items.length ? section.body(section.items) : section.empty}
     </div>
   `;
 }
@@ -4569,6 +4656,7 @@ function render() {
   } else if (route === "paint-library") { html = viewPaintLibrary(); showFab = false; }
   else if (route === "similar") { html = viewSimilarColours(params); showFab = false; }
   else if (route === "profile") { html = viewProfile(params); showFab = false; }
+  else if (route === "profile-section") { html = viewProfileSection(params); showFab = false; }
   else if (route === "settings") { html = viewSettings(); showFab = false; }
   else if (route === "notifications") { html = viewNotifications(); showFab = false; }
   else if (route === "search") { html = viewSearch(); showFab = false; }
@@ -4892,6 +4980,7 @@ document.addEventListener("click", async (e) => {
     else if (route === "faction" && id) navigate("faction", { id });
     else if (route === "paint" && id) navigate("paint", { id });
     else if (route === "profile") navigate("profile", id ? { id } : {});
+    else if (route === "profile-section" && id) navigate("profile-section", { id, kind: navEl.dataset.kind });
     else if (route === "paint-new") { initPaintForm(null); navigate("paint-new"); }
     else if (route === "recipe-new") { recipeForm = null; navigate("recipe-new"); }
     else {
