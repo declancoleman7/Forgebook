@@ -2178,6 +2178,11 @@ const KEYS = {
   // Site-wide comment count per recipe (recipe_comment_counts view), for the
   // activity feed's preview cards -- see fetchRecipeCommentCounts in cloud.js.
   recipeCommentCounts: "forgebook.recipeCommentCounts",
+  // Saved/bookmarked recipes and paints -- purely personal, no "everyone
+  // else's" counterpart the way votes/ratings have (see saved_recipes/
+  // saved_paints in schema.sql).
+  savedRecipes: "forgebook.savedRecipes",
+  savedPaints: "forgebook.savedPaints",
 };
 
 function readJSON(key, fallback) {

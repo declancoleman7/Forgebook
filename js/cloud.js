@@ -218,6 +218,8 @@ function clearLiveState() {
   save(KEYS.myRecipeVotes, []);
   save(KEYS.recipeVoteSummary, []);
   save(KEYS.recipeCommentCounts, []);
+  save(KEYS.savedRecipes, []);
+  save(KEYS.savedPaints, []);
   save(KEYS.activityFeed, {});
   save(KEYS.notifications, []);
   save(KEYS.globalArt, {});
@@ -775,6 +777,19 @@ async function loadBook() {
     // swallowed on purpose
   }
 
+  // Same isolation again for saved recipes/paints.
+  try {
+    save(KEYS.savedRecipes, await fetchMySavedRecipes());
+  } catch (e) {
+    // swallowed on purpose
+  }
+
+  try {
+    save(KEYS.savedPaints, await fetchMySavedPaints());
+  } catch (e) {
+    // swallowed on purpose
+  }
+
   // Same deliberate isolation: a stale/empty activity feed just means Home
   // shows less, not that the load failed. Runs after fetchSharedRecipes
   // above so its profile cache is already warm for most feed authors.
@@ -927,6 +942,46 @@ async function fetchRecipeCommentCounts() {
   const { data, error } = await sb.from("recipe_comment_counts").select("*");
   if (error) throw error;
   return (data || []).map((row) => ({ recipeOwnerId: row.recipe_owner_id, recipeId: row.recipe_id, commentCount: row.comment_count }));
+}
+
+// Saved recipes/paints -- purely personal, no site-wide summary the way
+// votes/ratings have, so these are just plain upsert/delete/select against
+// your own rows, same shape as pushWant/removeWantRemote/fetchMyRatings.
+async function pushSavedRecipe(ownerId, recipeId) {
+  if (!sb || !isSignedIn()) return { ok: false, message: "Sign in to save recipes." };
+  const { error } = await sb.from("saved_recipes").upsert({ recipe_owner_id: ownerId, recipe_id: recipeId, user_id: session.user.id });
+  if (error) return { ok: false, message: "Couldn't save that — try again." };
+  return { ok: true };
+}
+async function removeSavedRecipeRemote(ownerId, recipeId) {
+  if (!sb || !isSignedIn()) return { ok: false };
+  const { error } = await sb.from("saved_recipes").delete()
+    .eq("user_id", session.user.id).eq("recipe_owner_id", ownerId).eq("recipe_id", recipeId);
+  return { ok: !error };
+}
+async function fetchMySavedRecipes() {
+  if (!sb || !isSignedIn()) return [];
+  const { data, error } = await sb.from("saved_recipes").select("*").eq("user_id", session.user.id);
+  if (error) throw error;
+  return (data || []).map((row) => ({ recipeOwnerId: row.recipe_owner_id, recipeId: row.recipe_id }));
+}
+
+async function pushSavedPaint(paintKeyStr) {
+  if (!sb || !isSignedIn()) return { ok: false, message: "Sign in to save paints." };
+  const { error } = await sb.from("saved_paints").upsert({ paint_key: paintKeyStr, user_id: session.user.id });
+  if (error) return { ok: false, message: "Couldn't save that — try again." };
+  return { ok: true };
+}
+async function removeSavedPaintRemote(paintKeyStr) {
+  if (!sb || !isSignedIn()) return { ok: false };
+  const { error } = await sb.from("saved_paints").delete().eq("user_id", session.user.id).eq("paint_key", paintKeyStr);
+  return { ok: !error };
+}
+async function fetchMySavedPaints() {
+  if (!sb || !isSignedIn()) return [];
+  const { data, error } = await sb.from("saved_paints").select("*").eq("user_id", session.user.id);
+  if (error) throw error;
+  return (data || []).map((row) => row.paint_key);
 }
 
 function toRemotePaintNote(n, userId) {

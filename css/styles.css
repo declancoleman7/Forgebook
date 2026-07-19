@@ -786,6 +786,30 @@ main {
   height: 11px;
 }
 
+/* Shared by every passive "you've saved this" marker -- recipe/compact-row
+   cards, feed cards (recipe and paint), Paint Library rows, and search
+   results -- so it always reads the same small gold glyph wherever it
+   appears, rather than each call site inventing its own. */
+.recipe-card__saved {
+  display: inline-flex;
+  align-items: center;
+  color: var(--gold-bright);
+  margin-left: 4px;
+}
+
+.recipe-card__saved svg {
+  width: 11px;
+  height: 11px;
+  vertical-align: middle;
+}
+
+/* The one real save/unsave toggle (recipe detail, paint's Similar Colours
+   page) -- everywhere else the marker above is passive-only. */
+.icon-btn.is-active {
+  color: var(--gold-bright);
+  border-color: var(--gold-bright);
+}
+
 .recipe-card__author {
   margin-top: 5px;
   display: flex;

@@ -254,6 +254,32 @@ from public.recipe_comments
 where deleted = false and status = 'visible' and flagged = false
 group by recipe_owner_id, recipe_id;
 
+-- ------------------------------------------------------------
+-- Saved/bookmarked recipes and paints -- purely personal bookkeeping, unlike
+-- recipe_votes/paint_ratings above: no public count, no aggregate view, and
+-- (matching this session's own "don't notify on votes, it's noisy"
+-- precedent) no notification on being saved. Composite key for recipes
+-- (same recipe_owner_id+recipe_id shape recipe_votes/recipe_comments use,
+-- since recipes are keyed (user_id, id) not a single string); a bare
+-- paint_key for paints (same shape as paint_wants, since PAINT_LIBRARY
+-- entries have no DB row of their own).
+-- ------------------------------------------------------------
+create table if not exists public.saved_recipes (
+  recipe_owner_id uuid        not null,
+  recipe_id       text        not null,
+  user_id         uuid        not null references auth.users (id) on delete cascade,
+  created_at      timestamptz not null default now(),
+  primary key (user_id, recipe_owner_id, recipe_id),
+  foreign key (recipe_owner_id, recipe_id) references public.recipes (user_id, id) on delete cascade
+);
+
+create table if not exists public.saved_paints (
+  paint_key  text        not null,
+  user_id    uuid        not null references auth.users (id) on delete cascade,
+  created_at timestamptz not null default now(),
+  primary key (user_id, paint_key)
+);
+
 -- Sync pulls "everything changed since X", so index that.
 create index if not exists recipes_user_updated_idx     on public.recipes     (user_id, updated_at);
 create index if not exists paints_user_updated_idx      on public.paints      (user_id, updated_at);
@@ -546,6 +572,33 @@ drop policy if exists "read all recipe votes" on public.recipe_votes;
 create policy "read all recipe votes" on public.recipe_votes
   for select
   using (deleted = false);
+
+-- No public "read all" policy on either table below, unlike recipe_votes/
+-- paint_ratings above -- a save is private to the saver, nobody else ever
+-- needs to read another user's saved rows, so a single "for all" policy
+-- covers select/insert/update/delete.
+alter table public.saved_recipes enable row level security;
+
+drop policy if exists "own saved recipes" on public.saved_recipes;
+create policy "own saved recipes" on public.saved_recipes
+  for all
+  using      (auth.uid() = user_id)
+  with check (
+    auth.uid() = user_id
+    and exists (
+      select 1 from public.recipes r
+      where r.user_id = recipe_owner_id and r.id = recipe_id
+        and r.published = true and r.deleted = false
+    )
+  );
+
+alter table public.saved_paints enable row level security;
+
+drop policy if exists "own saved paints" on public.saved_paints;
+create policy "own saved paints" on public.saved_paints
+  for all
+  using      (auth.uid() = user_id)
+  with check (auth.uid() = user_id);
 
 -- ------------------------------------------------------------
 -- Notifications — this codebase's first DB triggers, and the first RLS

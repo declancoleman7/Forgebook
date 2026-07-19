@@ -25,6 +25,7 @@ const ICONS = {
   home: '<path d="M3 11l9-8 9 8" /><path d="M5 10v10h14V10" />',
   book: '<path d="M4 4h11a3 3 0 0 1 3 3v13H7a3 3 0 0 1-3-3V4z" /><path d="M18 4v16" />',
   shield: '<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />',
+  bookmark: '<path d="M6 3h12v18l-6-4-6 4z" />',
   paintdrop: '<path d="M12 3c4 5 7 8.5 7 12a7 7 0 0 1-14 0c0-3.5 3-7 7-12z" />',
   settings: '<circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1-1.6 1.7 1.7 0 0 0-1.9.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.9 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.6-1 1.7 1.7 0 0 0-.3-1.9l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.9.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.9-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.9V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z" />',
   search: '<circle cx="11" cy="11" r="7" /><path d="M21 21l-4.3-4.3" />',
@@ -575,6 +576,48 @@ async function voteOnRecipe(ownerId, recipeId, value) {
   if (oldValue !== null) rows.push({ recipeOwnerId: ownerId, recipeId, value: oldValue });
   save(KEYS.myRecipeVotes, rows);
   adjustRecipeVoteSummary(ownerId, recipeId, newValue, oldValue);
+  showToast(res.message || "Couldn't save that — try again.");
+  render();
+}
+
+// Saved/bookmarked recipes and paints -- purely personal, no aggregate to
+// keep in step (unlike votes/ratings above), so there's no equivalent of
+// adjustRecipeVoteSummary/adjustRatingSummary needed here. Same optimistic-
+// then-reconciled shape otherwise, including the "don't let a stale failure
+// stomp a newer tap" guard.
+function getSavedRecipes() { return readJSON(KEYS.savedRecipes, []); }
+function isRecipeSaved(ownerId, recipeId) {
+  return getSavedRecipes().some((s) => s.recipeOwnerId === ownerId && s.recipeId === recipeId);
+}
+async function toggleSaveRecipe(ownerId, recipeId) {
+  const wasSaved = isRecipeSaved(ownerId, recipeId);
+  const rows = getSavedRecipes().filter((s) => !(s.recipeOwnerId === ownerId && s.recipeId === recipeId));
+  if (!wasSaved) rows.push({ recipeOwnerId: ownerId, recipeId });
+  save(KEYS.savedRecipes, rows);
+
+  const res = wasSaved ? await removeSavedRecipeRemote(ownerId, recipeId) : await pushSavedRecipe(ownerId, recipeId);
+  if (res.ok) return;
+
+  if (isRecipeSaved(ownerId, recipeId) === wasSaved) return; // a newer tap already replaced this one
+  const revert = getSavedRecipes().filter((s) => !(s.recipeOwnerId === ownerId && s.recipeId === recipeId));
+  if (wasSaved) revert.push({ recipeOwnerId: ownerId, recipeId });
+  save(KEYS.savedRecipes, revert);
+  showToast(res.message || "Couldn't save that — try again.");
+  render();
+}
+
+function getSavedPaintKeys() { return readJSON(KEYS.savedPaints, []); }
+function isPaintSaved(name, brand) { return getSavedPaintKeys().includes(paintKey(name, brand)); }
+async function toggleSavePaint(name, brand) {
+  const key = paintKey(name, brand);
+  const wasSaved = isPaintSaved(name, brand);
+  save(KEYS.savedPaints, wasSaved ? getSavedPaintKeys().filter((k) => k !== key) : getSavedPaintKeys().concat(key));
+
+  const res = wasSaved ? await removeSavedPaintRemote(key) : await pushSavedPaint(key);
+  if (res.ok) return;
+
+  if (isPaintSaved(name, brand) === wasSaved) return; // a newer tap already replaced this one
+  save(KEYS.savedPaints, wasSaved ? getSavedPaintKeys().concat(key) : getSavedPaintKeys().filter((k) => k !== key));
   showToast(res.message || "Couldn't save that — try again.");
   render();
 }
@@ -1206,6 +1249,7 @@ function feedRecipeCardHtml(item, kind) {
             <span class="feed-card__author">${escapeHtml(authorName(authorId))}</span>
             <span class="feed-card__dot">·</span>
             <span class="feed-card__time">${relativeTime(item.at)}</span>
+            ${isRecipeSaved(ownerId, r.id) ? `<span class="recipe-card__saved" title="Saved">${icon("bookmark", 11)}</span>` : ""}
           </div>
           <div class="feed-card__title">${escapeHtml(r.name)}</div>
         </div>
@@ -1252,6 +1296,7 @@ function feedPaintCardHtml(item) {
       </div>
       <div class="feed-card-minor__rating">
         ${summary ? `★${Number(summary.avgStars).toFixed(1)}` : ""}
+        ${isPaintSaved(p.name, p.brand) ? `<span class="recipe-card__saved" title="Saved">${icon("bookmark", 11)}</span>` : ""}
       </div>
     </div>
   `;
@@ -1329,6 +1374,7 @@ function recipeCardHtml(r) {
           <span class="recipe-card__meta-right">
             <span class="recipe-card__steps">${(r.steps || []).length} steps</span>
             ${r.published !== false ? `<span class="recipe-card__score">${icon("thumb-up", 11)} ${net}</span>` : ""}
+            ${r.published !== false && isRecipeSaved(ownerId, r.id) ? `<span class="recipe-card__saved" title="Saved">${icon("bookmark", 11)}</span>` : ""}
           </span>
         </div>
         ${r.authorId ? `<div class="recipe-card__author" data-nav="profile" data-id="${escapeHtml(r.authorId)}">${avatarHtml(r.authorId, 14)} ${escapeHtml(authorName(r.authorId))}</div>` : ""}
@@ -1353,7 +1399,7 @@ function recipeCompactRowHtml(r, isActive) {
         ${r.photo ? "" : `<span class="emblem-badge emblem-badge--sm">${emblemSvg(fac.emblem, 16)}</span>`}
       </div>
       <div class="compact-recipe-row__info">
-        <div class="compact-recipe-row__name">${escapeHtml(r.name)}</div>
+        <div class="compact-recipe-row__name">${escapeHtml(r.name)}${r.published !== false && isRecipeSaved(r.authorId || currentUserId(), r.id) ? `<span class="recipe-card__saved" title="Saved">${icon("bookmark", 11)}</span>` : ""}</div>
         <div class="compact-recipe-row__meta">${escapeHtml(fac.label)}${r.unit ? " · " + escapeHtml(r.unit) : ""}${r.authorId ? " · " + escapeHtml(authorName(r.authorId)) : ""}</div>
         <div class="compact-recipe-row__stack">${stack.map((c) => `<span style="background:${c}"></span>`).join("")}</div>
       </div>
@@ -1750,7 +1796,7 @@ function viewRecipeDetail(id, authorId) {
       </div>
       <div class="detail-title">${escapeHtml(r.name)}</div>
       ${isShared ? `<div class="shared-badge">${avatarHtml(r.authorId, 16)} Shared by <span data-nav="profile" data-id="${escapeHtml(r.authorId)}" style="cursor:pointer; text-decoration:underline">${escapeHtml(authorName(r.authorId))}</span></div>` : ""}
-      ${r.published ? recipeVoteWidgetHtml(r, ownerId) : ""}
+      ${r.published ? `<div style="display:flex; align-items:center; gap:10px">${recipeVoteWidgetHtml(r, ownerId)}${saveRecipeToggleHtml(ownerId, r.id)}</div>` : ""}
       <div class="metastrip">
         <div class="metastrip__cell">
           <div class="metastrip__n">${difficultyDots(r.difficulty || 1)}</div>
@@ -2781,6 +2827,16 @@ function viewProfile(params) {
     ? getRecipes()
     : p ? p.recipes.map((r) => ({ ...r, authorId: params.id })) : [];
 
+  // Saves are private -- there's no "everyone else's saves" concept the way
+  // recipes/notes/ratings have, so this only ever computes (and only ever
+  // shows) on your own profile, never a stranger's.
+  const savedRecipeObjs = isMe
+    ? getSavedRecipes()
+        .map((s) => s.recipeOwnerId === currentUserId() ? findRecipe(s.recipeId) : findRecipe(s.recipeId, s.recipeOwnerId))
+        .filter(Boolean)
+    : [];
+  const savedPaintObjs = isMe ? getSavedPaintKeys().map(paintFromKey).filter(Boolean) : [];
+
   return `
     <div class="page-enter">
       <div class="detail-header">
@@ -2812,6 +2868,14 @@ function viewProfile(params) {
 
           <div class="section-label">Ratings Given</div>
           ${p.ratings.length ? p.ratings.map(profileRatingRowHtml).join("") : `<div class="empty-state__sub">No ratings yet.</div>`}
+
+          ${isMe ? `
+            <div class="section-label">Saved Recipes</div>
+            ${savedRecipeObjs.length ? `<div class="recipe-grid">${savedRecipeObjs.map(recipeCardHtml).join("")}</div>` : `<div class="empty-state__sub">Nothing saved yet.</div>`}
+
+            <div class="section-label">Saved Paints</div>
+            ${savedPaintObjs.length ? savedPaintObjs.map(searchPaintRowHtml).join("") : `<div class="empty-state__sub">Nothing saved yet.</div>`}
+          ` : ""}
         `}
     </div>
   `;
@@ -3002,6 +3066,12 @@ function paintRatingWidgetHtml(sourceName, sourceBrand) {
   `;
 }
 
+// Mirrors saveRecipeToggleHtml above, for a paint.
+function savePaintToggleHtml(name, brand) {
+  const saved = isPaintSaved(name, brand);
+  return `<button class="icon-btn ${saved ? "is-active" : ""}" data-action="toggle-save-paint" data-name="${escapeHtml(name)}" data-brand="${escapeHtml(brand)}" aria-label="${saved ? "Remove from saved" : "Save this paint"}" title="${saved ? "Saved" : "Save"}">${icon("bookmark", 18)}</button>`;
+}
+
 // A quick one-tap like/dislike, distinct from the considered star rating
 // above -- net score only (no separate like/dislike counts shown), per
 // product decision. Read-only (net score, no buttons) on your own recipe:
@@ -3027,6 +3097,14 @@ function recipeVoteWidgetHtml(recipe, ownerId) {
       <button class="vote-widget__btn ${mine === -1 ? "is-active" : ""}" data-action="vote-recipe" data-owner-id="${escapeHtml(ownerId)}" data-recipe-id="${escapeHtml(recipe.id)}" data-value="-1" aria-label="Dislike">${icon("thumb-down", 18)}</button>
     </div>
   `;
+}
+
+// The one real save/unsave toggle for a recipe -- available regardless of
+// ownership (unlike voting, there's no reason you shouldn't be able to
+// bookmark your own published recipe too), placed next to the vote widget.
+function saveRecipeToggleHtml(ownerId, recipeId) {
+  const saved = isRecipeSaved(ownerId, recipeId);
+  return `<button class="icon-btn ${saved ? "is-active" : ""}" data-action="toggle-save-recipe" data-owner-id="${escapeHtml(ownerId)}" data-recipe-id="${escapeHtml(recipeId)}" aria-label="${saved ? "Remove from saved" : "Save this recipe"}" title="${saved ? "Saved" : "Save"}">${icon("bookmark", 18)}</button>`;
 }
 
 function viewSimilarColours(params) {
@@ -3097,7 +3175,7 @@ function viewSimilarColours(params) {
         </div>
       </div>
 
-      ${!isColourMode ? paintRatingWidgetHtml(st.sourceName, st.sourceBrand) : ""}
+      ${!isColourMode ? `<div style="display:flex; align-items:center; gap:10px">${paintRatingWidgetHtml(st.sourceName, st.sourceBrand)}${savePaintToggleHtml(st.sourceName, st.sourceBrand)}</div>` : ""}
 
       <div class="lib-filter-seg">
         <button data-action="similar-filter" data-filter="all" class="${st.resultFilter === "all" ? "is-active" : ""}">All brands</button>
@@ -3199,6 +3277,7 @@ function viewPaintLibrary() {
   const ownedByKey = new Map(getPaints().map((p) => [paintKey(p.name, p.brand), p]));
   const wantedKeys = new Set(getWantToBuy());
   const ratingSummaryByKey = new Map(readJSON(KEYS.ratingSummary, []).map((r) => [r.paintKey, r]));
+  const savedKeys = new Set(getSavedPaintKeys());
   const ownedEntry = (p) => ownedByKey.get(paintKey(p.name, p.brand));
   const ratingFor = (p) => ratingSummaryByKey.get(paintKey(p.name, p.brand)) || null;
   const isOwnedEntry = (p) => ownedByKey.has(paintKey(p.name, p.brand));
@@ -3272,7 +3351,7 @@ function viewPaintLibrary() {
       >
         <div class="paint-row__swatch" data-action="find-similar-colour" data-name="${escapeHtml(p.name)}" data-brand="${escapeHtml(p.brand)}" data-hex="${p.hex}" title="Find similar colours" style="background:${p.hex}">${paintTypeBadgeHtml(p.type)}${summary ? `<span class="lib-row__rating" title="${Number(summary.avgStars).toFixed(1)} average, ${summary.ratingCount} rating${summary.ratingCount === 1 ? "" : "s"}">★${Number(summary.avgStars).toFixed(1)}</span>` : ""}</div>
         <div class="lib-row__info">
-          <div class="paint-row__name">${escapeHtml(p.name)}</div>
+          <div class="paint-row__name">${escapeHtml(p.name)}${savedKeys.has(paintKey(p.name, p.brand)) ? `<span class="recipe-card__saved" title="Saved">${icon("bookmark", 11)}</span>` : ""}</div>
           <div class="paint-row__brand">${escapeHtml(p.brand)} · ${escapeHtml(p.type)}</div>
         </div>
         ${flagBtn}
@@ -4253,7 +4332,7 @@ function searchPaintRowHtml(p) {
     <div class="paint-lib-row" data-action="find-similar-colour" data-name="${escapeHtml(p.name)}" data-brand="${escapeHtml(p.brand || "")}" data-hex="${p.hex}" style="cursor:pointer">
       <div class="paint-row__swatch" style="background:${p.hex}">${paintTypeBadgeHtml(p.type)}</div>
       <div>
-        <div class="paint-row__name">${escapeHtml(p.name)}</div>
+        <div class="paint-row__name">${escapeHtml(p.name)}${isPaintSaved(p.name, p.brand) ? `<span class="recipe-card__saved" title="Saved">${icon("bookmark", 11)}</span>` : ""}</div>
         <div class="paint-row__brand">${escapeHtml(p.brand || "")}${p.type ? " · " + escapeHtml(p.type) : ""}</div>
       </div>
     </div>
@@ -5295,6 +5374,22 @@ document.addEventListener("click", async (e) => {
   if (voteBtn) {
     if (!isSignedIn()) { showToast("Sign in to vote"); return; }
     voteOnRecipe(voteBtn.dataset.ownerId, voteBtn.dataset.recipeId, Number(voteBtn.dataset.value));
+    render();
+    return;
+  }
+
+  const saveRecipeBtn = t("[data-action='toggle-save-recipe']");
+  if (saveRecipeBtn) {
+    if (!isSignedIn()) { showToast("Sign in to save recipes"); return; }
+    toggleSaveRecipe(saveRecipeBtn.dataset.ownerId, saveRecipeBtn.dataset.recipeId);
+    render();
+    return;
+  }
+
+  const savePaintBtn = t("[data-action='toggle-save-paint']");
+  if (savePaintBtn) {
+    if (!isSignedIn()) { showToast("Sign in to save paints"); return; }
+    toggleSavePaint(savePaintBtn.dataset.name, savePaintBtn.dataset.brand);
     render();
     return;
   }
