@@ -1955,6 +1955,40 @@ function viewRecipeDetail(id, authorId) {
       <div class="recipe-master__detail">
         ${detailHtml}
       </div>
+      ${recipeDetailRailHtml(r)}
+    </div>
+  `;
+}
+
+// A third column, shown only on very wide screens (see .recipe-master__rail
+// in styles.css -- hidden below that breakpoint, so it's dead weight in the
+// DOM on anything narrower, not a behavior change). Reuses
+// recipeCompactRowHtml, the same tile already built for the 300px list
+// column, just pointed at a different set: the same painter's other
+// published work for a shared recipe, or your own other recipes in the same
+// army for your own.
+function recipeDetailRailHtml(r) {
+  if (r.authorId) {
+    ensureProfileLoaded(r.authorId);
+    const p = profileCache[r.authorId];
+    const more = p ? p.recipes.filter((x) => x.id !== r.id).slice(0, 5) : [];
+    return `
+      <div class="recipe-master__rail">
+        <div class="section-label">More by ${escapeHtml(authorName(r.authorId))}</div>
+        ${more.length
+          ? more.map((x) => recipeCompactRowHtml({ ...x, authorId: r.authorId }, false)).join("")
+          : `<div class="empty-state__sub">${p === undefined ? "Loading…" : "Nothing else published yet."}</div>`}
+      </div>
+    `;
+  }
+  const f = faction(r.faction);
+  const more = getRecipes().filter((x) => x.faction === r.faction && x.id !== r.id).slice(0, 5);
+  return `
+    <div class="recipe-master__rail">
+      <div class="section-label">More ${escapeHtml(f.label)}</div>
+      ${more.length
+        ? more.map((x) => recipeCompactRowHtml(x, false)).join("")
+        : `<div class="empty-state__sub">No other ${escapeHtml(f.label)} recipes yet.</div>`}
     </div>
   `;
 }

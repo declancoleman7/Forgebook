@@ -927,6 +927,10 @@ main {
   display: none;
 }
 
+.recipe-master__rail {
+  display: none;
+}
+
 .compact-recipe-row {
   display: flex;
   align-items: center;
@@ -2399,6 +2403,30 @@ main {
 @media (min-width: 1180px) {
   .recipe-grid {
     grid-template-columns: repeat(4, 1fr);
+  }
+}
+
+/* A right rail only earns its keep once there's room for list + a full
+   reading-width detail column + itself without squeezing the detail column
+   back down -- narrower than this, .recipe-master__rail stays display:none
+   (set above) and the grid stays the existing two columns. */
+@media (min-width: 1500px) {
+  main:has(.recipe-master) {
+    max-width: 1520px;
+  }
+
+  .recipe-master {
+    grid-template-columns: 300px 1fr 280px;
+  }
+
+  .recipe-master__rail {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    position: sticky;
+    top: calc(var(--topbar-h) + 24px);
+    max-height: calc(100vh - var(--topbar-h) - 48px);
+    overflow-y: auto;
   }
 }
 
