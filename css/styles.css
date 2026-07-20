@@ -4125,6 +4125,24 @@ main {
   border-color: var(--line);
 }
 
+/* GM/admin mark next to a display name, wherever it renders -- solid brand
+   gold (not the draft pill's blood/danger tones) so it reads as "official,"
+   and picks up whichever accent the active hobby's currently using for
+   free (var(--gold-bright)), same as every other brand-coloured element. */
+.admin-badge {
+  display: inline-block;
+  font-size: 9px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--ink-on-accent);
+  background: var(--gold-bright);
+  border-radius: 999px;
+  padding: 1px 6px;
+  margin-left: 5px;
+  vertical-align: middle;
+}
+
 /* Avatars — an <img> (background-image, so a broken/slow-loading photo
    never shows a broken-image glyph) when a profile has one, otherwise a
    tinted initial-letter circle. Sized per call site via an inline

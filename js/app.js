@@ -193,6 +193,21 @@ function authorName(userId) {
   return (p && p.displayName) || "Someone";
 }
 
+// A small "GM" mark next to an admin's name, wherever it renders -- visible
+// everywhere a normal painter would see that name too, not a separate
+// admin-only surface. Cheap enough (a few extra chars) to splice into every
+// existing name render rather than adding a whole new one.
+function adminBadgeHtml(isAdminFlag) {
+  return isAdminFlag ? `<span class="admin-badge" title="Forgebook admin">GM</span>` : "";
+}
+
+// escapeHtml(authorName(id)) + adminBadgeHtml in one call -- the shape
+// almost every author-name render site already used before the badge existed.
+function authorNameHtml(userId) {
+  const p = getProfiles().find((x) => x.userId === userId);
+  return `${escapeHtml((p && p.displayName) || "Someone")}${adminBadgeHtml(p && p.isAdmin)}`;
+}
+
 // A small circular avatar wherever a name renders — an <img> when a profile
 // has uploaded one, otherwise a tinted initial-letter circle, so nobody ever
 // shows as a broken image. Takes the name/url directly (not a userId) so it
@@ -1353,7 +1368,7 @@ function feedRecipeCardHtml(item, kind) {
         <div class="feed-card__body">
           <div class="feed-card__meta">
             ${avatarHtml(authorId, 18)}
-            <span class="feed-card__author">${escapeHtml(authorName(authorId))}</span>
+            <span class="feed-card__author">${authorNameHtml(authorId)}</span>
             <span class="feed-card__dot">·</span>
             <span class="feed-card__time">${relativeTime(item.at)}</span>
             ${isRecipeSaved(ownerId, r.id) ? `<span class="recipe-card__saved" title="Saved">${icon("bookmark", 11)}</span>` : ""}
@@ -1394,7 +1409,7 @@ function feedPaintCardHtml(item) {
       <div class="feed-card-minor__body">
         <div class="feed-card-minor__meta">
           ${avatarHtml(authorId, 14)}
-          <span class="feed-card-minor__author">${escapeHtml(authorName(authorId))}</span>
+          <span class="feed-card-minor__author">${authorNameHtml(authorId)}</span>
           <span class="feed-card-minor__tag">${tag}</span>
           <span class="feed-card__dot">·</span>
           <span class="feed-card__time">${relativeTime(item.at)}</span>
@@ -1494,7 +1509,7 @@ function recipeCardHtml(r) {
             ${r.published !== false && isRecipeSaved(ownerId, r.id) ? `<span class="recipe-card__saved" title="Saved">${icon("bookmark", 11)}</span>` : ""}
           </span>
         </div>
-        ${r.authorId ? `<div class="recipe-card__author" data-nav="profile" data-id="${escapeHtml(r.authorId)}">${avatarHtml(r.authorId, 14)} ${escapeHtml(authorName(r.authorId))}</div>` : ""}
+        ${r.authorId ? `<div class="recipe-card__author" data-nav="profile" data-id="${escapeHtml(r.authorId)}">${avatarHtml(r.authorId, 14)} ${authorNameHtml(r.authorId)}</div>` : ""}
         ${r.published === false ? `<span class="pill-status pill-status--draft">Draft</span>` : ""}
       </div>
     </div>
@@ -1517,7 +1532,7 @@ function recipeCompactRowHtml(r, isActive) {
       </div>
       <div class="compact-recipe-row__info">
         <div class="compact-recipe-row__name">${escapeHtml(r.name)}${r.published !== false && isRecipeSaved(r.authorId || currentUserId(), r.id) ? `<span class="recipe-card__saved" title="Saved">${icon("bookmark", 11)}</span>` : ""}</div>
-        <div class="compact-recipe-row__meta">${escapeHtml(fac.label)}${r.unit ? " · " + escapeHtml(r.unit) : ""}${r.authorId ? " · " + escapeHtml(authorName(r.authorId)) : ""}</div>
+        <div class="compact-recipe-row__meta">${escapeHtml(fac.label)}${r.unit ? " · " + escapeHtml(r.unit) : ""}${r.authorId ? " · " + authorNameHtml(r.authorId) : ""}</div>
         <div class="compact-recipe-row__stack">${stack.map((c) => `<span style="background:${c}"></span>`).join("")}</div>
       </div>
     </div>`;
@@ -1955,7 +1970,7 @@ function viewRecipeDetail(id, authorId) {
         <span data-open-unit="${r.unit ? escapeHtml(r.unit) : "_general"}" data-faction="${f.id}">${escapeHtml(r.unit || "General")}</span>
       </div>
       <div class="detail-title">${escapeHtml(r.name)}</div>
-      ${isShared ? `<div class="shared-badge">${avatarHtml(r.authorId, 16)} Shared by <span data-nav="profile" data-id="${escapeHtml(r.authorId)}" style="cursor:pointer; text-decoration:underline">${escapeHtml(authorName(r.authorId))}</span></div>` : ""}
+      ${isShared ? `<div class="shared-badge">${avatarHtml(r.authorId, 16)} Shared by <span data-nav="profile" data-id="${escapeHtml(r.authorId)}" style="cursor:pointer; text-decoration:underline">${authorNameHtml(r.authorId)}</span></div>` : ""}
       ${r.published ? recipeVoteWidgetHtml(r, ownerId) : ""}
       <div class="metastrip">
         <div class="metastrip__cell">
@@ -2090,7 +2105,7 @@ function recipeDetailRailHtml(r) {
     const more = p ? p.recipes.filter((x) => x.id !== r.id).slice(0, 5) : [];
     return `
       <div class="recipe-master__rail">
-        <div class="section-label">More by ${escapeHtml(authorName(r.authorId))}</div>
+        <div class="section-label">More by ${authorNameHtml(r.authorId)}</div>
         ${more.length
           ? more.map((x) => recipeCompactRowHtml({ ...x, authorId: r.authorId }, false)).join("")
           : `<div class="empty-state__sub">${p === undefined ? "Loading…" : "Nothing else published yet."}</div>`}
@@ -2869,7 +2884,7 @@ function commentRowHtml(c, myId, readOnly = false, isReply = false) {
   return `
     <div class="comment-row ${pending ? "is-pending" : ""} ${isReply ? "comment-row--reply" : ""}">
       <div class="comment-row__meta">
-        <span class="comment-row__author" data-nav="profile" data-id="${escapeHtml(c.userId)}">${avatarHtml(c.userId, 16)} ${escapeHtml(authorName(c.userId))}</span>
+        <span class="comment-row__author" data-nav="profile" data-id="${escapeHtml(c.userId)}">${avatarHtml(c.userId, 16)} ${authorNameHtml(c.userId)}</span>
         <span class="comment-row__time">${relativeTime(c.createdAt)}${c.edited ? " · edited" : ""}</span>
         ${pending ? `<span class="pill-status">${c.status === "hidden" ? "Hidden — reported" : "Hidden — pending review"}</span>` : ""}
       </div>
@@ -3129,7 +3144,7 @@ function suggestedPainterRowHtml(p) {
     <div class="settings-row">
       <div style="display:flex; align-items:center; gap:10px; cursor:pointer" data-nav="profile" data-id="${escapeHtml(p.userId)}">
         ${avatarGlyphHtml(p.displayName, p.avatarUrl, 28)}
-        <div class="settings-row__label">${escapeHtml(p.displayName)}</div>
+        <div class="settings-row__label">${escapeHtml(p.displayName)}${adminBadgeHtml(p.isAdmin)}</div>
       </div>
       ${followToggleHtml(p.userId, isFollowing(p.userId))}
     </div>
@@ -3162,7 +3177,7 @@ function profileSearchResultRowHtml(p) {
     <div class="settings-row" data-nav="profile" data-id="${escapeHtml(p.userId)}" style="cursor:pointer">
       <div style="display:flex; align-items:center; gap:10px">
         ${avatarGlyphHtml(p.displayName, p.avatarUrl, 28)}
-        <div class="settings-row__label">${escapeHtml(p.displayName)}</div>
+        <div class="settings-row__label">${escapeHtml(p.displayName)}${adminBadgeHtml(p.isAdmin)}</div>
       </div>
     </div>
   `;
@@ -3219,7 +3234,7 @@ function computeProfileLists(id, isMe, p) {
   // existing row component can be reused as-is for both lists.
   const resolvePeople = (ids) => ids.map((uid) => {
     const prof = getProfiles().find((x) => x.userId === uid);
-    return { userId: uid, displayName: (prof && prof.displayName) || "Someone", avatarUrl: prof ? prof.avatarUrl : null };
+    return { userId: uid, displayName: (prof && prof.displayName) || "Someone", avatarUrl: prof ? prof.avatarUrl : null, isAdmin: !!(prof && prof.isAdmin) };
   });
   const followerObjs = p ? resolvePeople(p.followerIds) : [];
   const followingObjs = p ? resolvePeople(p.followingIds) : [];
@@ -3294,7 +3309,7 @@ function viewProfile(params) {
               <div style="display:flex; align-items:center; gap:12px">
                 ${avatarGlyphHtml(p.displayName, p.avatarUrl, 56)}
                 <div style="flex:1">
-                  <div class="detail-title">${escapeHtml(p.displayName)}</div>
+                  <div class="detail-title">${escapeHtml(p.displayName)}${adminBadgeHtml(p.isAdmin)}</div>
                   <div class="detail-sub">${recipes.length} recipe${recipes.length === 1 ? "" : "s"}${isMe ? "" : " shared"} ·
                     <span data-nav="profile-section" data-kind="followers" data-id="${escapeHtml(params.id)}" style="cursor:pointer; text-decoration:underline">${followerObjs.length} follower${followerObjs.length === 1 ? "" : "s"}</span> ·
                     <span data-nav="profile-section" data-kind="following" data-id="${escapeHtml(params.id)}" style="cursor:pointer; text-decoration:underline">${followingObjs.length} following</span>
@@ -3562,7 +3577,7 @@ function communityNoteRowHtml(n, myId) {
   return `
     <div class="comment-row ${pending ? "is-pending" : ""}">
       <div class="comment-row__meta">
-        <span class="comment-row__author" data-nav="profile" data-id="${escapeHtml(n.userId)}">${avatarHtml(n.userId, 16)} ${escapeHtml(authorName(n.userId))}</span>
+        <span class="comment-row__author" data-nav="profile" data-id="${escapeHtml(n.userId)}">${avatarHtml(n.userId, 16)} ${authorNameHtml(n.userId)}</span>
         <span class="comment-row__time">${relativeTime(n.createdAt)}</span>
         ${pending ? `<span class="pill-status">${n.status === "hidden" ? "Hidden — reported" : "Hidden — pending review"}</span>` : ""}
       </div>
@@ -4851,7 +4866,7 @@ function notificationRowHtml(n) {
     <div class="comment-row ${n.read ? "" : "is-unread"}" data-action="open-notification" data-id="${escapeHtml(n.id)}" ${linkAttrs} style="cursor:pointer">
       <div class="comment-row__meta">
         ${avatarHtml(n.actorId, 18)}
-        <span class="comment-row__author">${escapeHtml(authorName(n.actorId))}</span>
+        <span class="comment-row__author">${authorNameHtml(n.actorId)}</span>
         <span class="comment-row__time">${relativeTime(n.createdAt)}</span>
         ${n.read ? "" : `<span class="notif-dot" aria-hidden="true"></span>`}
       </div>

@@ -449,7 +449,7 @@ async function fetchSharedRecipes(userId) {
 
     (profRes.data || []).forEach((row) => {
       const found = profiles.find((p) => p.userId === row.user_id);
-      const mapped = { userId: row.user_id, displayName: row.display_name, avatarUrl: row.avatar_path ? avatarUrl(row.avatar_path) : null };
+      const mapped = { userId: row.user_id, displayName: row.display_name, avatarUrl: row.avatar_path ? avatarUrl(row.avatar_path) : null, isAdmin: !!row.is_admin };
       if (found) Object.assign(found, mapped); else profiles.push(mapped);
     });
   }
@@ -484,9 +484,9 @@ async function fetchActivityFeed() {
   const knownIds = new Set(readJSON(KEYS.profiles, []).map((p) => p.userId));
   const missingIds = [...new Set([...comments.map((c) => c.userId), ...ratings.map((r) => r.userId), ...notes.map((n) => n.userId)])].filter((id) => !knownIds.has(id));
   if (missingIds.length) {
-    const { data } = await sb.from("profiles").select("user_id, display_name, avatar_path").in("user_id", missingIds);
+    const { data } = await sb.from("profiles").select("user_id, display_name, avatar_path, is_admin").in("user_id", missingIds);
     const profiles = readJSON(KEYS.profiles, []);
-    (data || []).forEach((row) => profiles.push({ userId: row.user_id, displayName: row.display_name, avatarUrl: row.avatar_path ? avatarUrl(row.avatar_path) : null }));
+    (data || []).forEach((row) => profiles.push({ userId: row.user_id, displayName: row.display_name, avatarUrl: row.avatar_path ? avatarUrl(row.avatar_path) : null, isAdmin: !!row.is_admin }));
     save(KEYS.profiles, profiles);
   }
 
@@ -524,9 +524,9 @@ async function fetchNotifications() {
   const knownIds = new Set(readJSON(KEYS.profiles, []).map((p) => p.userId));
   const missingIds = [...new Set(notifications.map((n) => n.actorId).filter(Boolean))].filter((id) => !knownIds.has(id));
   if (missingIds.length) {
-    const { data: profRows } = await sb.from("profiles").select("user_id, display_name, avatar_path").in("user_id", missingIds);
+    const { data: profRows } = await sb.from("profiles").select("user_id, display_name, avatar_path, is_admin").in("user_id", missingIds);
     const profiles = readJSON(KEYS.profiles, []);
-    (profRows || []).forEach((row) => profiles.push({ userId: row.user_id, displayName: row.display_name, avatarUrl: row.avatar_path ? avatarUrl(row.avatar_path) : null }));
+    (profRows || []).forEach((row) => profiles.push({ userId: row.user_id, displayName: row.display_name, avatarUrl: row.avatar_path ? avatarUrl(row.avatar_path) : null, isAdmin: !!row.is_admin }));
     save(KEYS.profiles, profiles);
   }
 
@@ -583,9 +583,9 @@ async function fetchPublicRecipe(authorId, id) {
 async function searchProfiles(query) {
   const q = String(query || "").trim();
   if (!sb || !q) return [];
-  const { data, error } = await sb.from("profiles").select("user_id,display_name,avatar_path").ilike("display_name", `%${q}%`).limit(20);
+  const { data, error } = await sb.from("profiles").select("user_id,display_name,avatar_path,is_admin").ilike("display_name", `%${q}%`).limit(20);
   if (error) return [];
-  return (data || []).map((row) => ({ userId: row.user_id, displayName: row.display_name, avatarUrl: row.avatar_path ? avatarUrl(row.avatar_path) : null }));
+  return (data || []).map((row) => ({ userId: row.user_id, displayName: row.display_name, avatarUrl: row.avatar_path ? avatarUrl(row.avatar_path) : null, isAdmin: !!row.is_admin }));
 }
 
 // A handful of other painters for Home's "Suggested Painters" rail --
@@ -593,9 +593,9 @@ async function searchProfiles(query) {
 // the caller to exclude from (self, already-followed) and slice down.
 async function fetchSuggestedProfiles() {
   if (!sb) return [];
-  const { data, error } = await sb.from("profiles").select("user_id,display_name,avatar_path").limit(30);
+  const { data, error } = await sb.from("profiles").select("user_id,display_name,avatar_path,is_admin").limit(30);
   if (error) return [];
-  return (data || []).map((row) => ({ userId: row.user_id, displayName: row.display_name, avatarUrl: row.avatar_path ? avatarUrl(row.avatar_path) : null }));
+  return (data || []).map((row) => ({ userId: row.user_id, displayName: row.display_name, avatarUrl: row.avatar_path ? avatarUrl(row.avatar_path) : null, isAdmin: !!row.is_admin }));
 }
 
 // A signed-in user's own profile page — recipes, notes, ratings, follower/
@@ -622,9 +622,9 @@ async function fetchProfile(userId) {
   const knownIds = new Set(readJSON(KEYS.profiles, []).map((p) => p.userId));
   const missingIds = [...new Set([...followerIds, ...followingIds])].filter((id) => !knownIds.has(id));
   if (missingIds.length) {
-    const { data: profRows } = await sb.from("profiles").select("user_id, display_name, avatar_path").in("user_id", missingIds);
+    const { data: profRows } = await sb.from("profiles").select("user_id, display_name, avatar_path, is_admin").in("user_id", missingIds);
     const profiles = readJSON(KEYS.profiles, []);
-    (profRows || []).forEach((row) => profiles.push({ userId: row.user_id, displayName: row.display_name, avatarUrl: row.avatar_path ? avatarUrl(row.avatar_path) : null }));
+    (profRows || []).forEach((row) => profiles.push({ userId: row.user_id, displayName: row.display_name, avatarUrl: row.avatar_path ? avatarUrl(row.avatar_path) : null, isAdmin: !!row.is_admin }));
     save(KEYS.profiles, profiles);
   }
 
@@ -632,6 +632,7 @@ async function fetchProfile(userId) {
     userId,
     displayName: profRes.data.display_name,
     avatarUrl: profRes.data.avatar_path ? avatarUrl(profRes.data.avatar_path) : null,
+    isAdmin: !!profRes.data.is_admin,
     recipes: (recipesRes.data || []).map(fromRemoteRecipe),
     notes: (notesRes.data || []).map(fromRemotePaintNote),
     ratings: (ratingsRes.data || []).map(fromRemoteRating),
