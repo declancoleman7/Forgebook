@@ -1371,20 +1371,27 @@ function avatarNudgeHtml() {
 function viewHome() {
   const items = buildFeedItems();
   return `
-    <div class="page-enter">
-      <div class="page-title">Community Feed</div>
-      <div style="font-size:13px; opacity:0.75; margin:0 2px 10px">What's happening across Forgebook right now.</div>
-      ${state.showAvatarNudge ? avatarNudgeHtml() : ""}
-      <div class="lib-filter-seg" style="margin-bottom:14px">
-        <button class="${state.feedSort === "following" ? "is-active" : ""}" data-action="feed-sort" data-sort="following">Following</button>
-        <button class="${state.feedSort === "popular" ? "is-active" : ""}" data-action="feed-sort" data-sort="popular">Popular</button>
-        <button class="${state.feedSort === "new" ? "is-active" : ""}" data-action="feed-sort" data-sort="new">New</button>
+    <div class="page-enter view-wide">
+      <div class="home-layout">
+        <div class="home-layout__main">
+          <div class="page-title">Community Feed</div>
+          <div style="font-size:13px; opacity:0.75; margin:0 2px 10px">What's happening across Forgebook right now.</div>
+          ${state.showAvatarNudge ? avatarNudgeHtml() : ""}
+          <div class="lib-filter-seg" style="margin-bottom:14px">
+            <button class="${state.feedSort === "following" ? "is-active" : ""}" data-action="feed-sort" data-sort="following">Following</button>
+            <button class="${state.feedSort === "popular" ? "is-active" : ""}" data-action="feed-sort" data-sort="popular">Popular</button>
+            <button class="${state.feedSort === "new" ? "is-active" : ""}" data-action="feed-sort" data-sort="new">New</button>
+          </div>
+          ${items.length
+            ? items.map(feedItemHtml).join("")
+            : state.feedSort === "following"
+            ? emptyStateHtml("book", "Follow some painters", "Nothing from people you follow yet -- check Popular or New to find some.")
+            : emptyStateHtml("book", "Nothing yet", "Publish a recipe, or leave a note or rating, to get the community feed moving.")}
+        </div>
+        <div class="home-layout__rail">
+          ${suggestedPaintersRailHtml()}
+        </div>
       </div>
-      ${items.length
-        ? items.map(feedItemHtml).join("")
-        : state.feedSort === "following"
-        ? emptyStateHtml("book", "Follow some painters", "Nothing from people you follow yet -- check Popular or New to find some.")
-        : emptyStateHtml("book", "Nothing yet", "Publish a recipe, or leave a note or rating, to get the community feed moving.")}
     </div>
   `;
 }
@@ -2908,6 +2915,52 @@ async function toggleFollow(profileId) {
 
 function followToggleHtml(profileId, amIFollowing) {
   return `<button class="btn ${amIFollowing ? "btn-ghost" : "btn-primary"} btn-sm" data-action="toggle-follow" data-id="${escapeHtml(profileId)}">${amIFollowing ? "Following" : "Follow"}</button>`;
+}
+
+// Home's "Suggested Painters" rail (desktop only, see .home-layout__rail in
+// styles.css) -- same undefined/loading/array cache shape as profileCache,
+// just one flat list instead of one entry per id.
+let suggestedProfiles;
+let suggestedProfilesLoading = false;
+function ensureSuggestedProfilesLoaded() {
+  if (suggestedProfiles !== undefined || suggestedProfilesLoading) return;
+  suggestedProfilesLoading = true;
+  fetchSuggestedProfiles()
+    .then((rows) => { suggestedProfiles = rows; })
+    .catch((e) => { suggestedProfiles = []; })
+    .finally(() => { suggestedProfilesLoading = false; render(); });
+}
+
+// The follow button sits as a sibling of the data-nav area, not nested
+// inside it -- toggle-follow's own delegate check (js/app.js, much further
+// down the file) runs after the generic [data-nav] fallback, so a follow
+// button nested inside a data-nav row would have the row's own navigation
+// fire first and swallow the click (same reason feed-card__actions is a
+// sibling of feed-card__link, not nested inside it).
+function suggestedPainterRowHtml(p) {
+  return `
+    <div class="settings-row">
+      <div style="display:flex; align-items:center; gap:10px; cursor:pointer" data-nav="profile" data-id="${escapeHtml(p.userId)}">
+        ${avatarGlyphHtml(p.displayName, p.avatarUrl, 28)}
+        <div class="settings-row__label">${escapeHtml(p.displayName)}</div>
+      </div>
+      ${followToggleHtml(p.userId, isFollowing(p.userId))}
+    </div>
+  `;
+}
+
+function suggestedPaintersRailHtml() {
+  ensureSuggestedProfilesLoaded();
+  const exclude = new Set([currentUserId(), ...getMyFollowingIds()]);
+  const list = (suggestedProfiles || []).filter((p) => !exclude.has(p.userId)).slice(0, 6);
+  return `
+    <div class="section-label">Suggested Painters</div>
+    ${suggestedProfiles === undefined
+      ? `<div class="empty-state__sub">Loading…</div>`
+      : list.length
+      ? list.map(suggestedPainterRowHtml).join("")
+      : `<div class="empty-state__sub">No one else to suggest yet.</div>`}
+  `;
 }
 
 // Reverses a paint_key back to a real PAINT_LIBRARY entry for display —

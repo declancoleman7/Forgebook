@@ -562,6 +562,16 @@ async function searchProfiles(query) {
   return (data || []).map((row) => ({ userId: row.user_id, displayName: row.display_name, avatarUrl: row.avatar_path ? avatarUrl(row.avatar_path) : null }));
 }
 
+// A handful of other painters for Home's "Suggested Painters" rail --
+// unlike searchProfiles() this has no query to filter by, just a batch for
+// the caller to exclude from (self, already-followed) and slice down.
+async function fetchSuggestedProfiles() {
+  if (!sb) return [];
+  const { data, error } = await sb.from("profiles").select("user_id,display_name,avatar_path").limit(30);
+  if (error) return [];
+  return (data || []).map((row) => ({ userId: row.user_id, displayName: row.display_name, avatarUrl: row.avatar_path ? avatarUrl(row.avatar_path) : null }));
+}
+
 // A signed-in user's own profile page — recipes, notes, ratings, follower/
 // following ids, batched like fetchPublicRecipe already batches
 // paints+profile.

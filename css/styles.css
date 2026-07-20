@@ -931,6 +931,10 @@ main {
   display: none;
 }
 
+.home-layout__rail {
+  display: none;
+}
+
 .compact-recipe-row {
   display: flex;
   align-items: center;
@@ -2397,6 +2401,26 @@ main {
     border: 1px solid var(--line);
     border-radius: var(--radius-sm);
     background: var(--bg-panel);
+  }
+
+  /* Home: a capped-width feed column (a feed stretched to fill an ultra-wide
+     monitor reads worse, not better -- this is the same reading-width cap
+     Twitter/Facebook use) plus a rail for something to actually do with the
+     freed space, instead of it just being background. Fixed widths, not 1fr
+     -- any width left over past the rail is meant to stay as page margin. */
+  .home-layout {
+    display: grid;
+    grid-template-columns: 640px 280px;
+    gap: 32px;
+    align-items: start;
+  }
+
+  .home-layout__rail {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    position: sticky;
+    top: calc(var(--topbar-h) + 24px);
   }
 }
 
