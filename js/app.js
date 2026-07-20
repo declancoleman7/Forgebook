@@ -200,7 +200,8 @@ function relativeTime(iso) {
 // as your own. The Home screen deliberately does NOT use this — it's a
 // personal dashboard, not a browse screen.
 function getVisibleRecipes() {
-  return state.includeShared ? getRecipes().concat(getSharedRecipes()) : getRecipes();
+  const all = state.includeShared ? getRecipes().concat(getSharedRecipes()) : getRecipes();
+  return all.filter((r) => (r.hobbyId || "warhammer") === getActiveHobbyId());
 }
 
 // A recipe step's paintId is only unique within its own author's rack (two
@@ -1211,7 +1212,7 @@ function buildFeedItems() {
   const items = [];
 
   getSharedRecipes()
-    .filter((r) => now - new Date(r.updatedAt).getTime() < FEED_WINDOW_MS)
+    .filter((r) => now - new Date(r.updatedAt).getTime() < FEED_WINDOW_MS && (r.hobbyId || "warhammer") === getActiveHobbyId())
     .forEach((r) => items.push({
       type: "recipe_published", recipe: r, authorId: r.authorId, at: r.updatedAt,
       // Lifetime comment count, not the rolling window below -- "how well is
@@ -1231,6 +1232,7 @@ function buildFeedItems() {
   Object.values(commentGroups).forEach((g) => {
     const recipe = findRecipe(g.recipeId, g.recipeOwnerId === currentUserId() ? undefined : g.recipeOwnerId);
     if (!recipe) return;
+    if ((recipe.hobbyId || "warhammer") !== getActiveHobbyId()) return; // paint_rating/paint_note items below stay hobby-agnostic on purpose -- the paint library isn't per-hobby
     items.push({
       type: "recipe_comments", recipe, recipeOwnerId: g.recipeOwnerId, count: g.count, at: g.latestAt,
       // The windowed burst count, not the lifetime total -- this item
@@ -1534,7 +1536,7 @@ function recipeFilterOverlayHtml(used) {
             </div>
           </div>
           ` : ""}
-          <div class="section-label">Army</div>
+          <div class="section-label">${escapeHtml(activeHobby().groupLabel)}</div>
           <div class="filter-toggle-row">
             ${used.map((id) => {
               const f = faction(id);
@@ -1544,7 +1546,7 @@ function recipeFilterOverlayHtml(used) {
                   <span class="faction-chip__emblem" style="color:${f.color}">${emblemSvg(f.emblem, 15)}</span>
                   ${escapeHtml(f.label)}
                 </div>`;
-            }).join("") || `<div class="empty-state__sub">No recipes yet to filter by army.</div>`}
+            }).join("") || `<div class="empty-state__sub">No recipes yet to filter by ${escapeHtml(activeHobby().groupLabel.toLowerCase())}.</div>`}
           </div>
           <div class="section-label">Difficulty</div>
           <div class="filter-toggle-row">
@@ -1706,16 +1708,16 @@ function viewFaction(id) {
       <input type="file" id="faction-art-input" accept="image/*" class="hidden" />
 
       <div class="detail-title">${escapeHtml(f.label)}</div>
-      <div class="detail-sub">${escapeHtml(f.alliance)} \u00b7 ${total} recipe${total === 1 ? "" : "s"}</div>
+      <div class="detail-sub">${f.alliance === "All" ? "" : escapeHtml(f.alliance) + " \u00b7 "}${total} recipe${total === 1 ? "" : "s"}</div>
 
       <div class="section-label">Units</div>
       <div class="unit-list">
-        ${row(GENERAL_UNIT.replace(/\u2014/g, "").trim() + " \u2014 whole army", general, null)}
+        ${row(GENERAL_UNIT.replace(/\u2014/g, "").trim() + " \u2014 " + activeHobby().wholeGroupLabel, general, null)}
         ${units.map((u) => row(u.name, u.count, u.name)).join("")}
       </div>
       ${!units.length ? `<div class="empty-state__sub" style="padding:10px 2px">
-        No units yet for this army. Units appear here as soon as you save a recipe against one \u2014
-        or use General for recipes that apply to the whole force.
+        No units yet for this ${escapeHtml(activeHobby().groupLabel.toLowerCase())}. Units appear here as soon as you save a recipe against one \u2014
+        or use General for recipes that apply to the ${escapeHtml(activeHobby().wholeGroupLabel)}.
       </div>` : ""}
 
       <div class="detail-actions">
@@ -1767,7 +1769,7 @@ function viewUnit(facId, unit) {
       </div>
       <div class="detail-id" style="color:${f.color}">${escapeHtml(f.label)}</div>
       <div class="detail-title">${escapeHtml(label)}</div>
-      <div class="detail-sub">${recipes.length} recipe${recipes.length === 1 ? "" : "s"}${unit === null ? " that apply to the whole army" : ""}</div>
+      <div class="detail-sub">${recipes.length} recipe${recipes.length === 1 ? "" : "s"}${unit === null ? ` that apply to the ${escapeHtml(activeHobby().wholeGroupLabel)}` : ""}</div>
 
       ${recipes.length
         ? `<div class="recipe-grid" style="margin-top:14px">${recipes.map(recipeCardHtml).join("")}</div>`
@@ -4071,8 +4073,9 @@ function initRecipeForm(existing, presetFaction, presetUnit) {
     : {
         id: null,
         name: "",
-        faction: presetFaction || FACTIONS[0].id,
+        faction: presetFaction || activeHobby().factions[0].id,
         unit: presetUnit || "",
+        hobbyId: activeHobby().id,
         difficulty: 2,
         photo: null,
         steps: [newStep()],
@@ -4130,19 +4133,23 @@ function viewRecipeForm(isEdit) {
       </div>
 
       <div class="field">
-        <label>Army</label>
+        <label>${escapeHtml(activeHobby().groupLabel)}</label>
         <select id="r-faction">
-          ${SYSTEMS.map((sys) => `
-            <optgroup label="${escapeHtml(sys.label)}">
-              ${FACTIONS.filter((f) => f.system === sys.id).map((f) =>
+          ${activeHobby().flatBrowse
+            ? activeHobby().factions.map((f) =>
                 `<option value="${f.id}" ${recipeForm.faction === f.id ? "selected" : ""}>${escapeHtml(f.label)}</option>`
-              ).join("")}
-            </optgroup>`).join("")}
+              ).join("")
+            : activeHobby().systems.map((sys) => `
+                <optgroup label="${escapeHtml(sys.label)}">
+                  ${activeHobby().factions.filter((f) => f.system === sys.id).map((f) =>
+                    `<option value="${f.id}" ${recipeForm.faction === f.id ? "selected" : ""}>${escapeHtml(f.label)}</option>`
+                  ).join("")}
+                </optgroup>`).join("")}
         </select>
       </div>
 
       <div class="field">
-        <label>Unit <span class="label-hint">leave blank for a General, army-wide recipe</span></label>
+        <label>Unit <span class="label-hint">leave blank for a General, ${escapeHtml(activeHobby().groupLabel.toLowerCase())}-wide recipe</span></label>
         <input type="text" id="r-unit" list="unit-suggestions" value="${escapeHtml(recipeForm.unit)}" placeholder="e.g. Boyz, Termagants, Intercessors" />
         <datalist id="unit-suggestions">
           ${allUnitNames().map((u) => `<option value="${escapeHtml(u)}"></option>`).join("")}
@@ -4164,7 +4171,7 @@ function viewRecipeForm(isEdit) {
         <div class="share-toggle ${recipeForm.published ? "is-on" : ""}" data-action="toggle-published">
           <div class="share-toggle__text">
             <strong>Share this recipe</strong>
-            <span>Visible to everyone else in Forgebook, listed as by ${escapeHtml(authorName(currentUserId()))} under its army and unit.</span>
+            <span>Visible to everyone else in Forgebook, listed as by ${escapeHtml(authorName(currentUserId()))} under its ${escapeHtml(activeHobby().groupLabel.toLowerCase())} and unit.</span>
           </div>
           <div class="share-toggle__switch"><i></i></div>
         </div>
@@ -5569,6 +5576,7 @@ document.addEventListener("click", async (e) => {
       name: recipeForm.name.trim(),
       faction: recipeForm.faction,
       unit: recipeForm.unit.trim() || null, // blank unit == General
+      hobbyId: recipeForm.hobbyId || "warhammer",
       difficulty: recipeForm.difficulty,
       photo: recipeForm.photo,
       steps,
