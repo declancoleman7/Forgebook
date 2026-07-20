@@ -28,6 +28,15 @@ create table if not exists public.recipes (
   primary key (user_id, id)
 );
 
+-- Which hobby this recipe belongs to (see HOBBIES in data.js). The DEFAULT
+-- backfills every existing row to 'warhammer' the instant this runs -- that
+-- IS the entire migration for pre-existing recipes, no UPDATE needed. No
+-- check constraint against a fixed hobby-id list, matching the existing
+-- philosophy that faction/unit are unconstrained too -- the known-list is a
+-- client-side (data.js) concept, not a DB-enforced one.
+alter table public.recipes add column if not exists hobby_id text not null default 'warhammer';
+create index if not exists recipes_hobby_idx on public.recipes (user_id, hobby_id);
+
 -- ------------------------------------------------------------
 -- Paint rack
 -- ------------------------------------------------------------
@@ -288,6 +297,21 @@ create table if not exists public.saved_paints (
   user_id    uuid        not null references auth.users (id) on delete cascade,
   created_at timestamptz not null default now(),
   primary key (user_id, paint_key)
+);
+
+-- ------------------------------------------------------------
+-- Which extra hobbies a user has opted into (see HOBBIES in data.js).
+-- Warhammer is never a row here -- it's always implicitly enabled for every
+-- account (see enabledHobbyIds() in app.js) -- so an account that's never
+-- touched this feature has zero rows here, needing zero backfill either.
+-- Private, like saved_recipes/saved_paints above (not public like follows):
+-- nobody else needs to see which hobbies an account has enabled.
+-- ------------------------------------------------------------
+create table if not exists public.user_hobbies (
+  user_id    uuid        not null references auth.users (id) on delete cascade,
+  hobby_id   text        not null,
+  created_at timestamptz not null default now(),
+  primary key (user_id, hobby_id)
 );
 
 -- ------------------------------------------------------------
@@ -678,6 +702,14 @@ alter table public.saved_paints enable row level security;
 
 drop policy if exists "own saved paints" on public.saved_paints;
 create policy "own saved paints" on public.saved_paints
+  for all
+  using      (auth.uid() = user_id)
+  with check (auth.uid() = user_id);
+
+alter table public.user_hobbies enable row level security;
+
+drop policy if exists "manage own hobbies" on public.user_hobbies;
+create policy "manage own hobbies" on public.user_hobbies
   for all
   using      (auth.uid() = user_id)
   with check (auth.uid() = user_id);

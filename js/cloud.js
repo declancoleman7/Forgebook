@@ -221,6 +221,7 @@ function clearLiveState() {
   save(KEYS.savedRecipes, []);
   save(KEYS.savedPaints, []);
   save(KEYS.myFollowing, []);
+  save(KEYS.myHobbies, []);
   save(KEYS.activityFeed, {});
   save(KEYS.notifications, []);
   save(KEYS.globalArt, {});
@@ -239,6 +240,7 @@ function toRemoteRecipe(r, userId) {
     name: r.name,
     faction: r.faction,
     unit: r.unit,
+    hobby_id: r.hobbyId || "warhammer",
     difficulty: r.difficulty,
     photo_path: r.photoPath || null,
     steps: r.steps || [],
@@ -255,6 +257,7 @@ function fromRemoteRecipe(row) {
     name: row.name,
     faction: row.faction,
     unit: row.unit,
+    hobbyId: row.hobby_id || "warhammer",
     difficulty: row.difficulty,
     photoPath: row.photo_path || null,
     photo: row.photo_path ? photoUrl(row.photo_path) : null,
@@ -638,6 +641,22 @@ async function fetchMyFollowing() {
   return (data || []).map((row) => row.followed_id);
 }
 
+// Which extra hobbies (besides the always-on Warhammer) this account has
+// opted into -- see HOBBIES/enabledHobbyIds() in app.js/data.js.
+async function fetchMyUserHobbies() {
+  if (!sb || !isSignedIn()) return [];
+  const { data, error } = await sb.from("user_hobbies").select("hobby_id").eq("user_id", session.user.id);
+  if (error) throw error;
+  return (data || []).map((row) => row.hobby_id);
+}
+
+async function addUserHobby(hobbyId) {
+  if (!sb || !isSignedIn()) return { ok: false, message: "Sign in to add a hobby." };
+  const { error } = await sb.from("user_hobbies").upsert({ user_id: session.user.id, hobby_id: hobbyId });
+  if (error) return { ok: false, message: "Couldn't add that hobby — try again." };
+  return { ok: true };
+}
+
 // The signed-out variant — recipes only, deliberately narrower than
 // fetchProfile above (mirrors fetchPublicRecipe's own narrow scope), so this
 // route doesn't have to re-derive the hidden/pending-note visibility rules
@@ -848,6 +867,14 @@ async function loadBook() {
 
   try {
     save(KEYS.myFollowing, await fetchMyFollowing());
+  } catch (e) {
+    // swallowed on purpose
+  }
+
+  // Same isolation once more -- an account that hasn't re-pasted schema.sql
+  // yet (no user_hobbies table) just sees no extra hobbies, not a broken sync.
+  try {
+    save(KEYS.myHobbies, await fetchMyUserHobbies());
   } catch (e) {
     // swallowed on purpose
   }

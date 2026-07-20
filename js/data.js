@@ -118,6 +118,48 @@ const SYSTEMS = [
   { id: "other", label: "Everything Else", alliances: ["General"] },
 ];
 
+// --- D&D miniatures: no faction/alliance concept the way a wargame army
+// does, so this is a small fixed list of what a mini actually IS, expressed
+// in the identical { id, label, system, alliance, color, emblem } shape a
+// faction uses -- that's what lets every existing faction-shaped renderer
+// (tiles, cards, generateId) work against this with zero changes. Ids are
+// namespaced (dnd-*) so they can never collide with a Games Workshop id in
+// the shared HOBBIES lookup below.
+const DND_CATEGORIES = [
+  { id: "dnd-player-character", label: "Player Character",  system: "dnd", alliance: "All", color: "#7A5C8E", emblem: "crown" },
+  { id: "dnd-monster",          label: "Monster",            system: "dnd", alliance: "All", color: "#8E1B24", emblem: "claw"  },
+  { id: "dnd-npc",               label: "NPC",                system: "dnd", alliance: "All", color: "#3F6D8E", emblem: "helm"  },
+  { id: "dnd-terrain",          label: "Terrain & Scenery",  system: "dnd", alliance: "All", color: "#4C7A3E", emblem: "leaf"  },
+  { id: "dnd-vehicle",          label: "Vehicle",            system: "dnd", alliance: "All", color: "#7E5A3C", emblem: "cog"   },
+];
+const DND_SYSTEMS = [
+  { id: "dnd", label: "D&D Miniatures", alliances: ["All"] },
+];
+
+// --- Hobbies: the top-level thing a recipe belongs to. Warhammer wraps the
+// existing FACTIONS/SYSTEMS by reference (not a copy) so nothing about that
+// data changes shape; a hobby with no real faction/alliance hierarchy (D&D)
+// sets flatBrowse so the browse page skips the two-level System/Alliance
+// grouping and just shows one flat grid of its "factions" (categories).
+// Warhammer is always enabled for every account -- see enabledHobbyIds() in
+// app.js -- so it deliberately has no on/off state of its own here.
+const HOBBIES = [
+  {
+    id: "warhammer", label: "Warhammer",
+    flatBrowse: false, browseTitle: "Armies", groupLabel: "Army", wholeGroupLabel: "whole army",
+    factions: FACTIONS, systems: SYSTEMS,
+  },
+  {
+    id: "dnd", label: "D&D Miniatures",
+    flatBrowse: true, browseTitle: "Categories", groupLabel: "Category", wholeGroupLabel: "whole category",
+    factions: DND_CATEGORIES, systems: DND_SYSTEMS,
+  },
+];
+
+function hobby(id) {
+  return HOBBIES.find((h) => h.id === id) || HOBBIES[0];
+}
+
 const TECHNIQUES = ["Primer", "Base", "Shade", "Layer", "Highlight", "Edge Highlight", "Glaze", "Drybrush", "Wash", "Contrast", "Technical"];
 const PAINT_TYPES = ["Base", "Layer", "Shade", "Contrast", "Dry", "Technical", "Air", "Spray", "Other"];
 const PAINT_BRANDS = ["Citadel", "Vallejo", "Army Painter", "Scale75", "Pro Acryl", "Two Thin Coats", "AK", "Kimera", "Colour Forge", "Other"];
@@ -2200,8 +2242,16 @@ const PAINT_LIBRARY = [
 
 const GENERAL_UNIT = "\u2014 General \u2014"; // label for faction-wide recipes
 
+// Searches every hobby's factions/categories, not just Warhammer's -- every
+// existing caller (recipeCardHtml, viewFaction, viewUnit, generateId, the
+// Home faction-row, the recipe filter overlay) keeps working unmodified,
+// since a dnd-* id now resolves here exactly like a GW faction id always has.
 function faction(id) {
-  return FACTIONS.find((f) => f.id === id) || FACTIONS[FACTIONS.length - 1];
+  for (const h of HOBBIES) {
+    const f = h.factions.find((x) => x.id === id);
+    if (f) return f;
+  }
+  return FACTIONS[FACTIONS.length - 1];
 }
 
 function emblemPaths(key) {
@@ -2263,6 +2313,13 @@ const KEYS = {
   // (e.g. the Home feed's "Following" filter) independent of whether
   // you've ever actually opened that person's profile page this session.
   myFollowing: "forgebook.myFollowing",
+  // Which hobbies (besides the always-on Warhammer, see enabledHobbyIds() in
+  // app.js) this account has opted into -- synced via user_hobbies. The
+  // hobby currently being VIEWED is a separate, per-device, unsynced
+  // localStorage value (see getActiveHobbyId() in app.js), same treatment as
+  // theme preference -- not account state, so it's deliberately not a KEYS
+  // entry.
+  myHobbies: "forgebook.myHobbies",
 };
 
 function readJSON(key, fallback) {
