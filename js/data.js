@@ -148,11 +148,15 @@ const HOBBIES = [
     id: "warhammer", label: "Warhammer",
     flatBrowse: false, browseTitle: "Armies", groupLabel: "Army", groupLabelPlural: "Armies", wholeGroupLabel: "whole army",
     factions: FACTIONS, systems: SYSTEMS,
+    namePlaceholder: "e.g. Ork Boyz Skin",
+    unitPlaceholder: "e.g. Boyz, Termagants, Intercessors",
   },
   {
     id: "dnd", label: "D&D Miniatures",
     flatBrowse: true, browseTitle: "Categories", groupLabel: "Category", groupLabelPlural: "Categories", wholeGroupLabel: "whole category",
     factions: DND_CATEGORIES, systems: DND_SYSTEMS,
+    namePlaceholder: "e.g. Frost Giant Skin",
+    unitPlaceholder: "e.g. Goblin, Owlbear, Paladin",
   },
 ];
 

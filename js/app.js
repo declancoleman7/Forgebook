@@ -4150,7 +4150,7 @@ function viewRecipeForm(isEdit) {
 
       <div class="field">
         <label>Recipe name</label>
-        <input type="text" id="r-name" value="${escapeHtml(recipeForm.name)}" placeholder="e.g. Ork Boyz Skin" />
+        <input type="text" id="r-name" value="${escapeHtml(recipeForm.name)}" placeholder="${escapeHtml(activeHobby().namePlaceholder)}" />
       </div>
 
       <div class="field">
@@ -4171,7 +4171,7 @@ function viewRecipeForm(isEdit) {
 
       <div class="field">
         <label>Unit <span class="label-hint">leave blank for a General, ${escapeHtml(activeHobby().groupLabel.toLowerCase())}-wide recipe</span></label>
-        <input type="text" id="r-unit" list="unit-suggestions" value="${escapeHtml(recipeForm.unit)}" placeholder="e.g. Boyz, Termagants, Intercessors" />
+        <input type="text" id="r-unit" list="unit-suggestions" value="${escapeHtml(recipeForm.unit)}" placeholder="${escapeHtml(activeHobby().unitPlaceholder)}" />
         <datalist id="unit-suggestions">
           ${allUnitNames().map((u) => `<option value="${escapeHtml(u)}"></option>`).join("")}
         </datalist>
