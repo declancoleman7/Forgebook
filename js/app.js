@@ -3005,7 +3005,7 @@ function viewProfile(params) {
   const { recipes, savedRecipeObjs, savedPaintObjs, followerObjs, followingObjs } = computeProfileLists(params.id, isMe, p);
 
   return `
-    <div class="page-enter">
+    <div class="page-enter view-wide">
       <div class="detail-header">
         <button class="icon-btn" data-nav="home">${icon("back", 18)}</button>
         ${isMe ? `<button class="icon-btn" data-nav="settings">${icon("settings", 18)}</button>` : `<div style="width:36px"></div>`}
@@ -3015,38 +3015,44 @@ function viewProfile(params) {
         : p === null
         ? emptyStateHtml("search", "Painter not found", "This profile doesn't exist, or has no published work yet.")
         : `
-          <div style="display:flex; align-items:center; gap:12px">
-            ${avatarGlyphHtml(p.displayName, p.avatarUrl, 56)}
-            <div style="flex:1">
-              <div class="detail-title">${escapeHtml(p.displayName)}</div>
-              <div class="detail-sub">${recipes.length} recipe${recipes.length === 1 ? "" : "s"}${isMe ? "" : " shared"} ·
-                <span data-nav="profile-section" data-kind="followers" data-id="${escapeHtml(params.id)}" style="cursor:pointer; text-decoration:underline">${followerObjs.length} follower${followerObjs.length === 1 ? "" : "s"}</span> ·
-                <span data-nav="profile-section" data-kind="following" data-id="${escapeHtml(params.id)}" style="cursor:pointer; text-decoration:underline">${followingObjs.length} following</span>
+          <div class="profile-layout">
+            <div class="profile-layout__side">
+              <div style="display:flex; align-items:center; gap:12px">
+                ${avatarGlyphHtml(p.displayName, p.avatarUrl, 56)}
+                <div style="flex:1">
+                  <div class="detail-title">${escapeHtml(p.displayName)}</div>
+                  <div class="detail-sub">${recipes.length} recipe${recipes.length === 1 ? "" : "s"}${isMe ? "" : " shared"} ·
+                    <span data-nav="profile-section" data-kind="followers" data-id="${escapeHtml(params.id)}" style="cursor:pointer; text-decoration:underline">${followerObjs.length} follower${followerObjs.length === 1 ? "" : "s"}</span> ·
+                    <span data-nav="profile-section" data-kind="following" data-id="${escapeHtml(params.id)}" style="cursor:pointer; text-decoration:underline">${followingObjs.length} following</span>
+                  </div>
+                </div>
+                ${!isMe ? followToggleHtml(params.id, isFollowing(params.id)) : ""}
               </div>
+
+              ${isMe ? personalWorkspaceHtml(recipes) : ""}
             </div>
-            ${!isMe ? followToggleHtml(params.id, isFollowing(params.id)) : ""}
+
+            <div class="profile-layout__main">
+              ${profileSectionLabelHtml(isMe ? "Your Recipes" : "Published Recipes", recipes.length, "recipes", params.id)}
+              ${recipes.length
+                ? `<div class="recipe-grid">${recipes.slice(0, 4).map(recipeCardHtml).join("")}</div>`
+                : emptyStateHtml("book", "No recipes yet", isMe ? "Tap the + button to record your first paint recipe." : "Nothing published so far.")}
+
+              ${profileSectionLabelHtml("Notes Written", p.notes.length, "notes", params.id)}
+              ${p.notes.length ? p.notes.slice(0, 4).map(profileNoteRowHtml).join("") : `<div class="empty-state__sub">No community notes yet.</div>`}
+
+              ${profileSectionLabelHtml("Ratings Given", p.ratings.length, "ratings", params.id)}
+              ${p.ratings.length ? `<div class="profile-ratings-grid">${p.ratings.slice(0, 4).map(profileRatingRowHtml).join("")}</div>` : `<div class="empty-state__sub">No ratings yet.</div>`}
+
+              ${isMe ? `
+                ${profileSectionLabelHtml("Saved Recipes", savedRecipeObjs.length, "saved-recipes", params.id)}
+                ${savedRecipeObjs.length ? `<div class="recipe-grid">${savedRecipeObjs.slice(0, 4).map(recipeCardHtml).join("")}</div>` : `<div class="empty-state__sub">Nothing saved yet.</div>`}
+
+                ${profileSectionLabelHtml("Saved Paints", savedPaintObjs.length, "saved-paints", params.id)}
+                ${savedPaintObjs.length ? savedPaintObjs.slice(0, 4).map(searchPaintRowHtml).join("") : `<div class="empty-state__sub">Nothing saved yet.</div>`}
+              ` : ""}
+            </div>
           </div>
-
-          ${isMe ? personalWorkspaceHtml(recipes) : ""}
-
-          ${profileSectionLabelHtml(isMe ? "Your Recipes" : "Published Recipes", recipes.length, "recipes", params.id)}
-          ${recipes.length
-            ? `<div class="recipe-grid">${recipes.slice(0, 4).map(recipeCardHtml).join("")}</div>`
-            : emptyStateHtml("book", "No recipes yet", isMe ? "Tap the + button to record your first paint recipe." : "Nothing published so far.")}
-
-          ${profileSectionLabelHtml("Notes Written", p.notes.length, "notes", params.id)}
-          ${p.notes.length ? p.notes.slice(0, 4).map(profileNoteRowHtml).join("") : `<div class="empty-state__sub">No community notes yet.</div>`}
-
-          ${profileSectionLabelHtml("Ratings Given", p.ratings.length, "ratings", params.id)}
-          ${p.ratings.length ? p.ratings.slice(0, 4).map(profileRatingRowHtml).join("") : `<div class="empty-state__sub">No ratings yet.</div>`}
-
-          ${isMe ? `
-            ${profileSectionLabelHtml("Saved Recipes", savedRecipeObjs.length, "saved-recipes", params.id)}
-            ${savedRecipeObjs.length ? `<div class="recipe-grid">${savedRecipeObjs.slice(0, 4).map(recipeCardHtml).join("")}</div>` : `<div class="empty-state__sub">Nothing saved yet.</div>`}
-
-            ${profileSectionLabelHtml("Saved Paints", savedPaintObjs.length, "saved-paints", params.id)}
-            ${savedPaintObjs.length ? savedPaintObjs.slice(0, 4).map(searchPaintRowHtml).join("") : `<div class="empty-state__sub">Nothing saved yet.</div>`}
-          ` : ""}
         `}
     </div>
   `;
@@ -3610,7 +3616,7 @@ function viewPaintLibrary() {
   };
 
   return `
-    <div class="page-enter">
+    <div class="page-enter view-wide">
       <div class="detail-header">
         <button class="icon-btn" data-nav="paints">${icon("back", 18)}</button>
         <div class="page-title" style="margin:0">Paint Library</div>

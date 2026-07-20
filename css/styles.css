@@ -2342,6 +2342,58 @@ main {
   .recipe-master__mobile-grid {
     display: none;
   }
+
+  /* Same reasoning as the recipe-master override above -- content-dense
+     browse/dashboard pages (Paint Library's grid, Profile's two-column
+     layout) are starved by the 880px reading-width cap. Settings, forms,
+     and anything else not opting into this class stay at the narrower,
+     more readable default. */
+  main:has(.view-wide) {
+    max-width: 1320px;
+  }
+
+  /* Profile: an avatar/stats/armies rail alongside the actual content,
+     instead of a single narrow column with the rail's info stacked above
+     it. Grid-only -- on mobile (no media query match) .profile-layout is
+     just a plain block, so .profile-layout__side and __main stack in DOM
+     order exactly as they did before this existed. */
+  .profile-layout {
+    display: grid;
+    grid-template-columns: 260px 1fr;
+    gap: 32px;
+    align-items: start;
+  }
+
+  .profile-layout__side {
+    position: sticky;
+    top: calc(var(--topbar-h) + 24px);
+  }
+
+  /* .empty-state__sub's max-width+auto-margin centers it as a standalone
+     "nothing here" line when it's narrower than its container -- fine at
+     the old ~800px column width, but floats disconnected from the label
+     above it once the main column is this much wider. These renders bare
+     (no .empty-state wrapper), so nothing else depends on the centering. */
+  .profile-layout__main > .empty-state__sub {
+    margin: 0;
+    max-width: none;
+  }
+
+  /* Rating rows are a compact label+stars pair -- fine two-up on desktop,
+     unlike the prose-length Notes rows beside them which stay single
+     column. Cards need their own border here since, without a wrapping
+     .settings-group, .settings-row normally only draws a bottom divider. */
+  .profile-ratings-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 8px;
+  }
+
+  .profile-ratings-grid .settings-row {
+    border: 1px solid var(--line);
+    border-radius: var(--radius-sm);
+    background: var(--bg-panel);
+  }
 }
 
 @media (min-width: 1180px) {
