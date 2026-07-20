@@ -21,6 +21,44 @@ function setThemePref(theme) {
   }
 }
 
+// ---------------------------------------------------------------
+// Hobbies (see HOBBIES in data.js)
+// ---------------------------------------------------------------
+// Which hobbies THIS ACCOUNT has opted into, besides the always-on
+// Warhammer -- Warhammer itself is never stored in KEYS.myHobbies (see
+// schema.sql's user_hobbies table comment), so it's prepended here instead.
+function enabledHobbyIds() { return [...new Set(["warhammer", ...readJSON(KEYS.myHobbies, [])])]; }
+function enabledHobbies() { return HOBBIES.filter((h) => enabledHobbyIds().includes(h.id)); }
+
+// Which hobby is currently being VIEWED -- a per-device UI preference, same
+// treatment as theme (a plain localStorage key, not synced via KEYS/loadBook)
+// since it's independent of which hobbies the account has enabled. Falls
+// back to Warhammer if the stored value points at a hobby that's no longer
+// enabled (e.g. signed in on a new device, or a different account).
+function getActiveHobbyId() {
+  const id = localStorage.getItem("forgebook.activeHobby");
+  return enabledHobbyIds().includes(id) ? id : "warhammer";
+}
+function setActiveHobbyId(id) { localStorage.setItem("forgebook.activeHobby", id); }
+function activeHobby() { return hobby(getActiveHobbyId()); }
+
+// Same .lib-filter-seg segmented-control component as Home's Following/
+// Popular/New and Paint Library's All/On rack/To buy tabs. Renders nothing
+// at all while only one hobby is enabled -- true for essentially every
+// account today -- so this is entirely invisible until someone actually
+// adds a second hobby in Settings.
+function hobbySwitcherHtml() {
+  const enabled = enabledHobbies();
+  if (enabled.length < 2) return "";
+  return `
+    <div class="lib-filter-seg" style="margin-bottom:14px">
+      ${enabled.map((h) => `
+        <button class="${getActiveHobbyId() === h.id ? "is-active" : ""}" data-action="switch-hobby" data-hobby="${escapeHtml(h.id)}">${escapeHtml(h.label)}</button>
+      `).join("")}
+    </div>
+  `;
+}
+
 const ICONS = {
   home: '<path d="M3 11l9-8 9 8" /><path d="M5 10v10h14V10" />',
   book: '<path d="M4 4h11a3 3 0 0 1 3 3v13H7a3 3 0 0 1-3-3V4z" /><path d="M18 4v16" />',
@@ -62,7 +100,7 @@ const BACKUP_FORMAT_VERSION = 5;
 
 const NAV_ITEMS = [
   { route: "home", label: "Home", icon: "home" },
-  { route: "factions", label: "Armies", icon: "shield" },
+  { route: "factions", label: "Collection", icon: "shield" }, // route id/icon unchanged -- contents adapt to activeHobby(), see viewFactions()
   { route: "recipes", label: "Recipes", icon: "book" },
   { route: "paints", label: "Paints", icon: "paintdrop" },
   // Settings now lives inside your own Profile (a gear icon in its header),
@@ -1573,6 +1611,7 @@ function emptyStateHtml(iconName, title, sub) {
 // View: Factions (browse all armies)
 // ---------------------------------------------------------------
 function viewFactions() {
+  const h = activeHobby();
   const recipes = getVisibleRecipes();
   const art = { ...getGlobalFactionArt(), ...getFactionArt() }; // personal override wins over the admin's shared one
 
@@ -1601,27 +1640,32 @@ function viewFactions() {
     `;
   };
 
-  const body = SYSTEMS.map((sys) => {
+  // flatBrowse hobbies (no real system/alliance hierarchy, e.g. D&D) skip
+  // both header rows entirely and just render one flat grid of tiles.
+  const body = h.systems.map((sys) => {
     const groups = sys.alliances.map((alliance) => {
-      const facs = FACTIONS.filter((f) => f.system === sys.id && f.alliance === alliance);
+      const facs = h.factions.filter((f) => f.system === sys.id && f.alliance === alliance);
       if (!facs.length) return "";
       return `
-        <div class="alliance-label">${escapeHtml(alliance)}</div>
+        ${h.flatBrowse ? "" : `<div class="alliance-label">${escapeHtml(alliance)}</div>`}
         <div class="faction-tiles">${facs.map(tile).join("")}</div>
       `;
     }).join("");
     if (!groups.trim()) return "";
-    return `<div class="section-label">${escapeHtml(sys.label)}</div>${groups}`;
+    return `${h.flatBrowse ? "" : `<div class="section-label">${escapeHtml(sys.label)}</div>`}${groups}`;
   }).join("");
 
   return `
     <div class="page-enter">
-      <div class="page-title">Armies</div>
+      <div class="page-title">${escapeHtml(h.browseTitle)}</div>
+      ${hobbySwitcherHtml()}
       ${body}
-      <div class="fine-print">
-        Emblems are original artwork drawn for Forgebook, not Games Workshop's own icons.
-        Open any army to swap in your own image.
-      </div>
+      ${h.id === "warhammer" ? `
+        <div class="fine-print">
+          Emblems are original artwork drawn for Forgebook, not Games Workshop's own icons.
+          Open any army to swap in your own image.
+        </div>
+      ` : ""}
     </div>
   `;
 }
@@ -2910,6 +2954,23 @@ async function toggleFollow(profileId) {
       : stillP.followerIds.filter((id) => id !== currentUserId());
   }
   showToast(res.message || "Couldn't update that — try again.");
+  render();
+}
+
+// Only "add" -- Warhammer can't be removed (it's always enabled), and
+// there's no UI offering to remove a hobby you've added yet either. Same
+// optimistic-then-reconciled shape as toggleFollow above.
+async function toggleHobbyEnabled(hobbyId) {
+  const mine = readJSON(KEYS.myHobbies, []);
+  if (mine.includes(hobbyId)) return;
+  save(KEYS.myHobbies, mine.concat(hobbyId));
+  render();
+
+  const res = await addUserHobby(hobbyId);
+  if (res.ok) return;
+
+  save(KEYS.myHobbies, readJSON(KEYS.myHobbies, []).filter((id) => id !== hobbyId));
+  showToast(res.message || "Couldn't add that hobby — try again.");
   render();
 }
 
@@ -4551,6 +4612,28 @@ function viewSettings() {
         </div>
       </div>
 
+      <div class="section-label">Hobbies</div>
+      <div class="settings-group">
+        ${enabledHobbies().length > 1 ? `
+          <div class="settings-row">
+            <div>
+              <div class="settings-row__label">Switch hobby</div>
+              <div class="settings-row__desc">Home, Recipes and Collection all show whichever one's active.</div>
+            </div>
+            ${hobbySwitcherHtml()}
+          </div>
+        ` : ""}
+        ${HOBBIES.filter((h) => !enabledHobbyIds().includes(h.id)).map((h) => `
+          <div class="settings-row">
+            <div>
+              <div class="settings-row__label">${escapeHtml(h.label)}</div>
+              <div class="settings-row__desc">Adds a ${escapeHtml(h.label)} option alongside Warhammer.</div>
+            </div>
+            <button class="btn btn-primary btn-sm" data-action="add-hobby" data-hobby="${escapeHtml(h.id)}">Add</button>
+          </div>
+        `).join("") || `<div class="settings-row"><div class="settings-row__desc">You're set up with every hobby Forgebook currently supports.</div></div>`}
+      </div>
+
       <div class="settings-group">
         <div class="settings-row">
           <div>
@@ -5674,6 +5757,9 @@ document.addEventListener("click", async (e) => {
   const recipeSort = t("[data-action='recipe-sort']");
   if (recipeSort) { state.recipeSort = recipeSort.dataset.sort; render(); return; }
 
+  const switchHobby = t("[data-action='switch-hobby']");
+  if (switchHobby) { setActiveHobbyId(switchHobby.dataset.hobby); render(); return; }
+
   const openNotif = t("[data-action='open-notification']");
   if (openNotif) {
     const notifications = getNotifications();
@@ -5737,6 +5823,13 @@ document.addEventListener("click", async (e) => {
     if (!isSignedIn()) { showToast("Sign in to follow people"); return; }
     toggleFollow(followBtn.dataset.id);
     render();
+    return;
+  }
+
+  const addHobby = t("[data-action='add-hobby']");
+  if (addHobby) {
+    if (!isSignedIn()) { showToast("Sign in to add a hobby"); return; }
+    toggleHobbyEnabled(addHobby.dataset.hobby);
     return;
   }
 
