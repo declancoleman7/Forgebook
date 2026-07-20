@@ -289,26 +289,17 @@ img {
   font-size: 15px;
 }
 
-.topbar__search {
-  position: relative; /* anchors .search-dropdown below */
+/* The topbar's own search box is gone -- search now lives on the Search
+   tab itself (see .global-search below), so this just fills the gap
+   between the brand and the hobby switcher/bell/sync pill. */
+.topbar__spacer {
   flex: 1;
-  min-width: 0; /* see main{} for why: a flex item's min-width is auto by
-    default, and without this override its <input> child's own intrinsic
-    min-width auto-flex-item forces the whole topbar, and the page along
-    with it, wider than the viewport on narrow phones. */
-  display: flex;
-  align-items: center;
-  background: var(--bg-raised);
-  border: 1px solid var(--line);
-  border-radius: var(--radius-md);
-  padding: 0 10px;
-  height: 36px;
 }
 
-/* Recent-searches popover, anchored under the topbar box -- shown on focus
-   while it's empty (see bindGlobalSearchShell in app.js). z-index sits
-   above the topbar itself but below the toast/modal layers, since this is
-   a lightweight contextual popover, not a blocking dialog. */
+/* Recent-searches popover, anchored under whichever .global-search box is
+   focused (see bindGlobalSearchInputs in app.js). z-index sits above the
+   page content but below the toast/modal layers, since this is a
+   lightweight contextual popover, not a blocking dialog. */
 .search-dropdown {
   position: absolute;
   top: calc(100% + 8px);
@@ -349,30 +340,13 @@ img {
   color: var(--ink-dim);
 }
 
-.topbar__search input {
-  flex: 1;
-  min-width: 0; /* the actual culprit — an <input>'s browser-default intrinsic
-    width is otherwise treated as a hard minimum inside a flex row */
-  background: transparent;
-  border: none;
-  color: var(--parchment);
-  font-size: 16px; /* iOS zoom-on-focus guard — see .field input comment */
-  padding: 0 8px;
-}
-
-.topbar__search input:focus {
-  outline: none;
-}
-
-.topbar__search input::placeholder {
-  color: var(--ink-dim);
-}
-
-.topbar__search svg {
-  width: 16px;
-  height: 16px;
-  stroke: var(--ink);
-  flex-shrink: 0;
+/* .mini-search input is 13px flat with no responsive treatment (fine for
+   the filter-only boxes that class already served) -- this one triggers a
+   real on-screen keyboard for real searching, so it needs the same
+   iOS zoom-on-focus guard .field input uses (16px mobile, shrunk back to
+   14px on desktop below). */
+.global-search input {
+  font-size: 16px;
 }
 
 main {
@@ -1064,6 +1038,7 @@ main {
 .search-filter-row .mini-search { margin-bottom: 0; }
 
 .mini-search {
+  position: relative; /* anchors .search-dropdown, when this is a .global-search box */
   display: flex;
   align-items: center;
   gap: 8px;
@@ -2440,7 +2415,7 @@ main {
   .field input[type="password"],
   .field select,
   .field textarea,
-  .topbar__search input {
+  .global-search input {
     font-size: 14px;
   }
 
@@ -2586,6 +2561,17 @@ main {
 
 .hidden {
   display: none !important;
+}
+
+/* Generic mobile/desktop toggle pair -- same breakpoint and same "both
+   rendered, CSS picks one" trick as side-nav/bottom-nav and the recipe
+   master-detail's own mobile-grid/desktop-list split, just not tied to
+   one specific component. */
+.mobile-only { display: block; }
+.desktop-only { display: none; }
+@media (min-width: 860px) {
+  .mobile-only { display: none; }
+  .desktop-only { display: block; }
 }
 
 /* ============================================================

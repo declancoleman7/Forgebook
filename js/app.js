@@ -133,7 +133,7 @@ const BACKUP_FORMAT_VERSION = 5;
 const NAV_ITEMS = [
   { route: "home", label: "Home", icon: "home" },
   { route: "factions", label: "Collection", icon: "shield" }, // route id/icon unchanged -- contents adapt to activeHobby(), see viewFactions()
-  { route: "recipes", label: "Recipes", icon: "book" },
+  { route: "recipes", label: "Search", icon: "search" }, // route id unchanged -- doubles as global search now, see viewRecipes()
   { route: "paints", label: "Paints", icon: "paintdrop" },
   // Settings now lives inside your own Profile (a gear icon in its header),
   // rather than being its own top-level destination.
@@ -149,7 +149,6 @@ let state = {
   recipeDifficultyFilters: [], // multi-select — same window; empty = any
   recipeFilterOpen: false,
   recipeSort: "new", // "new" | "old" | "rating" — the Recipes list's sort order
-  searchQuery: "", // the Recipes list's own inline #recipe-list-search box only -- the topbar box drives globalSearch (a separate, non-state variable) instead
   paintLibFilter: "all", // "all" | "owned" | "want" — Paint Library ownership filter
   paintLibBrands: [], // multi-select — empty = all brands
   paintLibCategories: [], // multi-select — paintCategory() keys; empty = all types
@@ -1058,10 +1057,9 @@ window.addEventListener("hashchange", () => {
 });
 
 // ---------------------------------------------------------------
-// Global search — matching/ranking helpers shared by getFilteredRecipes()
-// (the Recipes list's own inline search box) and viewSearch() (the topbar's
-// app-wide search). Kept as pure functions with no state/route awareness so
-// both call sites can reuse the exact same match rules.
+// Global search — matching/ranking helpers used by recipeSearchResultsHtml()
+// (the Search tab's cross-content results). Kept as pure functions with no
+// state/route awareness.
 // ---------------------------------------------------------------
 function recipeMatchesQuery(r, q) {
   return r.name.toLowerCase().includes(q) ||
@@ -1147,10 +1145,6 @@ function getFilteredRecipes() {
   }
   if (state.recipeDifficultyFilters.length) {
     recipes = recipes.filter((r) => state.recipeDifficultyFilters.includes(r.difficulty || 1));
-  }
-  if (state.searchQuery) {
-    const q = state.searchQuery.toLowerCase();
-    recipes = recipes.filter((r) => recipeMatchesQuery(r, q));
   }
 
   // "new"/"old" both use updatedAt -- recipes have no separate createdAt, so
@@ -1826,13 +1820,57 @@ function recipeSortToggleHtml() {
 // ---------------------------------------------------------------
 // View: All recipes
 // ---------------------------------------------------------------
+// This tab doubles as the app's global search now (see globalSearchBoxHtml
+// below), Instagram-style: empty shows the recipe showcase; typing shows
+// recipe matches only (recipeQuickResultsHtml, fast and uncluttered);
+// pressing Enter (or tapping a recent search) escalates to the full
+// cross-content tabbed view. Dispatches purely on globalSearch's own state,
+// so clearing the box or continuing to type after Enter both fall
+// naturally back to the right mode with no separate route involved.
 function viewRecipes() {
+  if (!globalSearch.query.trim()) return recipeShowcaseHtml();
+  return globalSearch.submitted ? recipeSearchResultsHtml() : recipeQuickResultsHtml();
+}
+
+// Both ids always present (one hidden per viewport via .mobile-only/
+// .desktop-only) -- the exact same pair recipeShowcaseHtml()'s own mobile-
+// grid/desktop-list split already renders. That's what lets focus survive
+// a transition INTO either search mode from the showcase (or back out of
+// it) instead of just between the two search modes themselves: the
+// element that had focus a moment ago still exists, under the same id,
+// no matter which of the three views just swapped in.
+function globalSearchRowHtml() {
+  return `
+    <div class="search-filter-row mobile-only" style="margin-bottom:4px">${globalSearchBoxHtml("recipe-grid-search")}</div>
+    <div class="search-filter-row desktop-only" style="margin-bottom:4px">${globalSearchBoxHtml("recipe-list-search")}</div>
+  `;
+}
+
+// The "as you type" state -- recipes only, no tab bar, so it stays fast and
+// uncluttered while someone's mid-keystroke.
+function recipeQuickResultsHtml() {
+  const q = globalSearch.query.trim().toLowerCase();
+  const recipes = getVisibleRecipes().filter((r) => recipeMatchesQuery(r, q));
+  const hint = `Press Enter to also search paints, ${escapeHtml(activeHobby().groupLabelPlural.toLowerCase())} and painters.`;
+  return `
+    <div class="page-enter">
+      <div class="page-title">Search</div>
+      ${globalSearchRowHtml()}
+      <div class="fine-print" style="margin-bottom:14px">${hint}</div>
+      ${recipes.length
+        ? `<div class="recipe-grid">${recipes.map(recipeCardHtml).join("")}</div>`
+        : emptyStateHtml("book", "No recipes match yet", hint)}
+    </div>
+  `;
+}
+
+function recipeShowcaseHtml() {
   state.unitFilter = undefined; // the all-recipes screen ignores unit scoping
   const recipes = getFilteredRecipes();
   const used = [...new Set(getVisibleRecipes().map((r) => r.faction))];
   const filterTrigger = recipeFilterTriggerHtml();
   const sortToggle = recipeSortToggleHtml();
-  const noMatch = emptyStateHtml("search", "No matches", "Try different filters or a different search term.");
+  const noMatch = emptyStateHtml("search", "No matches", "Try different filters, or search above for anything else.");
 
   // Mobile keeps the existing full-width card grid unchanged. Desktop
   // (≥860px) instead shows a narrow, always-visible list column — this is
@@ -1844,10 +1882,7 @@ function viewRecipes() {
       <div class="recipe-master__mobile-grid">
         <div class="page-title">Recipes</div>
         <div class="search-filter-row">
-          <div class="mini-search">
-            ${icon("search", 14)}
-            <input type="text" id="recipe-grid-search" placeholder="Search recipes" value="${escapeHtml(state.searchQuery)}" />
-          </div>
+          ${globalSearchBoxHtml("recipe-grid-search")}
           ${filterTrigger}
         </div>
         ${sortToggle}
@@ -1857,10 +1892,7 @@ function viewRecipes() {
         <div class="page-title" style="margin-bottom:2px">Recipes</div>
         <div class="detail-sub" style="margin-bottom:12px">${recipes.length} recipe${recipes.length === 1 ? "" : "s"}</div>
         <div class="search-filter-row">
-          <div class="mini-search">
-            ${icon("search", 14)}
-            <input type="text" id="recipe-list-search" placeholder="Search recipes" value="${escapeHtml(state.searchQuery)}" />
-          </div>
+          ${globalSearchBoxHtml("recipe-list-search")}
           ${filterTrigger}
         </div>
         ${sortToggle}
@@ -2859,22 +2891,29 @@ let profileSearch = { query: "", results: [] };
 let profileSearchDebounce = null;
 
 // ---------------------------------------------------------------
-// Global search — the topbar box's app-wide results page. Ephemeral UI
-// state, not part of `state`/the URL (mirrors profileSearch above) so
-// typing doesn't spam browser history with one entry per keystroke.
+// Global search — the Search tab's app-wide results, once a query is
+// typed (see viewRecipes()). Ephemeral UI state, not part of `state`/the
+// URL (mirrors profileSearch above) so typing doesn't spam browser history
+// with one entry per keystroke.
 // ---------------------------------------------------------------
-let globalSearch = { query: "", tab: "top", accountResults: [], accountResultsQuery: "" };
+// submitted: false while typing (Search shows recipe matches only, see
+// recipeQuickResultsHtml) -- true once Enter's pressed or a recent search is
+// tapped, escalating to the full cross-content tabbed view, Instagram-style.
+// Any further typing (runGlobalSearch) drops it back to false.
+let globalSearch = { query: "", submitted: false, tab: "top", accountResults: [], accountResultsQuery: "" };
 let globalSearchDebounce = null;
 
-// Shared by the topbar input and by tapping a recent search — runs (or
-// re-runs) a global search and always lands on the search route. Accounts
-// is the one category that needs a network round trip (searchProfiles),
-// so it gets the exact same debounce-then-check-staleness shape
-// #profile-search-input's own handler already uses.
-function runGlobalSearch(q) {
+// Shared by every global-search-input instance and by tapping a recent
+// search — runs (or re-runs) a global search and always lands on the
+// Search tab. `submitted` defaults to false (plain typing shows recipe
+// matches only); a recent-search tap passes true instead, since re-running
+// a saved search is a deliberate act like pressing Enter, not incremental
+// typing. Accounts is the one category that needs a network round trip
+// (searchProfiles), so it gets the exact same debounce-then-check-
+// staleness shape #profile-search-input's own handler already uses.
+function runGlobalSearch(q, submitted = false) {
   globalSearch.query = q;
-  const input = document.getElementById("search-input");
-  if (input && input.value !== q) input.value = q;
+  globalSearch.submitted = submitted;
   clearTimeout(globalSearchDebounce);
   const trimmed = q.trim();
   if (!trimmed) {
@@ -2885,15 +2924,16 @@ function runGlobalSearch(q) {
       searchProfiles(trimmed).then((results) => {
         if (globalSearch.query.trim() !== trimmed) return; // superseded by more typing
         globalSearch.accountResults = results;
-        // Lowercased to match viewSearch()'s own lowercased `q` -- accountsReady's
-        // comparison would otherwise never match a capitalized query (i.e. almost
-        // any real name), silently stranding the Accounts tab on "..." forever.
+        // Lowercased to match recipeSearchResultsHtml()'s own lowercased `q`
+        // -- accountsReady's comparison would otherwise never match a
+        // capitalized query (i.e. almost any real name), silently
+        // stranding the Accounts tab on "..." forever.
         globalSearch.accountResultsQuery = trimmed.toLowerCase();
         render();
       });
     }, 250);
   }
-  if (state.route === "search") render(); else navigate("search");
+  if (state.route === "recipes") render(); else navigate("recipes");
 }
 
 function searchDropdownHtml() {
@@ -2905,35 +2945,66 @@ function searchDropdownHtml() {
   `;
 }
 
-// One-time binding on the persistent shell's search box (buildShell() only
-// ever runs once, at boot -- this can't live inside render(), which only
-// ever touches #view-root). Shown whenever the box is focused AND empty,
-// recomputed on both focus and input (not a one-way latch), so clearing it
-// back to empty while still focused re-summons the dropdown.
-function bindGlobalSearchShell() {
-  const input = document.getElementById("search-input");
-  const dropdown = document.getElementById("search-dropdown");
-  if (!input || !dropdown) return;
+// Shared by every place the global search box appears -- the Search tab's
+// recipe-showcase (mobile-grid/desktop-list variants) and its own results
+// view. One id per call site since only one instance is ever visible at a
+// time (same convention that pair already used for the search box alone,
+// now extended to the box+dropdown together).
+function globalSearchBoxHtml(inputId) {
+  return `
+    <div class="mini-search global-search">
+      ${icon("search", 14)}
+      <input type="text" id="${inputId}" class="global-search-input" placeholder="Search recipes, paints, armies, painters…" value="${escapeHtml(globalSearch.query)}" />
+      <div class="search-dropdown hidden" id="${inputId}-dropdown"></div>
+    </div>
+  `;
+}
 
-  const sync = () => {
-    if (input.value.trim()) { dropdown.classList.add("hidden"); return; }
-    dropdown.innerHTML = searchDropdownHtml();
-    dropdown.classList.remove("hidden");
-  };
-  input.addEventListener("focus", sync);
-  // Separate from the always-live document-level "input" delegate's own
-  // "#search-input" branch (which handles navigation/debounce) -- this one
-  // only toggles the dropdown's visibility, so the two aren't merged.
-  input.addEventListener("input", sync);
+// Global search boxes now live inside #view-root (the Search tab's own
+// markup) rather than the fixed shell, so they're destroyed and recreated
+// by render() like everything else on that route -- rebound every render()
+// instead of once at boot, matching #recipe-list-search/#paint-library-
+// search's own established pattern. render()'s generic focus-restore (it
+// runs first, keyed by element id) already refocuses whichever one had it.
+function bindGlobalSearchInputs(root) {
+  root.querySelectorAll(".global-search-input").forEach((el) => {
+    const dropdown = document.getElementById(el.id + "-dropdown");
+    const syncDropdown = () => {
+      if (!dropdown) return;
+      if (el.value.trim()) { dropdown.classList.add("hidden"); return; }
+      dropdown.innerHTML = searchDropdownHtml();
+      dropdown.classList.remove("hidden");
+    };
+    el.oninput = (e) => runGlobalSearch(e.target.value);
+    el.onfocus = syncDropdown;
+    // Enter escalates from quick (recipes-only) to the full tabbed results,
+    // same "deliberate submit" signal as tapping a recent search.
+    el.onkeydown = (e) => {
+      if (e.key !== "Enter" || !globalSearch.query.trim()) return;
+      e.preventDefault();
+      globalSearch.submitted = true;
+      if (dropdown) dropdown.classList.add("hidden");
+      pushRecentSearch(globalSearch.query.trim());
+      render();
+    };
+    if (document.activeElement === el) syncDropdown(); // reflects focus that just survived a re-render
+  });
+}
 
+// One-time binding (bound once at boot, same as the old bindGlobalSearchShell)
+// -- generic across however many .global-search-input instances exist from
+// render to render, since each is destroyed/recreated with the view now
+// rather than living in a fixed shell element. Closes whichever dropdown
+// happens to be open, regardless of which input it belongs to.
+function bindGlobalSearchDismiss() {
   document.addEventListener("click", (e) => {
-    if (!dropdown.classList.contains("hidden") && !e.target.closest(".topbar__search")) {
-      dropdown.classList.add("hidden");
-      input.blur();
-    }
+    if (e.target.closest(".global-search")) return;
+    document.querySelectorAll(".search-dropdown:not(.hidden)").forEach((d) => d.classList.add("hidden"));
   });
   document.addEventListener("keydown", (e) => {
-    if (e.key === "Escape" && !dropdown.classList.contains("hidden")) { dropdown.classList.add("hidden"); input.blur(); }
+    if (e.key !== "Escape") return;
+    const open = document.querySelector(".search-dropdown:not(.hidden)");
+    if (open) { open.classList.add("hidden"); document.activeElement && document.activeElement.blur(); }
   });
 }
 
@@ -4860,19 +4931,15 @@ function searchTopRowHtml(item) {
   return profileSearchResultRowHtml(item.data);
 }
 
-function viewSearch() {
+// Only ever reached with a non-empty query -- viewRecipes() dispatches to
+// the showcase instead the instant it's cleared, so there's no empty-state
+// branch to handle here the way the old standalone Search page needed.
+function recipeSearchResultsHtml() {
   const q = globalSearch.query.trim().toLowerCase();
   const header = `
-    <div class="detail-header">
-      <button class="icon-btn" data-nav="home">${icon("back", 18)}</button>
-      <div class="page-title" style="margin:0">Search</div>
-      <div style="width:36px"></div>
-    </div>
+    <div class="page-title">Search</div>
+    ${globalSearchRowHtml()}
   `;
-
-  if (!q) {
-    return `<div class="page-enter">${header}${emptyStateHtml("search", "Search Forgebook", `Search for a recipe, paint, ${escapeHtml(activeHobby().groupLabel.toLowerCase())}, unit, or painter.`)}</div>`;
-  }
 
   const recipes = getVisibleRecipes().filter((r) => recipeMatchesQuery(r, q));
   const paints = PAINT_LIBRARY.filter((p) => paintMatchesQuery(p, q));
@@ -5060,7 +5127,6 @@ function render() {
   else if (route === "profile-section") { html = viewProfileSection(params); showFab = false; }
   else if (route === "settings") { html = viewSettings(); showFab = false; }
   else if (route === "notifications") { html = viewNotifications(); showFab = false; }
-  else if (route === "search") { html = viewSearch(); showFab = false; }
   else if (route === "change-password") {
     if (!isSignedIn()) { navigate("settings"); return; }
     html = viewChangePassword();
@@ -5116,16 +5182,7 @@ function render() {
   bindPaintForm(root);
   bindSimilarColours(root);
 
-  const recipeListSearch = root.querySelector("#recipe-list-search");
-  if (recipeListSearch) recipeListSearch.oninput = (e) => { state.searchQuery = e.target.value; render(); };
-
-  // Same state field as #recipe-list-search above -- this is the mobile
-  // card-grid's own copy of the identical "search recipes" box, shown
-  // instead of (not in addition to) the desktop list column's version;
-  // CSS toggles which one is visible per viewport, same as buildShell()
-  // already does for side-nav vs. bottom-nav.
-  const recipeGridSearch = root.querySelector("#recipe-grid-search");
-  if (recipeGridSearch) recipeGridSearch.oninput = (e) => { state.searchQuery = e.target.value; render(); };
+  bindGlobalSearchInputs(root);
 
   const paintLibSearch = root.querySelector("#paint-library-search");
   if (paintLibSearch) paintLibSearch.oninput = (e) => { state.paintLibQuery = e.target.value; render(); };
@@ -5148,18 +5205,13 @@ function render() {
   updateNotifBadge();
   updateNavAvatars();
   updateHobbySwitcher();
-  // Leaving the search route (nav tap, back button, tapping a result) clears
-  // the topbar box, so it doesn't show a stale query next time it's opened.
-  // Blurring matters too, not just clearing the value: a search result is a
-  // plain (non-focusable) element, so clicking one never naturally blurs the
-  // still-focused box on its own -- without an explicit blur here, a second
-  // tap on the box later wouldn't fire a fresh "focus" event (it's already
-  // the activeElement), so bindGlobalSearchShell's dropdown would never
-  // re-open.
-  if (state.route !== "search" && globalSearch.query) {
+  // Leaving the Search tab (nav tap, or navigating to a recipe/faction/paint
+  // from a search result) clears the query, so coming back later starts
+  // fresh on the showcase instead of a stale result set. No DOM to clean up
+  // here anymore -- the search input only exists as part of this route's
+  // own markup, so it's already gone the moment you've routed away from it.
+  if (state.route !== "recipes" && globalSearch.query) {
     globalSearch.query = "";
-    const si = document.getElementById("search-input");
-    if (si) { si.value = ""; si.blur(); }
   }
 
   bindAuthInputs(root);
@@ -5263,14 +5315,14 @@ document.addEventListener("click", async (e) => {
 
   // Records a search once its result is actually tapped -- the one
   // unambiguous "this search worked" signal. Checked first, before any
-  // branch below can return early: viewSearch() is the only thing rendered
-  // while route==="search", so matching these existing selectors is enough
-  // to know a search result specifically was tapped, without threading a
-  // new attribute through every shared row builder (recipeCardHtml,
-  // profileSearchResultRowHtml, etc.) that also renders outside of search.
-  // Deliberately no `return` here -- whichever branch below actually
-  // performs the navigation still needs to run.
-  if (state.route === "search" && globalSearch.query.trim() &&
+  // branch below can return early: recipeSearchResultsHtml() is the only
+  // thing rendered while the Search tab has an active query, so matching
+  // these existing selectors is enough to know a search result specifically
+  // was tapped, without threading a new attribute through every shared row
+  // builder (recipeCardHtml, profileSearchResultRowHtml, etc.) that also
+  // renders outside of search. Deliberately no `return` here -- whichever
+  // branch below actually performs the navigation still needs to run.
+  if (state.route === "recipes" && globalSearch.query.trim() &&
       t("[data-nav], [data-open-unit], [data-action='find-similar-colour']")) {
     pushRecentSearch(globalSearch.query.trim());
   }
@@ -5895,7 +5947,7 @@ document.addEventListener("click", async (e) => {
   if (searchTab) { globalSearch.tab = searchTab.dataset.tab; render(); return; }
 
   const searchRecent = t("[data-action='search-recent']");
-  if (searchRecent) { runGlobalSearch(searchRecent.dataset.q); return; }
+  if (searchRecent) { runGlobalSearch(searchRecent.dataset.q, true); return; }
 
   const rateBtn = t("[data-action='rate-paint']");
   if (rateBtn) {
@@ -6367,7 +6419,6 @@ document.addEventListener("keydown", (e) => {
 // Search
 // ---------------------------------------------------------------
 document.addEventListener("input", (e) => {
-  if (e.target.id === "search-input") { runGlobalSearch(e.target.value); return; }
   if (e.target.id === "note-input") {
     communityNoteForm.body = e.target.value;
     updateMentionAutocomplete("note-input", e.target);
@@ -6432,11 +6483,7 @@ function buildShell() {
     </nav>
     <header class="topbar">
       <div class="topbar__brand"><span class="glyph">${icon("book", 16)}</span> Forgebook</div>
-      <div class="topbar__search">
-        ${icon("search", 16)}
-        <input type="text" id="search-input" placeholder="Search recipes, paints, armies, painters…" />
-        <div class="search-dropdown hidden" id="search-dropdown"></div>
-      </div>
+      <div class="topbar__spacer"></div>
       <div class="hobby-switch hidden" id="hobby-switch">
         <button type="button" class="hobby-switch__trigger" id="hobby-switch-trigger" aria-label="Switch hobby" aria-haspopup="true"></button>
         <div class="hobby-switch__menu hidden" id="hobby-switch-menu"></div>
@@ -6586,7 +6633,7 @@ async function bootIntoApp() {
   bootingIntoApp = false;
   appBooted = true;
   buildShell();
-  bindGlobalSearchShell();
+  bindGlobalSearchDismiss();
   bindHobbySwitcherShell();
   const { route, params } = parseHash();
   state.route = route;
