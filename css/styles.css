@@ -103,6 +103,29 @@
   --shadow-raised: 0 8px 24px rgba(60, 50, 30, 0.22);
 }
 
+/* Per-hobby accent -- only the brand tokens shift (--gold*), same "override
+   the variable, everything using it picks it up free" trick as the light
+   theme above. Status colours (blood/success/kinship) stay put on purpose:
+   they mean something specific (owned/buy, similar-colour score) that has
+   nothing to do with which hobby is active. A violet was picked deliberately
+   over gold/brass's warm metal tone -- arcane rather than martial, and far
+   enough from blood/success/kinship's hues that it can't be mistaken for any
+   of them. Applied via [data-hobby="dnd"] on <html> (see setActiveHobbyId in
+   app.js), the same attribute-on-root mechanism data-theme already uses. */
+:root[data-hobby="dnd"] {
+  --gold: #7c5cb0;
+  --gold-bright: #a88bdd;
+  --gold-dim: rgba(124, 92, 176, 0.14);
+  --gold-border: rgba(124, 92, 176, 0.34);
+}
+
+:root[data-theme="light"][data-hobby="dnd"] {
+  --gold: #5c4088;
+  --gold-bright: #7457a6;
+  --gold-dim: rgba(92, 64, 136, 0.10);
+  --gold-border: rgba(92, 64, 136, 0.32);
+}
+
 /* The painted backdrop below is a dark, moody scene — it doesn't translate
    to a daylight theme, and dark art behind light-theme's dark-on-light text
    would wreck contrast. Light mode keeps the plain flat ground instead. */
@@ -157,6 +180,27 @@ html {
       radial-gradient(ellipse 900px 500px at 50% -10%, var(--gold-dim), transparent 60%),
       linear-gradient(rgba(8, 7, 5, 0.45), rgba(8, 7, 5, 0.45)),
       url("../img/bg-desktop.jpg");
+  }
+}
+
+/* D&D's own background art, swapped in the same "just override html's
+   background-image" way as the mobile/desktop split above -- the radial
+   glow already picks up the violet accent for free, since it references
+   --gold-dim, which is already the hobby-tinted value by the time this
+   rule applies. */
+html[data-hobby="dnd"] {
+  background-image:
+    radial-gradient(ellipse 900px 500px at 50% -10%, var(--gold-dim), transparent 60%),
+    linear-gradient(rgba(8, 7, 5, 0.45), rgba(8, 7, 5, 0.45)),
+    url("../img/dnd-mobile.png");
+}
+
+@media (min-width: 860px) {
+  html[data-hobby="dnd"] {
+    background-image:
+      radial-gradient(ellipse 900px 500px at 50% -10%, var(--gold-dim), transparent 60%),
+      linear-gradient(rgba(8, 7, 5, 0.45), rgba(8, 7, 5, 0.45)),
+      url("../img/dnd-desktop.png");
   }
 }
 
@@ -1255,6 +1299,62 @@ main {
   line-height: 16px;
   text-align: center;
 }
+
+/* Topbar hobby switcher -- hidden (see updateHobbySwitcher() in app.js)
+   until a second hobby is actually enabled, so this never adds clutter for
+   the vast majority of accounts that only ever use Warhammer. */
+.hobby-switch {
+  position: relative; /* anchors .hobby-switch__menu below */
+  flex-shrink: 0;
+}
+
+.hobby-switch__trigger {
+  height: 36px;
+  padding: 0 10px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-panel);
+  border: 1px solid var(--line);
+  color: var(--ink);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 13px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.hobby-switch__trigger:hover { color: var(--gold-bright); border-color: var(--gold); }
+.hobby-switch__trigger svg { width: 14px; height: 14px; stroke: currentColor; fill: none; }
+
+.hobby-switch__menu {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 25;
+  min-width: 160px;
+  background: var(--bg-raised-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-raised);
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.hobby-switch__item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 9px 10px;
+  border-radius: var(--radius-sm);
+  background: none;
+  border: none;
+  color: var(--parchment-dim);
+  font-size: 13px;
+  cursor: pointer;
+}
+.hobby-switch__item:hover { background: var(--bg-raised); }
+.hobby-switch__item.is-active { color: var(--gold-bright); background: var(--gold-dim); }
 
 /* Layer stack — the signature element. Encodes real sequence:
    each bar is one step, in the order you actually paint it. */
@@ -2965,6 +3065,18 @@ main {
 /* The pill would crowd the search box on a narrow phone */
 @media (max-width: 420px) {
   .sync-pill { display: none; }
+}
+
+/* Same crowding problem as .sync-pill above, but this one's worth keeping
+   visible rather than hiding outright -- someone using two hobbies still
+   needs a way to switch. Capped and truncated instead. */
+@media (max-width: 420px) {
+  .hobby-switch__trigger { max-width: 84px; }
+  .hobby-switch__label {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
 }
 
 /* ============================================================

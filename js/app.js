@@ -10,6 +10,14 @@ if (localStorage.getItem(KEYS.theme) === "light") {
   document.documentElement.setAttribute("data-theme", "light");
 }
 
+// Same early, no-flash treatment for the active hobby's accent colour (see
+// setActiveHobbyId below and :root[data-hobby="dnd"] in styles.css) --
+// enabledHobbyIds()/KEYS.myHobbies read straight from localStorage, same as
+// the theme check above, so this doesn't need to wait for loadBook().
+if (localStorage.getItem("forgebook.activeHobby") && localStorage.getItem("forgebook.activeHobby") !== "warhammer") {
+  document.documentElement.setAttribute("data-hobby", localStorage.getItem("forgebook.activeHobby"));
+}
+
 function getThemePref() { return localStorage.getItem(KEYS.theme) === "light" ? "light" : "dark"; }
 function setThemePref(theme) {
   if (theme === "light") {
@@ -39,25 +47,12 @@ function getActiveHobbyId() {
   const id = localStorage.getItem("forgebook.activeHobby");
   return enabledHobbyIds().includes(id) ? id : "warhammer";
 }
-function setActiveHobbyId(id) { localStorage.setItem("forgebook.activeHobby", id); }
-function activeHobby() { return hobby(getActiveHobbyId()); }
-
-// Same .lib-filter-seg segmented-control component as Home's Following/
-// Popular/New and Paint Library's All/On rack/To buy tabs. Renders nothing
-// at all while only one hobby is enabled -- true for essentially every
-// account today -- so this is entirely invisible until someone actually
-// adds a second hobby in Settings.
-function hobbySwitcherHtml() {
-  const enabled = enabledHobbies();
-  if (enabled.length < 2) return "";
-  return `
-    <div class="lib-filter-seg" style="margin-bottom:14px">
-      ${enabled.map((h) => `
-        <button class="${getActiveHobbyId() === h.id ? "is-active" : ""}" data-action="switch-hobby" data-hobby="${escapeHtml(h.id)}">${escapeHtml(h.label)}</button>
-      `).join("")}
-    </div>
-  `;
+function setActiveHobbyId(id) {
+  localStorage.setItem("forgebook.activeHobby", id);
+  if (id === "warhammer") document.documentElement.removeAttribute("data-hobby");
+  else document.documentElement.setAttribute("data-hobby", id);
 }
+function activeHobby() { return hobby(getActiveHobbyId()); }
 
 const ICONS = {
   home: '<path d="M3 11l9-8 9 8" /><path d="M5 10v10h14V10" />',
@@ -1660,7 +1655,6 @@ function viewFactions() {
   return `
     <div class="page-enter">
       <div class="page-title">${escapeHtml(h.browseTitle)}</div>
-      ${hobbySwitcherHtml()}
       ${body}
       ${h.id === "warhammer" ? `
         <div class="fine-print">
@@ -2903,6 +2897,28 @@ function bindGlobalSearchShell() {
   });
   document.addEventListener("keydown", (e) => {
     if (e.key === "Escape" && !dropdown.classList.contains("hidden")) { dropdown.classList.add("hidden"); input.blur(); }
+  });
+}
+
+// Same click-outside/Escape-to-close shape as bindGlobalSearchShell above.
+// The menu's actual switch-hobby buttons are handled by the ordinary
+// document-level click delegate elsewhere (same as every other
+// data-action) -- that handler also closes this menu once a switch lands,
+// so this function only owns opening it and the two ways to dismiss it.
+function bindHobbySwitcherShell() {
+  const trigger = document.getElementById("hobby-switch-trigger");
+  const menu = document.getElementById("hobby-switch-menu");
+  if (!trigger || !menu) return;
+
+  trigger.addEventListener("click", (e) => {
+    e.stopPropagation(); // don't let the same click immediately re-close it via the outside-click listener below
+    menu.classList.toggle("hidden");
+  });
+  document.addEventListener("click", (e) => {
+    if (!menu.classList.contains("hidden") && !e.target.closest(".hobby-switch")) menu.classList.add("hidden");
+  });
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && !menu.classList.contains("hidden")) menu.classList.add("hidden");
   });
 }
 
@@ -4628,11 +4644,7 @@ function viewSettings() {
       <div class="settings-group">
         ${enabledHobbies().length > 1 ? `
           <div class="settings-row">
-            <div>
-              <div class="settings-row__label">Switch hobby</div>
-              <div class="settings-row__desc">Home, Recipes and Collection all show whichever one's active.</div>
-            </div>
-            ${hobbySwitcherHtml()}
+            <div class="settings-row__desc">Switch which one's active from the dropdown in the top bar — Home, Recipes and Collection all follow it.</div>
           </div>
         ` : ""}
         ${HOBBIES.filter((h) => !enabledHobbyIds().includes(h.id)).map((h) => `
@@ -5098,6 +5110,7 @@ function render() {
   updateSyncPill();
   updateNotifBadge();
   updateNavAvatars();
+  updateHobbySwitcher();
   // Leaving the search route (nav tap, back button, tapping a result) clears
   // the topbar box, so it doesn't show a stale query next time it's opened.
   // Blurring matters too, not just clearing the value: a search result is a
@@ -5175,6 +5188,28 @@ function updateNavAvatars() {
   if (sideAvatar) sideAvatar.outerHTML = avatarHtml(currentUserId(), 18);
   const bottomAvatar = document.querySelector(".bottom-nav__item[data-route='profile'] .avatar");
   if (bottomAvatar) bottomAvatar.outerHTML = avatarHtml(currentUserId(), 24);
+}
+
+// Same "static shell element, refreshed by render()" pattern as the three
+// above -- hidden entirely (not just empty) while only one hobby is
+// enabled, matching every other hobby-switcher UI in this app being
+// invisible until a second hobby actually exists. The menu's own open/close
+// behavior lives in bindHobbySwitcherShell() (bound once at boot); this
+// only keeps its CONTENT (which hobbies, which one's active) current.
+function updateHobbySwitcher() {
+  const wrap = document.getElementById("hobby-switch");
+  if (!wrap) return;
+  const enabled = enabledHobbies();
+  wrap.classList.toggle("hidden", enabled.length < 2);
+  if (enabled.length < 2) return;
+
+  const trigger = document.getElementById("hobby-switch-trigger");
+  trigger.innerHTML = `<span class="hobby-switch__label">${escapeHtml(activeHobby().label)}</span>${icon("chevron", 14)}`;
+
+  const menu = document.getElementById("hobby-switch-menu");
+  menu.innerHTML = enabled.map((h) => `
+    <button type="button" class="hobby-switch__item ${getActiveHobbyId() === h.id ? "is-active" : ""}" data-action="switch-hobby" data-hobby="${escapeHtml(h.id)}">${escapeHtml(h.label)}</button>
+  `).join("");
 }
 
 // ---------------------------------------------------------------
@@ -5771,7 +5806,12 @@ document.addEventListener("click", async (e) => {
   if (recipeSort) { state.recipeSort = recipeSort.dataset.sort; render(); return; }
 
   const switchHobby = t("[data-action='switch-hobby']");
-  if (switchHobby) { setActiveHobbyId(switchHobby.dataset.hobby); render(); return; }
+  if (switchHobby) {
+    setActiveHobbyId(switchHobby.dataset.hobby);
+    document.getElementById("hobby-switch-menu")?.classList.add("hidden");
+    render();
+    return;
+  }
 
   const openNotif = t("[data-action='open-notification']");
   if (openNotif) {
@@ -6347,6 +6387,10 @@ function buildShell() {
         <input type="text" id="search-input" placeholder="Search recipes, paints, armies, painters…" />
         <div class="search-dropdown hidden" id="search-dropdown"></div>
       </div>
+      <div class="hobby-switch hidden" id="hobby-switch">
+        <button type="button" class="hobby-switch__trigger" id="hobby-switch-trigger" aria-label="Switch hobby" aria-haspopup="true"></button>
+        <div class="hobby-switch__menu hidden" id="hobby-switch-menu"></div>
+      </div>
       <button class="topbar__bell" data-nav="notifications" aria-label="Notifications">
         ${icon("bell", 18)}
         <span class="topbar__bell-badge hidden" id="notif-badge"></span>
@@ -6493,6 +6537,7 @@ async function bootIntoApp() {
   appBooted = true;
   buildShell();
   bindGlobalSearchShell();
+  bindHobbySwitcherShell();
   const { route, params } = parseHash();
   state.route = route;
   state.params = params;
