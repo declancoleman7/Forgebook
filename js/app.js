@@ -3283,7 +3283,12 @@ function viewProfileSection(params) {
 function personalWorkspaceHtml(recipes) {
   const recents = getRecents().map((id) => findRecipe(id)).filter(Boolean);
   const cont = recents[0] || recipes[0];
-  const armies = [...new Set(recipes.map((r) => r.faction))];
+  // "Your Armies" is scoped to the active hobby (a D&D category has no
+  // business appearing in this list while Warhammer is what's active) --
+  // Continue Painting isn't: it's "pick up your own most recent work,"
+  // which stays meaningful regardless of which hobby happens to be active.
+  const inHobby = recipes.filter((r) => (r.hobbyId || "warhammer") === getActiveHobbyId());
+  const armies = [...new Set(inHobby.map((r) => r.faction))];
 
   return `
     ${cont ? `
@@ -3300,12 +3305,12 @@ function personalWorkspaceHtml(recipes) {
       </div>
     ` : ""}
 
-    <div class="section-label">Your Armies</div>
+    <div class="section-label">Your ${escapeHtml(activeHobby().groupLabelPlural)}</div>
     ${armies.length ? `
       <div class="faction-row">
         ${armies.map((id) => {
           const f = faction(id);
-          const n = recipes.filter((r) => r.faction === id).length;
+          const n = inHobby.filter((r) => r.faction === id).length;
           return `
             <div class="faction-chip" data-nav="faction" data-id="${f.id}" style="--chip-color:${f.color}">
               <span class="faction-chip__emblem" style="color:${f.color}">${emblemSvg(f.emblem, 15)}</span>
@@ -3313,7 +3318,7 @@ function personalWorkspaceHtml(recipes) {
             </div>`;
         }).join("")}
       </div>
-    ` : `<div class="empty-state__sub" style="padding:0 2px 8px">No recipes yet. Tap Armies to pick a faction.</div>`}
+    ` : `<div class="empty-state__sub" style="padding:0 2px 8px">No recipes yet. Tap ${escapeHtml(activeHobby().browseTitle)} to pick a ${escapeHtml(activeHobby().groupLabel.toLowerCase())}.</div>`}
   `;
 }
 
@@ -4817,12 +4822,12 @@ function viewSearch() {
   `;
 
   if (!q) {
-    return `<div class="page-enter">${header}${emptyStateHtml("search", "Search Forgebook", "Search for a recipe, paint, army, unit, or painter.")}</div>`;
+    return `<div class="page-enter">${header}${emptyStateHtml("search", "Search Forgebook", `Search for a recipe, paint, ${escapeHtml(activeHobby().groupLabel.toLowerCase())}, unit, or painter.`)}</div>`;
   }
 
   const recipes = getVisibleRecipes().filter((r) => recipeMatchesQuery(r, q));
   const paints = PAINT_LIBRARY.filter((p) => paintMatchesQuery(p, q));
-  const armies = FACTIONS.filter((f) => factionMatchesQuery(f, q));
+  const armies = activeHobby().factions.filter((f) => factionMatchesQuery(f, q));
   const units = allUnitsMatching(q);
   const accountsReady = globalSearch.accountResultsQuery === q;
   const accounts = accountsReady ? globalSearch.accountResults : [];
@@ -4831,7 +4836,7 @@ function viewSearch() {
     { key: "top", label: "Top" }, // no count, mirrors Instagram's own Top tab
     { key: "recipes", label: "Recipes", count: recipes.length },
     { key: "paints", label: "Paints", count: paints.length },
-    { key: "armies", label: "Armies & Units", count: armies.length + units.length },
+    { key: "armies", label: `${activeHobby().groupLabelPlural} & Units`, count: armies.length + units.length },
     { key: "accounts", label: "Accounts", count: accountsReady ? accounts.length : null },
   ];
   const activeTab = tabs.some((t) => t.key === globalSearch.tab) ? globalSearch.tab : "top";
@@ -4859,10 +4864,10 @@ function viewSearch() {
   } else if (activeTab === "armies") {
     body = (armies.length || units.length)
       ? `
-        ${armies.length ? `<div class="section-label">Armies</div>${armies.map(searchArmyRowHtml).join("")}` : ""}
+        ${armies.length ? `<div class="section-label">${escapeHtml(activeHobby().groupLabelPlural)}</div>${armies.map(searchArmyRowHtml).join("")}` : ""}
         ${units.length ? `<div class="section-label">Units</div>${units.map(searchUnitRowHtml).join("")}` : ""}
       `
-      : emptyStateHtml("banner", "No armies or units match", "Try a different search term.");
+      : emptyStateHtml("banner", `No ${escapeHtml(activeHobby().groupLabelPlural.toLowerCase())} or units match`, "Try a different search term.");
   } else if (activeTab === "accounts") {
     body = accounts.length
       ? accounts.map(profileSearchResultRowHtml).join("")

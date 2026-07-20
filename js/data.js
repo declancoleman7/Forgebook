@@ -146,12 +146,12 @@ const DND_SYSTEMS = [
 const HOBBIES = [
   {
     id: "warhammer", label: "Warhammer",
-    flatBrowse: false, browseTitle: "Armies", groupLabel: "Army", wholeGroupLabel: "whole army",
+    flatBrowse: false, browseTitle: "Armies", groupLabel: "Army", groupLabelPlural: "Armies", wholeGroupLabel: "whole army",
     factions: FACTIONS, systems: SYSTEMS,
   },
   {
     id: "dnd", label: "D&D Miniatures",
-    flatBrowse: true, browseTitle: "Categories", groupLabel: "Category", wholeGroupLabel: "whole category",
+    flatBrowse: true, browseTitle: "Categories", groupLabel: "Category", groupLabelPlural: "Categories", wholeGroupLabel: "whole category",
     factions: DND_CATEGORIES, systems: DND_SYSTEMS,
   },
 ];
