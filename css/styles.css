@@ -187,11 +187,14 @@ html {
    background-image" way as the mobile/desktop split above -- the radial
    glow already picks up the violet accent for free, since it references
    --gold-dim, which is already the hobby-tinted value by the time this
-   rule applies. */
+   rule applies. Its own dark-wash layer is noticeably stronger than
+   Warhammer's (0.62 vs 0.45): the source art is a bright moonlit scene, so
+   the same overlay strength that suits Warhammer's already-dark painting
+   left this one reading too bright/washed-out by comparison. */
 html[data-hobby="dnd"] {
   background-image:
     radial-gradient(ellipse 900px 500px at 50% -10%, var(--gold-dim), transparent 60%),
-    linear-gradient(rgba(8, 7, 5, 0.45), rgba(8, 7, 5, 0.45)),
+    linear-gradient(rgba(5, 6, 10, 0.62), rgba(5, 6, 10, 0.62)),
     url("../img/dnd-mobile.jpg");
 }
 
@@ -199,7 +202,7 @@ html[data-hobby="dnd"] {
   html[data-hobby="dnd"] {
     background-image:
       radial-gradient(ellipse 900px 500px at 50% -10%, var(--gold-dim), transparent 60%),
-      linear-gradient(rgba(8, 7, 5, 0.45), rgba(8, 7, 5, 0.45)),
+      linear-gradient(rgba(5, 6, 10, 0.62), rgba(5, 6, 10, 0.62)),
       url("../img/dnd-desktop.jpg");
   }
 }
@@ -1341,7 +1344,14 @@ main {
   gap: 2px;
 }
 
+.hobby-switch__row {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
 .hobby-switch__item {
+  flex: 1;
   display: block;
   width: 100%;
   text-align: left;
@@ -1355,6 +1365,26 @@ main {
 }
 .hobby-switch__item:hover { background: var(--bg-raised); }
 .hobby-switch__item.is-active { color: var(--gold-bright); background: var(--gold-dim); }
+
+/* Set-as-default toggle, sibling of .hobby-switch__item (not nested inside
+   it) -- same reasoning as suggestedPainterRowHtml's follow button in
+   app.js: a nested actionable inside another action's clickable area risks
+   the wrong one firing, depending on delegate check order. */
+.hobby-switch__default-star {
+  flex-shrink: 0;
+  width: 30px;
+  height: 30px;
+  border-radius: var(--radius-sm);
+  background: none;
+  border: none;
+  color: var(--ink-dim);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+.hobby-switch__default-star:hover { color: var(--gold-bright); }
+.hobby-switch__default-star.is-on { color: var(--gold-bright); }
 
 /* Layer stack — the signature element. Encodes real sequence:
    each bar is one step, in the order you actually paint it. */

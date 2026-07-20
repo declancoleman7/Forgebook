@@ -38,14 +38,28 @@ function setThemePref(theme) {
 function enabledHobbyIds() { return [...new Set(["warhammer", ...readJSON(KEYS.myHobbies, [])])]; }
 function enabledHobbies() { return HOBBIES.filter((h) => enabledHobbyIds().includes(h.id)); }
 
-// Which hobby is currently being VIEWED -- a per-device UI preference, same
-// treatment as theme (a plain localStorage key, not synced via KEYS/loadBook)
-// since it's independent of which hobbies the account has enabled. Falls
-// back to Warhammer if the stored value points at a hobby that's no longer
-// enabled (e.g. signed in on a new device, or a different account).
+// The account-level, synced-across-devices starting point (profiles.
+// default_hobby_id) -- distinct from the per-device "what am I looking at
+// right now" value below. Null/not-yet-enabled reads the same as "no
+// default set," which falls all the way back to Warhammer.
+function getDefaultHobbyId() {
+  const mine = getProfiles().find((p) => p.userId === currentUserId());
+  return (mine && mine.defaultHobbyId) || null;
+}
+
+// Which hobby is currently being VIEWED -- a per-device UI preference (a
+// plain localStorage key, not itself synced) that takes precedence once
+// set, so switching hobbies stays instant and never depends on a network
+// round-trip. A device/session that's never explicitly switched (no local
+// value yet -- e.g. signed in fresh on a new device) falls through to the
+// account's synced default instead of jumping straight to Warhammer, which
+// is what makes "set as default" actually follow you across devices.
 function getActiveHobbyId() {
-  const id = localStorage.getItem("forgebook.activeHobby");
-  return enabledHobbyIds().includes(id) ? id : "warhammer";
+  const stored = localStorage.getItem("forgebook.activeHobby");
+  if (stored && enabledHobbyIds().includes(stored)) return stored;
+  const def = getDefaultHobbyId();
+  if (def && enabledHobbyIds().includes(def)) return def;
+  return "warhammer";
 }
 function setActiveHobbyId(id) {
   localStorage.setItem("forgebook.activeHobby", id);
@@ -53,6 +67,29 @@ function setActiveHobbyId(id) {
   else document.documentElement.setAttribute("data-hobby", id);
 }
 function activeHobby() { return hobby(getActiveHobbyId()); }
+
+// Optimistic-then-reconciled, same shape as toggleFollow/toggleHobbyEnabled.
+async function setDefaultHobby(hobbyId) {
+  const profiles = getProfiles();
+  const idx = profiles.findIndex((p) => p.userId === currentUserId());
+  const prevDefault = idx === -1 ? null : profiles[idx].defaultHobbyId;
+  if (idx === -1) profiles.push({ userId: currentUserId(), displayName: "", defaultHobbyId: hobbyId });
+  else profiles[idx] = { ...profiles[idx], defaultHobbyId: hobbyId };
+  save(KEYS.profiles, profiles);
+  render();
+
+  const res = await updateDefaultHobby(hobbyId);
+  if (res.ok) return;
+
+  const stillProfiles = getProfiles();
+  const stillIdx = stillProfiles.findIndex((p) => p.userId === currentUserId());
+  if (stillIdx !== -1 && stillProfiles[stillIdx].defaultHobbyId === hobbyId) {
+    stillProfiles[stillIdx] = { ...stillProfiles[stillIdx], defaultHobbyId: prevDefault };
+    save(KEYS.profiles, stillProfiles);
+  }
+  showToast(res.message || "Couldn't set that as default — try again.");
+  render();
+}
 
 const ICONS = {
   home: '<path d="M3 11l9-8 9 8" /><path d="M5 10v10h14V10" />',
@@ -5207,8 +5244,14 @@ function updateHobbySwitcher() {
   trigger.innerHTML = `<span class="hobby-switch__label">${escapeHtml(activeHobby().label)}</span>${icon("chevron", 14)}`;
 
   const menu = document.getElementById("hobby-switch-menu");
+  const defaultId = getDefaultHobbyId() || "warhammer";
   menu.innerHTML = enabled.map((h) => `
-    <button type="button" class="hobby-switch__item ${getActiveHobbyId() === h.id ? "is-active" : ""}" data-action="switch-hobby" data-hobby="${escapeHtml(h.id)}">${escapeHtml(h.label)}</button>
+    <div class="hobby-switch__row">
+      <button type="button" class="hobby-switch__item ${getActiveHobbyId() === h.id ? "is-active" : ""}" data-action="switch-hobby" data-hobby="${escapeHtml(h.id)}">${escapeHtml(h.label)}</button>
+      <button type="button" class="hobby-switch__default-star ${defaultId === h.id ? "is-on" : ""}" data-action="set-default-hobby" data-hobby="${escapeHtml(h.id)}" title="${defaultId === h.id ? "Your default hobby" : "Set as default"}" aria-label="${defaultId === h.id ? "Your default hobby" : "Set as default"}">
+        <svg viewBox="0 0 24 24" width="14" height="14" fill="${defaultId === h.id ? "currentColor" : "none"}" stroke="currentColor" stroke-width="1.6"><path d="${STAR_PATH}"/></svg>
+      </button>
+    </div>
   `).join("");
 }
 
@@ -5810,6 +5853,13 @@ document.addEventListener("click", async (e) => {
     setActiveHobbyId(switchHobby.dataset.hobby);
     document.getElementById("hobby-switch-menu")?.classList.add("hidden");
     render();
+    return;
+  }
+
+  const setDefaultHobbyBtn = t("[data-action='set-default-hobby']");
+  if (setDefaultHobbyBtn) {
+    if (!isSignedIn()) { showToast("Sign in to set a default hobby"); return; }
+    setDefaultHobby(setDefaultHobbyBtn.dataset.hobby);
     return;
   }
 

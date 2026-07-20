@@ -361,7 +361,11 @@ async function ensureProfile() {
     // own name immediately rather than waiting on the next full sync.
     const profiles = readJSON(KEYS.profiles, []);
     const idx = profiles.findIndex((p) => p.userId === userId);
-    const row = { userId, displayName: data.display_name, isAdmin: !!data.is_admin, avatarUrl: data.avatar_path ? avatarUrl(data.avatar_path) : null };
+    const row = {
+      userId, displayName: data.display_name, isAdmin: !!data.is_admin,
+      avatarUrl: data.avatar_path ? avatarUrl(data.avatar_path) : null,
+      defaultHobbyId: data.default_hobby_id || null,
+    };
     if (idx === -1) profiles.push(row); else profiles[idx] = row;
     save(KEYS.profiles, profiles);
     if (typeof render === "function") render();
@@ -393,6 +397,25 @@ async function updateDisplayName(name) {
   const idx = profiles.findIndex((p) => p.userId === session.user.id);
   if (idx === -1) profiles.push({ userId: session.user.id, displayName: trimmed });
   else profiles[idx] = { ...profiles[idx], displayName: trimmed };
+  save(KEYS.profiles, profiles);
+  return { ok: true };
+}
+
+// Which hobby a fresh device/session should start on -- see
+// default_hobby_id in schema.sql. Same plain-update shape as
+// updateDisplayName above, and for the same reason (the grant list is
+// column-specific, so an upsert touching user_id would 403).
+async function updateDefaultHobby(hobbyId) {
+  if (!sb || !isSignedIn()) return { ok: false, message: "No connection — try again when you're online." };
+  const { error } = await sb
+    .from("profiles")
+    .update({ default_hobby_id: hobbyId, updated_at: nowIso() })
+    .eq("user_id", session.user.id);
+  if (error) return { ok: false, message: "Couldn't save that — try again." };
+  const profiles = readJSON(KEYS.profiles, []);
+  const idx = profiles.findIndex((p) => p.userId === session.user.id);
+  if (idx === -1) profiles.push({ userId: session.user.id, displayName: "", defaultHobbyId: hobbyId });
+  else profiles[idx] = { ...profiles[idx], defaultHobbyId: hobbyId };
   save(KEYS.profiles, profiles);
   return { ok: true };
 }

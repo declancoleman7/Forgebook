@@ -101,6 +101,12 @@ create table if not exists public.profiles (
 -- touching anything already there.
 alter table public.profiles add column if not exists is_admin boolean not null default false;
 alter table public.profiles add column if not exists avatar_path text;
+-- Which hobby (see HOBBIES in data.js) a fresh device/session should start
+-- on -- null means "no explicit default set," which the client treats the
+-- same as 'warhammer'. Distinct from the per-device "what am I looking at
+-- right now" value (plain localStorage, never synced): this is what makes
+-- a chosen default follow the account across devices.
+alter table public.profiles add column if not exists default_hobby_id text;
 
 -- ------------------------------------------------------------
 -- Faction emblems — an admin-uploaded image for an army that replaces the
@@ -440,7 +446,7 @@ create policy "manage own profile" on public.profiles
 -- themselves up as admin through the app: is_admin can only ever be flipped
 -- by re-running the bootstrap block below directly in the SQL editor.
 revoke update on public.profiles from authenticated;
-grant update (display_name, avatar_path, updated_at) on public.profiles to authenticated;
+grant update (display_name, avatar_path, default_hobby_id, updated_at) on public.profiles to authenticated;
 
 -- Faction emblems: readable by anyone signed in, writable only by an admin.
 alter table public.faction_emblems enable row level security;
