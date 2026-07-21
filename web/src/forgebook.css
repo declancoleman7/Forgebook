@@ -1,0 +1,4423 @@
+/* ============================================================
+   FORGEBOOK — design tokens
+   An instrument for a craft, not a game skin: a graphite (or, in
+   light mode, primed-white) ground, one burnished brass accent used
+   sparingly, and status colour (sage = owned, rust = buy/low) kept
+   deliberately separate from that accent so it means something on
+   its own. Old token NAMES are kept where a new palette maps onto
+   the same role (--gold is now brass, --blood is now rust, etc.) —
+   only the values changed, so every existing var(--x) usage across
+   this file picks up the new palette without being touched.
+
+   Dark is this app's default identity (most of this happens at a
+   desk lamp, not in daylight) — light is an explicit opt-in via
+   Settings, applied through [data-theme="light"] below, not through
+   prefers-color-scheme (an in-app setting shouldn't silently follow
+   the OS chrome).
+   ============================================================ */
+:root {
+  --bg-void: #14171a;
+  --bg-panel: #1b1f23;
+  --bg-raised: #242a30;
+  --bg-raised-2: #2d343c;
+  --line: #333a41;
+  --line-soft: #23282d;
+
+  --gold: #b8863f;
+  --gold-bright: #dcae67;
+  --gold-dim: rgba(184, 134, 63, 0.14);
+  --gold-border: rgba(184, 134, 63, 0.32);
+
+  --blood: #8a4a3a;
+  --blood-bright: #c17358;
+  --blood-dim: rgba(165, 80, 62, 0.16);
+  --blood-border: rgba(165, 80, 62, 0.45);
+
+  --parchment: #e9e3d4;
+  --parchment-dim: #c2bcaa;
+  --ink: #9c9587;
+  --ink-dim: #6c6659;
+  --ink-on-accent: #1c1408;
+
+  --success: #86a06f;
+  --success-dim: rgba(134, 160, 111, 0.16);
+  --success-border: rgba(134, 160, 111, 0.35);
+  --danger: #a5503e;
+
+  /* Colour-closeness (similar colours' match score) — deliberately a third
+     hue, never confused with brand gold or the owned/buy semantics above. */
+  --kinship: #5f8f8b;
+  --kinship-bright: #8fc9c3;
+  --kinship-dim: rgba(95, 143, 139, 0.16);
+  --kinship-border: rgba(95, 143, 139, 0.4);
+
+  --font-display: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, "Times New Roman", serif;
+  --font-body: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-mono: ui-monospace, "SF Mono", "Cascadia Code", "Segoe UI Mono", Consolas, "Liberation Mono", monospace;
+
+  --radius-sm: 6px;
+  --radius-md: 12px;
+  --radius-lg: 20px;
+
+  --shadow-card: 0 2px 10px rgba(0, 0, 0, 0.35);
+  --shadow-raised: 0 8px 24px rgba(0, 0, 0, 0.45);
+
+  --nav-h: 64px;
+  --topbar-h: 56px;
+}
+
+:root[data-theme="light"] {
+  --bg-void: #f2ede0;
+  --bg-panel: #fffdf7;
+  --bg-raised: #ece4d2;
+  --bg-raised-2: #e1d7c0;
+  --line: #ddd0b3;
+  --line-soft: #e8ddc2;
+
+  --gold: #8a5a22;
+  --gold-bright: #a9752f;
+  --gold-dim: rgba(138, 90, 34, 0.10);
+  --gold-border: rgba(138, 90, 34, 0.32);
+
+  --blood: #8a3d2c;
+  --blood-bright: #a34f3a;
+  --blood-dim: rgba(138, 61, 44, 0.13);
+  --blood-border: rgba(138, 61, 44, 0.4);
+
+  --parchment: #241f15;
+  --parchment-dim: #453d2e;
+  --ink: #6c6350;
+  --ink-dim: #948a72;
+
+  --success: #4c6b39;
+  --success-dim: rgba(76, 107, 57, 0.13);
+  --success-border: rgba(76, 107, 57, 0.38);
+  --danger: #8a3d2c;
+
+  --kinship: #3f6d69;
+  --kinship-bright: #2f5551;
+  --kinship-dim: rgba(63, 109, 105, 0.13);
+  --kinship-border: rgba(63, 109, 105, 0.4);
+
+  --shadow-card: 0 2px 10px rgba(60, 50, 30, 0.16);
+  --shadow-raised: 0 8px 24px rgba(60, 50, 30, 0.22);
+}
+
+/* Per-hobby accent -- only the brand tokens shift (--gold*), same "override
+   the variable, everything using it picks it up free" trick as the light
+   theme above. Status colours (blood/success/kinship) stay put on purpose:
+   they mean something specific (owned/buy, similar-colour score) that has
+   nothing to do with which hobby is active. A violet was picked deliberately
+   over gold/brass's warm metal tone -- arcane rather than martial, and far
+   enough from blood/success/kinship's hues that it can't be mistaken for any
+   of them. Applied via [data-hobby="dnd"] on <html> (see setActiveHobbyId in
+   app.js), the same attribute-on-root mechanism data-theme already uses. */
+:root[data-hobby="dnd"] {
+  --gold: #7c5cb0;
+  --gold-bright: #a88bdd;
+  --gold-dim: rgba(124, 92, 176, 0.14);
+  --gold-border: rgba(124, 92, 176, 0.34);
+}
+
+:root[data-theme="light"][data-hobby="dnd"] {
+  --gold: #5c4088;
+  --gold-bright: #7457a6;
+  --gold-dim: rgba(92, 64, 136, 0.10);
+  --gold-border: rgba(92, 64, 136, 0.32);
+}
+
+/* The painted backdrop below is a dark, moody scene — it doesn't translate
+   to a daylight theme, and dark art behind light-theme's dark-on-light text
+   would wreck contrast. Light mode keeps the plain flat ground instead. */
+html[data-theme="light"] {
+  background-image: radial-gradient(ellipse 900px 500px at 50% -10%, var(--gold-dim), transparent 60%);
+  background-size: auto;
+  background-position: top center;
+  background-repeat: no-repeat;
+  background-attachment: fixed;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  color: var(--parchment);
+  font-family: var(--font-body);
+  -webkit-font-smoothing: antialiased;
+  height: 100%;
+}
+
+/* The backdrop lives on html, not body: body's own box is only ever one
+   viewport tall (height: 100% above), while the page's actual scrollable
+   content overflows well past that. A background-attachment: fixed image
+   painted on body only ever covers that first viewport-tall box, so once
+   scrolled further, there was nothing left for it to paint against — this
+   is what showed up as a hard black band partway down every page. html's
+   box spans the full document, so its fixed background stays put and
+   covers the whole scroll range correctly.
+   The middle layer is a flat dark wash over the artwork — insurance so
+   foreground text stays readable regardless of which part of the (busy,
+   variable-brightness) painting happens to sit behind it. */
+html {
+  background-color: var(--bg-void);
+  background-image:
+    radial-gradient(ellipse 900px 500px at 50% -10%, var(--gold-dim), transparent 60%),
+    linear-gradient(rgba(8, 7, 5, 0.45), rgba(8, 7, 5, 0.45)),
+    url("/img/bg-mobile.jpg");
+  background-size: auto, auto, cover;
+  background-position: top center, top center, top center;
+  background-repeat: no-repeat, no-repeat, no-repeat;
+  background-attachment: fixed, fixed, fixed;
+}
+
+@media (min-width: 860px) {
+  html {
+    background-image:
+      radial-gradient(ellipse 900px 500px at 50% -10%, var(--gold-dim), transparent 60%),
+      linear-gradient(rgba(8, 7, 5, 0.45), rgba(8, 7, 5, 0.45)),
+      url("/img/bg-desktop.jpg");
+  }
+}
+
+/* D&D's own background art, swapped in the same "just override html's
+   background-image" way as the mobile/desktop split above -- the radial
+   glow already picks up the violet accent for free, since it references
+   --gold-dim, which is already the hobby-tinted value by the time this
+   rule applies. Its own dark-wash layer is noticeably stronger than
+   Warhammer's (0.62 vs 0.45): the source art is a bright moonlit scene, so
+   the same overlay strength that suits Warhammer's already-dark painting
+   left this one reading too bright/washed-out by comparison. */
+html[data-hobby="dnd"] {
+  background-image:
+    radial-gradient(ellipse 900px 500px at 50% -10%, var(--gold-dim), transparent 60%),
+    linear-gradient(rgba(5, 6, 10, 0.62), rgba(5, 6, 10, 0.62)),
+    url("/img/dnd-mobile.jpg");
+}
+
+@media (min-width: 860px) {
+  html[data-hobby="dnd"] {
+    background-image:
+      radial-gradient(ellipse 900px 500px at 50% -10%, var(--gold-dim), transparent 60%),
+      linear-gradient(rgba(5, 6, 10, 0.62), rgba(5, 6, 10, 0.62)),
+      url("/img/dnd-desktop.jpg");
+  }
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+button {
+  font-family: inherit;
+}
+
+img {
+  max-width: 100%;
+  display: block;
+}
+
+::selection {
+  background: var(--gold);
+  color: var(--bg-void);
+}
+
+/* focus visibility, kept even though we style things heavily */
+:focus-visible {
+  outline: 2px solid var(--gold-bright);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+}
+
+/* ============================================================
+   APP SHELL
+   ============================================================ */
+#app {
+  min-height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Desktop-only nav; the bottom-nav covers mobile. Actual layout (width,
+   position, item styling) lives in the desktop media query below — this
+   is just the mobile-first default so it doesn't render unstyled. */
+.side-nav {
+  display: none;
+}
+
+.topbar {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  height: var(--topbar-h);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 0 16px;
+  background: color-mix(in srgb, var(--bg-void) 80%, transparent);
+  backdrop-filter: blur(10px);
+  border-bottom: 1px solid var(--line-soft);
+}
+
+.topbar__brand {
+  font-family: var(--font-display);
+  font-size: 17px;
+  letter-spacing: 0.03em;
+  color: var(--gold-bright);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  white-space: nowrap;
+}
+
+.topbar__brand .glyph {
+  color: var(--gold);
+  font-size: 15px;
+}
+
+/* The topbar's own search box is gone -- search now lives on the Search
+   tab itself (see .global-search below), so this just fills the gap
+   between the brand and the hobby switcher/bell/sync pill. */
+.topbar__spacer {
+  flex: 1;
+}
+
+/* Recent-searches popover, anchored under whichever .global-search box is
+   focused (see bindGlobalSearchInputs in app.js). z-index sits above the
+   page content but below the toast/modal layers, since this is a
+   lightweight contextual popover, not a blocking dialog. */
+.search-dropdown {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  right: 0;
+  z-index: 25;
+  max-height: 60vh;
+  overflow-y: auto;
+  background: var(--bg-raised-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-raised);
+  padding: 6px;
+}
+.search-dropdown__label {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--ink-dim);
+  padding: 6px 8px 4px;
+}
+.search-dropdown__item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 8px;
+  border-radius: var(--radius-sm);
+  color: var(--parchment);
+  font-size: 13.5px;
+  cursor: pointer;
+}
+.search-dropdown__item:hover { background: var(--bg-raised); }
+.search-dropdown__item svg { flex-shrink: 0; opacity: 0.6; }
+.search-dropdown__empty {
+  padding: 10px 8px;
+  font-size: 13px;
+  color: var(--ink-dim);
+}
+
+/* .mini-search input is 13px flat with no responsive treatment (fine for
+   the filter-only boxes that class already served) -- this one triggers a
+   real on-screen keyboard for real searching, so it needs the same
+   iOS zoom-on-focus guard .field input uses (16px mobile, shrunk back to
+   14px on desktop below). */
+.global-search input {
+  font-size: 16px;
+}
+
+main {
+  flex: 1;
+  min-width: 0; /* a flex item's min-width defaults to auto, not 0 — without
+    this, an unwrapped descendant (e.g. .faction-row's horizontally-scrolling
+    chips) forces main, and the whole page, wider than the viewport, even
+    though that descendant has its own overflow-x: auto. This is the actual
+    cause of the mobile "page doesn't fill the screen" bug: the layout
+    viewport itself was being stretched a few px past the device width. */
+  padding: 16px 16px calc(var(--nav-h) + 96px);
+  max-width: 720px;
+  width: 100%;
+  margin: 0 auto;
+}
+
+.page-title {
+  font-family: var(--font-display);
+  font-size: 22px;
+  color: var(--parchment);
+  margin: 4px 0 16px;
+  letter-spacing: 0.01em;
+}
+
+.section-label {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ink);
+  margin: 28px 0 10px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.section-label::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: var(--line);
+}
+
+.section-label:first-child {
+  margin-top: 0;
+}
+
+/* Profile's "See all" link, next to a section-label that's showing only
+   its first 4 items -- see profileSectionLabelHtml() in app.js. */
+.section-see-all {
+  background: none;
+  border: none;
+  padding: 0;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--gold-bright);
+  white-space: nowrap;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+/* Bottom nav (mobile) */
+.bottom-nav {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: var(--nav-h);
+  background: color-mix(in srgb, var(--bg-panel) 80%, transparent);
+  backdrop-filter: blur(10px);
+  border-top: 1px solid var(--line-soft);
+  display: flex;
+  z-index: 30;
+  padding-bottom: env(safe-area-inset-bottom, 0);
+}
+
+/* Icon-only -- no label underneath, so icons run a bit larger than they did
+   sharing space with text, and the button is just centered rather than a
+   column with a gap for that now-gone label. */
+.bottom-nav__item {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--ink);
+  background: none;
+  border: none;
+  cursor: pointer;
+  transition: color 0.15s ease;
+}
+
+.bottom-nav__item svg {
+  width: 25px;
+  height: 25px;
+  stroke: currentColor;
+  fill: none;
+}
+
+.bottom-nav__item.is-active {
+  color: var(--gold-bright);
+}
+
+/* The Profile tab's icon slot is swapped for the signed-in user's own
+   avatar (see avatarHtml in app.js) -- give it a border so it reads clearly
+   against the bar even when it's just the tinted initial-letter fallback,
+   and highlight that border (matching .is-active's icon colour) when
+   Profile is the active tab, since an <img>-style avatar can't itself
+   change to the accent colour the way a stroked icon does. */
+.bottom-nav__item.is-active .avatar { border-color: var(--gold-bright); }
+
+.fab {
+  position: fixed;
+  right: 20px;
+  bottom: calc(var(--nav-h) + 20px);
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  background: linear-gradient(155deg, var(--blood-bright), var(--blood));
+  color: var(--parchment);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: var(--shadow-raised);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 26px;
+  cursor: pointer;
+  z-index: 25;
+  transition: transform 0.15s ease;
+}
+
+.fab:hover {
+  transform: translateY(-2px) scale(1.03);
+}
+
+.fab:active {
+  transform: scale(0.96);
+}
+
+/* ============================================================
+   FACTION CHIPS
+   ============================================================ */
+.faction-row {
+  display: flex;
+  gap: 10px;
+  overflow-x: auto;
+  padding-bottom: 4px;
+  scrollbar-width: none;
+}
+
+.faction-row::-webkit-scrollbar {
+  display: none;
+}
+
+/* A filter needs every option visible, not scrolled off — unlike Home's
+   army-preview row (a glance, not a filter), which stays a horizontal
+   scroller on purpose. */
+.faction-row--wrap {
+  flex-wrap: wrap;
+  overflow-x: visible;
+}
+
+/* Filter window trigger — toggle several filters at once in an overlay
+   (recipes: army/difficulty; paint library: brand/type), instead of inline
+   chips where options could be scrolled out of view. An icon-only button
+   (same shape as .icon-btn) so it sits inline right next to a page's search
+   box, same footprint as .topbar__bell's own icon+corner-badge pattern. */
+.filter-icon-btn {
+  position: relative;
+  width: 36px;
+  height: 36px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-panel);
+  border: 1px solid var(--line);
+  color: var(--ink);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.filter-icon-btn:hover { color: var(--gold-bright); border-color: var(--gold); }
+.filter-icon-btn svg { width: 16px; height: 16px; stroke: currentColor; fill: none; }
+
+.filter-icon-btn__count {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: 999px;
+  background: var(--gold);
+  color: var(--ink-on-accent);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 16px;
+  text-align: center;
+}
+
+.filter-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+}
+
+.filter-overlay__backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.6);
+}
+
+.filter-overlay__panel {
+  position: relative;
+  width: 100%;
+  max-width: 480px;
+  max-height: 80vh;
+  background: var(--bg-panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+  display: flex;
+  flex-direction: column;
+  box-shadow: var(--shadow-raised);
+}
+
+.filter-overlay__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 16px 12px;
+  border-bottom: 1px solid var(--line-soft);
+  flex-shrink: 0;
+}
+
+.filter-overlay__body {
+  padding: 4px 16px 16px;
+  overflow-y: auto;
+}
+
+.filter-toggle-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.filter-overlay__footer {
+  display: flex;
+  gap: 10px;
+  padding: 14px 16px;
+  border-top: 1px solid var(--line-soft);
+  flex-shrink: 0;
+}
+
+@media (min-width: 860px) {
+  .filter-overlay {
+    align-items: center;
+  }
+
+  .filter-overlay__panel {
+    border-radius: var(--radius-lg);
+  }
+}
+
+.faction-chip {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 8px 14px;
+  border-radius: 999px;
+  background: var(--bg-panel);
+  border: 1px solid var(--line);
+  color: var(--parchment-dim);
+  font-size: 13px;
+  cursor: pointer;
+  transition: border-color 0.15s ease, color 0.15s ease, background 0.15s ease;
+}
+
+.faction-chip__dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.faction-chip.is-active {
+  color: var(--parchment);
+  background: var(--bg-raised-2);
+  border-color: var(--chip-color, var(--gold));
+}
+
+/* ============================================================
+   CONTINUE CARD
+   ============================================================ */
+.continue-card {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  background: linear-gradient(120deg, var(--bg-panel), var(--bg-raised));
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-card);
+  padding: 14px;
+  cursor: pointer;
+  transition: border-color 0.15s ease;
+}
+
+.continue-card:hover {
+  border-color: var(--gold);
+}
+
+/* Faction emblem, medallion-mounted — a badge, not a flat icon on a flat
+   tile. --faction-color (already set per-element throughout the app for the
+   border-accent convention) tints the ring and glow here too; the ground
+   stays a neutral raised surface so 50-odd factions never turn the UI into
+   confetti. Sits inside whatever photo-capable container already exists
+   (continue-card__hero, recipe-card__hero, etc.) — swapped out entirely,
+   not fought with, once that container's .has-photo/.has-art class takes
+   over the background. */
+.emblem-badge {
+  border-radius: 50%;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: radial-gradient(circle at 32% 28%, color-mix(in srgb, var(--faction-color, var(--gold)) 26%, var(--bg-raised)), var(--bg-raised));
+  border: 1px solid color-mix(in srgb, var(--faction-color, var(--gold)) 45%, var(--line));
+  color: var(--faction-color, var(--gold));
+}
+.emblem-badge--sm { width: 34px; height: 34px; }
+.emblem-badge--md { width: 46px; height: 46px; }
+.emblem-badge--lg { width: 58px; height: 58px; }
+.emblem-badge--xl { width: 92px; height: 92px; }
+
+.continue-card__hero {
+  width: 56px;
+  height: 56px;
+  border-radius: var(--radius-md);
+  background: var(--bg-raised-2);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 26px;
+  flex-shrink: 0;
+}
+
+.continue-card__body {
+  flex: 1;
+  min-width: 0;
+}
+
+.continue-card__eyebrow {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--gold);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.continue-card__title {
+  font-family: var(--font-display);
+  font-size: 16px;
+  margin-top: 2px;
+  color: var(--parchment);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.continue-card__chevron {
+  color: var(--ink);
+  flex-shrink: 0;
+}
+
+/* ============================================================
+   RECIPE GRID + CARD
+   ============================================================ */
+.recipe-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 12px;
+}
+
+.recipe-card {
+  background: var(--bg-panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-card);
+  overflow: hidden;
+  cursor: pointer;
+  transition: transform 0.15s ease, border-color 0.15s ease;
+  display: flex;
+  flex-direction: column;
+}
+
+.recipe-card:hover {
+  transform: translateY(-2px);
+  border-color: var(--faction-color, var(--gold));
+}
+
+.recipe-card__hero {
+  height: 84px;
+  background:
+    radial-gradient(circle at 30% 15%, color-mix(in srgb, var(--faction-color, var(--gold)) 22%, transparent), transparent 65%),
+    var(--bg-raised);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 34px;
+  position: relative;
+  border-bottom: 3px solid var(--faction-color, var(--gold));
+}
+
+/* Same subtle top-left sheen .detail-hero already uses -- these were the
+   one flat, undifferentiated surface left once every other hero/tile in
+   the app (feed cards, the detail hero, emblem badges) had picked up some
+   form of gradient or highlight. */
+.recipe-card__hero::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(circle at 30% 20%, rgba(255, 255, 255, 0.06), transparent 60%);
+}
+
+.recipe-card__stack {
+  position: absolute;
+  left: 8px;
+  bottom: -3px;
+  display: flex;
+  gap: 2px;
+}
+
+.recipe-card__stack span {
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+  display: block;
+}
+
+.recipe-card__body {
+  padding: 10px 11px 12px;
+}
+
+.recipe-card__id {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--ink);
+  letter-spacing: 0.06em;
+}
+
+.recipe-card__name {
+  font-family: var(--font-display);
+  font-size: 14px;
+  margin-top: 3px;
+  line-height: 1.3;
+  color: var(--parchment);
+}
+
+.recipe-card__meta {
+  margin-top: 7px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 11px;
+  color: var(--ink);
+}
+
+.recipe-card__meta-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.recipe-card__score {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  color: var(--ink-dim);
+}
+
+.recipe-card__score svg {
+  width: 11px;
+  height: 11px;
+}
+
+/* Shared by every passive "you've saved this" marker -- recipe/compact-row
+   cards, feed cards (recipe and paint), Paint Library rows, and search
+   results -- so it always reads the same small gold glyph wherever it
+   appears, rather than each call site inventing its own. */
+.recipe-card__saved {
+  display: inline-flex;
+  align-items: center;
+  color: var(--gold-bright);
+  margin-left: 4px;
+}
+
+.recipe-card__saved svg {
+  width: 11px;
+  height: 11px;
+  vertical-align: middle;
+}
+
+/* The one real save/unsave toggle (recipe detail, paint's Similar Colours
+   page) -- everywhere else the marker above is passive-only. */
+.icon-btn.is-active {
+  color: var(--gold-bright);
+  border-color: var(--gold-bright);
+}
+
+.recipe-card__author {
+  margin-top: 5px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  color: var(--gold-bright);
+}
+
+/* A shared recipe's author, on its own detail page. */
+.shared-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: 4px;
+  padding: 3px 9px;
+  border-radius: 999px;
+  background: var(--bg-raised);
+  color: var(--gold-bright);
+  font-size: 12px;
+}
+
+/* Recipe form's "share this recipe" row — a single clickable toggle rather
+   than a checkbox, matching the tap-target size of everything else in the
+   form. */
+.share-toggle {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 12px 14px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--line);
+  background: var(--bg-panel);
+  cursor: pointer;
+}
+
+.share-toggle__text {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.share-toggle__text strong {
+  font-size: 14px;
+  color: var(--parchment);
+}
+
+.share-toggle__text span {
+  font-size: 12px;
+  color: var(--ink);
+  line-height: 1.4;
+}
+
+.share-toggle__switch {
+  flex-shrink: 0;
+  width: 42px;
+  height: 24px;
+  border-radius: 999px;
+  background: var(--bg-raised-2);
+  border: 1px solid var(--line);
+  position: relative;
+  transition: background 0.15s ease;
+}
+
+.share-toggle__switch i {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--ink);
+  transition: transform 0.15s ease, background 0.15s ease;
+}
+
+.share-toggle.is-on .share-toggle__switch {
+  background: var(--gold);
+  border-color: var(--gold);
+}
+
+.share-toggle.is-on .share-toggle__switch i {
+  background: var(--bg-void);
+  transform: translateX(18px);
+}
+
+/* ============================================================
+   DESKTOP THREE-PANE RECIPES (list + detail together, ≥860px)
+   Mobile-first defaults below render only the plain mobile grid /
+   full-width detail — see the desktop media query for the actual
+   two-column layout. Both list and mobile-grid markup are always in
+   the DOM (same trick as side-nav vs. bottom-nav); CSS picks one.
+   ============================================================ */
+.recipe-master__list {
+  display: none;
+}
+
+.recipe-master__placeholder {
+  display: none;
+}
+
+.recipe-master__rail {
+  display: none;
+}
+
+.home-layout__rail {
+  display: none;
+}
+
+.compact-recipe-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px;
+  border-radius: var(--radius-sm);
+  border: 1px solid transparent;
+  cursor: pointer;
+}
+
+.compact-recipe-row:hover {
+  background: var(--bg-panel);
+}
+
+.compact-recipe-row.is-active {
+  background: var(--bg-raised);
+  border-color: var(--faction-color, var(--gold));
+}
+
+.compact-recipe-row__thumb {
+  width: 40px;
+  height: 40px;
+  border-radius: var(--radius-sm);
+  flex-shrink: 0;
+  background: var(--bg-raised);
+  background-size: cover;
+  background-position: center;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.compact-recipe-row__info {
+  flex: 1;
+  min-width: 0;
+}
+
+.compact-recipe-row__name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--parchment);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.compact-recipe-row__meta {
+  font-size: 11px;
+  color: var(--ink);
+  margin: 2px 0 5px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.compact-recipe-row__stack {
+  display: flex;
+  height: 4px;
+  border-radius: 2px;
+  overflow: hidden;
+  max-width: 80px;
+}
+
+.compact-recipe-row__stack span {
+  flex: 1;
+  display: block;
+}
+
+/* On a page with both a search box and a filter trigger, .search-filter-row
+   holds them side by side (search flexes to fill, filter stays a small
+   fixed icon button) instead of stacking a full-width "Filters" button
+   underneath -- .mini-search's own margin-bottom is dropped in that
+   context since the row itself carries the spacing instead. */
+.search-filter-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+.search-filter-row .mini-search { margin-bottom: 0; }
+
+.mini-search {
+  position: relative; /* anchors .search-dropdown, when this is a .global-search box */
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
+  background: var(--bg-raised);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.18);
+  padding: 8px 10px;
+  margin-bottom: 12px;
+}
+
+.mini-search svg {
+  width: 14px;
+  height: 14px;
+  stroke: var(--ink-dim);
+  fill: none;
+  flex-shrink: 0;
+}
+
+.mini-search input {
+  flex: 1;
+  min-width: 0;
+  background: transparent;
+  border: none;
+  outline: none;
+  color: var(--parchment);
+  font-size: 13px;
+  font-family: inherit;
+}
+
+.mini-search input::placeholder {
+  color: var(--ink-dim);
+}
+
+.difficulty {
+  display: flex;
+  gap: 2px;
+}
+
+.difficulty span {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--line);
+}
+
+.difficulty span.is-filled {
+  background: var(--gold);
+}
+
+.empty-state {
+  text-align: center;
+  padding: 48px 20px;
+  color: var(--ink);
+}
+
+.empty-state__glyph {
+  font-size: 34px;
+  margin-bottom: 10px;
+  opacity: 0.7;
+}
+
+.empty-state__title {
+  font-family: var(--font-display);
+  color: var(--parchment-dim);
+  font-size: 16px;
+  margin-bottom: 6px;
+}
+
+.empty-state__sub {
+  font-size: 13px;
+  max-width: 32ch;
+  margin: 0 auto;
+  line-height: 1.5;
+}
+
+/* ============================================================
+   RECIPE DETAIL
+   ============================================================ */
+.detail-hero {
+  height: 150px;
+  border-radius: var(--radius-lg);
+  background: var(--bg-panel);
+  border: 1px solid var(--line);
+  border-bottom: 4px solid var(--faction-color, var(--gold));
+  box-shadow: var(--shadow-raised);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 60px;
+  margin-bottom: 14px;
+  position: relative;
+  overflow: hidden;
+}
+
+.detail-hero::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(circle at 30% 20%, rgba(255, 255, 255, 0.05), transparent 60%);
+}
+
+.detail-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 10px;
+  margin-bottom: 4px;
+}
+
+.detail-title {
+  font-family: var(--font-display);
+  font-size: 21px;
+  color: var(--parchment);
+  line-height: 1.25;
+}
+
+.detail-id {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--gold);
+  letter-spacing: 0.08em;
+  margin-bottom: 4px;
+  display: block;
+}
+
+.detail-faction-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--parchment-dim);
+  background: var(--bg-panel);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 5px 11px;
+  margin-top: 8px;
+}
+
+.metastrip {
+  display: flex;
+  background: var(--bg-panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  margin-top: 10px;
+}
+
+.metastrip__cell {
+  flex: 1;
+  padding: 10px 14px;
+  text-align: center;
+  border-right: 1px solid var(--line);
+}
+
+.metastrip__cell:last-child {
+  border-right: none;
+}
+
+.metastrip__n {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 16px;
+  font-family: var(--font-mono);
+  font-size: 15px;
+  color: var(--gold);
+}
+
+.metastrip__l {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink-dim);
+  margin-top: 4px;
+}
+
+.icon-btn {
+  width: 36px;
+  height: 36px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-panel);
+  border: 1px solid var(--line);
+  color: var(--ink);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.icon-btn:hover {
+  color: var(--gold-bright);
+  border-color: var(--gold);
+}
+
+.icon-btn svg {
+  width: 16px;
+  height: 16px;
+  stroke: currentColor;
+  fill: none;
+}
+
+/* Topbar notification bell -- same visual language as .icon-btn, but this
+   one carries an unread-count badge so it's its own small component rather
+   than just reusing that class directly. */
+.topbar__bell {
+  position: relative;
+  width: 36px;
+  height: 36px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-panel);
+  border: 1px solid var(--line);
+  color: var(--ink);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.topbar__bell:hover { color: var(--gold-bright); border-color: var(--gold); }
+.topbar__bell svg { width: 18px; height: 18px; stroke: currentColor; fill: none; }
+
+.topbar__bell-badge {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: 999px;
+  background: var(--blood-bright);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 16px;
+  text-align: center;
+}
+
+/* Topbar hobby switcher -- hidden (see updateHobbySwitcher() in app.js)
+   until a second hobby is actually enabled, so this never adds clutter for
+   the vast majority of accounts that only ever use Warhammer. */
+.hobby-switch {
+  position: relative; /* anchors .hobby-switch__menu below */
+  flex-shrink: 0;
+}
+
+.hobby-switch__trigger {
+  height: 36px;
+  padding: 0 10px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-panel);
+  border: 1px solid var(--line);
+  color: var(--ink);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 13px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.hobby-switch__trigger:hover { color: var(--gold-bright); border-color: var(--gold); }
+.hobby-switch__trigger svg { width: 14px; height: 14px; stroke: currentColor; fill: none; }
+
+.hobby-switch__menu {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 25;
+  min-width: 160px;
+  background: var(--bg-raised-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-raised);
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.hobby-switch__row {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.hobby-switch__item {
+  flex: 1;
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 9px 10px;
+  border-radius: var(--radius-sm);
+  background: none;
+  border: none;
+  color: var(--parchment-dim);
+  font-size: 13px;
+  cursor: pointer;
+}
+.hobby-switch__item:hover { background: var(--bg-raised); }
+.hobby-switch__item.is-active { color: var(--gold-bright); background: var(--gold-dim); }
+
+/* Set-as-default toggle, sibling of .hobby-switch__item (not nested inside
+   it) -- same reasoning as suggestedPainterRowHtml's follow button in
+   app.js: a nested actionable inside another action's clickable area risks
+   the wrong one firing, depending on delegate check order. */
+.hobby-switch__default-star {
+  flex-shrink: 0;
+  width: 30px;
+  height: 30px;
+  border-radius: var(--radius-sm);
+  background: none;
+  border: none;
+  color: var(--ink-dim);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+.hobby-switch__default-star:hover { color: var(--gold-bright); }
+.hobby-switch__default-star.is-on { color: var(--gold-bright); }
+
+/* Layer stack — the signature element. Encodes real sequence:
+   each bar is one step, in the order you actually paint it. */
+.layer-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  border: 1px solid var(--line);
+}
+
+.layer-stack__row {
+  display: flex;
+  align-items: stretch;
+  background: var(--bg-panel);
+  min-height: 52px;
+}
+
+.layer-stack__swatch {
+  width: 10px;
+  flex-shrink: 0;
+}
+
+.layer-stack__content {
+  flex: 1;
+  padding: 9px 12px;
+  min-width: 0;
+}
+
+.layer-stack__top {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.layer-stack__technique {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--gold);
+  flex-shrink: 0;
+}
+
+.layer-stack__paint {
+  font-size: 13.5px;
+  color: var(--parchment);
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.layer-stack__notes {
+  font-size: 12.5px;
+  color: var(--ink);
+  margin-top: 3px;
+  line-height: 1.45;
+}
+
+.layer-stack__num {
+  width: 22px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--ink-dim);
+  background: var(--bg-raised);
+  border-right: 1px solid var(--line);
+}
+
+/* Paint palette list */
+.paint-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 8px;
+}
+
+.paint-row {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  background: var(--bg-panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  padding: 9px 12px;
+}
+
+/* A shared recipe's paint list marks which of its paints are already on
+   your own rack — sage, not brass: "owned" is a status, not the accent. */
+.paint-row.is-owned {
+  border-color: var(--success-border);
+  background: linear-gradient(180deg, var(--success-dim), var(--bg-panel));
+}
+
+.paint-row__swatch {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  position: relative;
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.12),
+    inset 3px 3px 6px rgba(255, 255, 255, 0.18),
+    0 1px 3px rgba(0, 0, 0, 0.4);
+}
+
+/* A small blurred highlight so the swatch reads as a paint pot, not a flat tile */
+.paint-row__swatch::after {
+  content: "";
+  position: absolute;
+  top: 4px;
+  left: 6px;
+  width: 6px;
+  height: 4px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.35);
+  filter: blur(1px);
+}
+
+/* Small corner chip marking paint type (wash/contrast/metallic/primer) --
+   sits on the swatch's edge rather than over its face, so the paint's own
+   colour still reads at a glance. */
+.paint-type-badge {
+  position: absolute;
+  bottom: -2px;
+  right: -2px;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(18, 14, 10, 0.8);
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.22);
+  color: rgba(255, 255, 255, 0.85);
+  pointer-events: none;
+}
+
+.paint-type-badge svg {
+  width: 7px;
+  height: 7px;
+}
+
+.colour-match-source .paint-type-badge {
+  width: 16px;
+  height: 16px;
+  bottom: -3px;
+  right: -3px;
+}
+
+.feed-card__hero--swatch .paint-type-badge {
+  width: 26px;
+  height: 26px;
+  bottom: 10px;
+  right: 10px;
+}
+.feed-card__hero--swatch .paint-type-badge svg { width: 14px; height: 14px; }
+
+.colour-match-source .paint-type-badge svg {
+  width: 9px;
+  height: 9px;
+}
+
+/* Compact avg-rating badge on a Paint Library swatch -- opposite corner from
+   .paint-type-badge so the two never collide, small enough to not crowd an
+   already-tight row on narrow phones. */
+.lib-row__rating {
+  position: absolute;
+  top: -2px;
+  left: -2px;
+  padding: 1px 4px;
+  border-radius: 6px;
+  font-size: 9px;
+  font-weight: 700;
+  line-height: 1.4;
+  background: rgba(18, 14, 10, 0.8);
+  color: var(--gold-bright);
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.22);
+  pointer-events: none;
+}
+
+.paint-row__name {
+  font-size: 13.5px;
+  color: var(--parchment);
+  font-weight: 600;
+}
+
+.paint-row__brand {
+  font-size: 11.5px;
+  color: var(--ink);
+  margin-top: 1px;
+}
+
+.paint-row__hex {
+  margin-left: auto;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--ink-dim);
+}
+
+.notes-block {
+  background: var(--bg-panel);
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--gold);
+  border-radius: var(--radius-sm);
+  padding: 12px 14px;
+  font-size: 13.5px;
+  line-height: 1.6;
+  color: var(--parchment-dim);
+}
+
+.detail-actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 24px;
+}
+
+/* ============================================================
+   BUTTONS
+   ============================================================ */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  padding: 11px 18px;
+  border-radius: var(--radius-sm);
+  font-size: 13.5px;
+  font-weight: 600;
+  cursor: pointer;
+  border: 1px solid transparent;
+  transition: filter 0.15s ease, transform 0.1s ease;
+}
+
+.btn:active {
+  transform: scale(0.98);
+}
+
+.btn-primary {
+  background: linear-gradient(155deg, var(--gold-bright), var(--gold));
+  color: var(--ink-on-accent);
+  box-shadow: 0 2px 8px var(--gold-dim);
+}
+
+.btn-primary:hover {
+  filter: brightness(1.08);
+}
+
+.btn-ghost {
+  background: var(--bg-panel);
+  border-color: var(--line);
+  color: var(--parchment-dim);
+}
+
+.btn-ghost:hover {
+  border-color: var(--gold);
+  color: var(--parchment);
+}
+
+.btn-danger {
+  background: var(--bg-panel);
+  border-color: var(--blood);
+  color: var(--blood-bright);
+}
+
+.btn-danger:hover {
+  background: var(--blood);
+  color: var(--parchment);
+}
+
+.btn-block {
+  width: 100%;
+}
+
+/* ============================================================
+   FORMS
+   ============================================================ */
+.field {
+  margin-bottom: 16px;
+}
+
+.field label {
+  display: block;
+  font-size: 12px;
+  color: var(--ink);
+  margin-bottom: 6px;
+  letter-spacing: 0.02em;
+}
+
+.field input[type="text"],
+.field input[type="number"],
+.field input[type="email"],
+.field input[type="password"],
+.field select,
+.field textarea {
+  width: 100%;
+  background: var(--bg-panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  /* A faint recess -- the material-language counterpart to raised
+     buttons/cards elsewhere: this is where you type INTO the surface,
+     not tap something sitting on top of it. */
+  box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.18);
+  padding: 10px 12px;
+  color: var(--parchment);
+  /* 16px, not the 14px used elsewhere: iOS Safari auto-zooms the whole page
+     on focus for any input under 16px, and doesn't reliably zoom back out —
+     that's the "page is stuck slightly zoomed in" bug. Restored to 14px for
+     desktop below, where that behaviour doesn't apply. */
+  font-size: 16px;
+  font-family: inherit;
+}
+
+.field input:focus,
+.field select:focus,
+.field textarea:focus {
+  outline: none;
+  border-color: var(--gold);
+}
+
+.field textarea {
+  resize: vertical;
+  min-height: 70px;
+}
+
+.field-hex-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.field-hex-row input[type="color"] {
+  width: 42px;
+  height: 42px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--bg-panel);
+  padding: 3px;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.repeater-item {
+  background: var(--bg-panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  padding: 12px;
+  margin-bottom: 10px;
+  position: relative;
+}
+
+.repeater-item__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+
+.repeater-item__num {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink);
+}
+
+.repeater-item__controls {
+  display: flex;
+  gap: 6px;
+}
+
+.icon-btn-sm {
+  width: 26px;
+  height: 26px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-raised);
+  border: 1px solid var(--line);
+  color: var(--ink);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.icon-btn-sm svg {
+  width: 13px;
+  height: 13px;
+  stroke: currentColor;
+  fill: none;
+  transform: rotate(-90deg); /* the shared chevron path points right; rotate to point up */
+}
+
+.icon-btn-sm.repeater-item__down svg {
+  transform: rotate(90deg); /* ...and down for the second control */
+}
+
+.icon-btn-sm:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.icon-btn-sm:not(:disabled):hover {
+  color: var(--gold-bright);
+  border-color: var(--gold);
+}
+
+.repeater-item__remove {
+  width: 26px;
+  height: 26px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-raised);
+  border: 1px solid var(--line);
+  color: var(--ink);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+}
+
+.repeater-item__remove:hover {
+  color: var(--blood-bright);
+  border-color: var(--blood);
+}
+
+.repeater-insert {
+  width: 100%;
+  padding: 7px;
+  border-radius: var(--radius-sm);
+  border: none;
+  background: transparent;
+  color: var(--ink-dim);
+  cursor: pointer;
+  font-size: 11px;
+  margin: -4px 0 10px;
+}
+
+.repeater-insert:hover {
+  color: var(--gold-bright);
+}
+
+.repeater-add {
+  width: 100%;
+  padding: 12px;
+  border-radius: var(--radius-md);
+  border: 1px dashed var(--line);
+  background: transparent;
+  color: var(--ink);
+  cursor: pointer;
+  font-size: 13px;
+  margin-bottom: 20px;
+}
+
+.repeater-add:hover {
+  border-color: var(--gold);
+  color: var(--gold-bright);
+}
+
+.difficulty-picker {
+  display: flex;
+  gap: 8px;
+}
+
+.difficulty-picker button {
+  width: 40px;
+  height: 40px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-panel);
+  border: 1px solid var(--line);
+  color: var(--ink);
+  cursor: pointer;
+  font-family: var(--font-mono);
+}
+
+.difficulty-picker button.is-selected {
+  background: var(--gold);
+  border-color: var(--gold);
+  color: var(--ink-on-accent);
+}
+
+/* Faction select pills in forms */
+.faction-picker {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.faction-picker button {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 8px 13px;
+  border-radius: 999px;
+  background: var(--bg-panel);
+  border: 1px solid var(--line);
+  color: var(--parchment-dim);
+  cursor: pointer;
+  font-size: 13px;
+}
+
+.faction-picker button.is-selected {
+  border-color: var(--picker-color, var(--gold));
+  color: var(--parchment);
+  background: var(--bg-raised-2);
+}
+
+.tech-picker {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.tech-picker button {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  letter-spacing: 0.02em;
+  padding: 8px 12px;
+  border-radius: 999px;
+  background: var(--bg-panel);
+  border: 1px solid var(--line);
+  color: var(--parchment-dim);
+  cursor: pointer;
+}
+
+.tech-picker button.is-selected {
+  background: var(--bg-raised-2);
+  border-color: var(--gold);
+  color: var(--gold-bright);
+}
+
+/* Sub-grouping within the Method list (e.g. "Armour", "Base") — one level
+   below .section-label, so it reads as nested rather than a new section. */
+.grouphead {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--ink);
+  margin: 16px 0 8px;
+}
+
+.grouphead::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: var(--line);
+}
+
+.faction-picker .dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+}
+
+/* ============================================================
+   PAINTS LIBRARY PAGE
+   ============================================================ */
+.paint-lib-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: var(--bg-panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  padding: 10px 12px;
+  margin-bottom: 8px;
+}
+
+.paint-lib-row__count {
+  margin-left: auto;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--ink);
+  background: var(--bg-raised);
+  border-radius: 999px;
+  padding: 3px 9px;
+}
+
+.restock-badge {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--blood-bright, #a8323f);
+  border: 1px solid var(--blood, #7a2a32);
+  border-radius: 999px;
+  padding: 3px 8px;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+/* A neutral "how many you own" chip on My Rack -- same shape as
+   .restock-badge, deliberately not its red (that means "buy/low"). */
+.qty-badge {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--parchment-dim);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 3px 8px;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+/* Paint library — browsing rows: swatch + name, a trailing flag button
+   (meaning depends on owned state — buy vs. restock), and a ring that shows
+   owned status. The whole row is the "mark as owned" tap target; the flag
+   button is a separate, smaller target within it. auto-fill means this is a
+   single-column list on a phone and a multi-column grid on a wide screen,
+   without any separate mobile/desktop markup. */
+.lib-progress {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 14px;
+}
+
+.lib-progress__stats {
+  display: flex;
+  gap: 20px;
+}
+
+.lib-progress__stat {
+  text-align: center;
+}
+
+.lib-progress__n {
+  font-family: var(--font-mono);
+  font-size: 17px;
+  color: var(--gold);
+}
+
+.lib-progress__n small {
+  font-size: 12px;
+  color: var(--ink);
+}
+
+.lib-progress__l {
+  display: block;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ink-dim);
+  margin-top: 2px;
+}
+
+.lib-progress__bar {
+  flex: 1;
+  height: 6px;
+  border-radius: 4px;
+  background: var(--bg-raised-2);
+  overflow: hidden;
+}
+
+.lib-progress__bar i {
+  display: block;
+  height: 100%;
+  background: linear-gradient(90deg, var(--gold), var(--gold-bright));
+}
+
+.lib-filter-seg {
+  display: flex;
+  background: var(--bg-panel);
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  padding: 3px;
+  margin-bottom: 10px;
+}
+
+.lib-filter-seg button {
+  flex: 1;
+  border: 0;
+  background: transparent;
+  color: var(--parchment-dim);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.02em;
+  padding: 8px 6px;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  cursor: pointer;
+}
+
+.lib-filter-seg button .b {
+  font-size: 10px;
+  color: var(--ink-dim);
+}
+
+.lib-filter-seg button.is-active {
+  background: var(--gold);
+  color: var(--ink-on-accent);
+}
+
+.lib-filter-seg button.is-active .b {
+  color: #4a3a12;
+}
+
+.lib-section-count {
+  font-size: 10px;
+  color: var(--ink-dim);
+  text-transform: none;
+  letter-spacing: 0.03em;
+}
+
+.lib-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+  gap: 8px;
+}
+
+.lib-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: var(--bg-panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  padding: 10px 12px;
+  cursor: pointer;
+  transition: border-color 0.15s ease;
+}
+
+.lib-row:hover {
+  border-color: var(--gold);
+}
+
+.lib-row.is-owned {
+  border-color: var(--success-border);
+  background: linear-gradient(180deg, var(--success-dim), var(--bg-panel));
+}
+
+.lib-row__info {
+  flex: 1;
+  min-width: 0;
+}
+
+.lib-row__flag {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  flex-shrink: 0;
+  border: 1px solid var(--line);
+  background: var(--bg-void);
+  color: var(--ink-dim);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.lib-row__flag svg {
+  width: 14px;
+  height: 14px;
+  stroke: currentColor;
+  fill: none;
+}
+
+/* Wanted (don't own it yet) and needs-restock (own it, running low) are the
+   same "go buy this" status underneath, so they share rust — kept separate
+   from brass, which is reserved for the app's own accent/actions. */
+.lib-row__flag.is-wanted.is-on,
+.lib-row__flag.is-restock.is-on {
+  background: var(--blood-dim);
+  border-color: var(--blood-bright);
+  color: var(--blood-bright);
+}
+
+.lib-row__ring {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  border: 2px solid var(--line);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: transparent;
+}
+
+.lib-row__ring svg {
+  width: 14px;
+  height: 14px;
+  stroke: currentColor;
+  fill: none;
+}
+
+.lib-row.is-owned .lib-row__ring,
+.lib-row__ring.is-owned {
+  background: var(--success);
+  border-color: var(--success);
+  color: var(--ink-on-accent);
+}
+
+/* Not-owned rows show a filled "+" rather than an empty ring -- the row is
+   still a single tap to add (data-action="toggle-have" on the row itself),
+   this is just a clearer visual cue than a blank placeholder. */
+.lib-row__ring--add {
+  background: var(--gold-dim);
+  border-color: var(--gold-border);
+  color: var(--gold-bright);
+}
+
+.lib-row__ring--add svg {
+  width: 14px;
+  height: 14px;
+  stroke: currentColor;
+  fill: none;
+}
+
+/* Quantity stepper -- replaces the single "remove" button once a paint is
+   owned, so how many pots you have is visible (and adjustable) at a glance
+   without opening the paint's own detail page. */
+.lib-row__qty {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex-shrink: 0;
+  background: var(--bg-void);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 3px;
+}
+
+.lib-row__qty-btn {
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
+  border: none;
+  background: transparent;
+  color: var(--ink);
+  font-size: 15px;
+  line-height: 1;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.lib-row__qty-btn:hover {
+  background: var(--bg-raised-2);
+  color: var(--gold-bright);
+}
+
+.lib-row__qty-n {
+  min-width: 20px;
+  text-align: center;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  color: var(--parchment);
+}
+
+/* ============================================================
+   SETTINGS PAGE
+   ============================================================ */
+.settings-group {
+  background: var(--bg-panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-card);
+  overflow: hidden;
+  margin-bottom: 20px;
+}
+
+.settings-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--line-soft);
+  gap: 12px;
+}
+
+.settings-row:last-child {
+  border-bottom: none;
+}
+
+.settings-row__label {
+  font-size: 14px;
+  color: var(--parchment);
+}
+
+.settings-row__desc {
+  font-size: 12px;
+  color: var(--ink);
+  margin-top: 2px;
+}
+
+.theme-toggle {
+  display: inline-flex;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 3px;
+  gap: 2px;
+  flex-shrink: 0;
+}
+.theme-toggle__btn {
+  border: none;
+  background: transparent;
+  color: var(--ink);
+  font-family: var(--font-body);
+  font-size: 12.5px;
+  padding: 7px 14px;
+  border-radius: 999px;
+  cursor: pointer;
+}
+.theme-toggle__btn.is-active {
+  background: var(--bg-raised);
+  color: var(--gold-bright);
+  font-weight: 600;
+}
+
+/* toast */
+.toast {
+  position: fixed;
+  left: 50%;
+  bottom: calc(var(--nav-h) + 20px);
+  transform: translateX(-50%) translateY(10px);
+  background: var(--bg-raised-2);
+  border: 1px solid var(--gold);
+  color: var(--parchment);
+  padding: 10px 18px;
+  border-radius: 999px;
+  font-size: 13px;
+  z-index: 50;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s ease, transform 0.2s ease;
+  box-shadow: var(--shadow-raised);
+}
+
+.toast.is-visible {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+  pointer-events: auto;
+}
+
+/* page transition */
+.page-enter {
+  animation: page-in 0.22s ease both;
+}
+
+@keyframes page-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* ============================================================
+   DESKTOP / WIDE VIEWPORT
+   ============================================================ */
+@media (min-width: 860px) {
+  #app {
+    flex-direction: row;
+  }
+
+  .topbar {
+    position: fixed;
+    top: 0;
+    left: 220px;
+    right: 0;
+    width: auto;
+  }
+
+  .side-nav {
+    position: fixed;
+    top: 0;
+    left: 0;
+    bottom: 0;
+    width: 220px;
+    background: color-mix(in srgb, var(--bg-panel) 80%, transparent);
+    backdrop-filter: blur(10px);
+    border-right: 1px solid var(--line-soft);
+    display: flex;
+    flex-direction: column;
+    padding: 18px 12px;
+    z-index: 30;
+  }
+
+  .side-nav__brand {
+    font-family: var(--font-display);
+    color: var(--gold-bright);
+    font-size: 18px;
+    padding: 6px 10px 22px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .side-nav__item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 11px 12px;
+    border-radius: var(--radius-sm);
+    color: var(--ink);
+    background: none;
+    border: none;
+    cursor: pointer;
+    font-size: 14px;
+    text-align: left;
+  }
+
+  .side-nav__item svg {
+    width: 18px;
+    height: 18px;
+    stroke: currentColor;
+    fill: none;
+  }
+
+  .side-nav__item.is-active {
+    background: var(--bg-raised);
+    color: var(--gold-bright);
+  }
+
+  /* Profile's icon slot is swapped for the user's own avatar -- see the
+     matching .bottom-nav__item .avatar rule for why the border needs its
+     own active-state colour instead of relying on currentColor. */
+  .side-nav__item.is-active .avatar { border-color: var(--gold-bright); }
+
+  .bottom-nav {
+    display: none;
+  }
+
+  main {
+    margin-left: 220px;
+    margin-top: var(--topbar-h);
+    max-width: 880px;
+    padding: 24px 32px 60px;
+  }
+
+  .fab {
+    right: 40px;
+    bottom: 40px;
+  }
+
+  .recipe-grid {
+    grid-template-columns: repeat(3, 1fr);
+  }
+
+  /* The 16px mobile input size is a phone-only guard (see the base rules) —
+     desktop has no on-screen keyboard to zoom, so restore the tighter size. */
+  .field input[type="text"],
+  .field input[type="number"],
+  .field input[type="email"],
+  .field input[type="password"],
+  .field select,
+  .field textarea,
+  .global-search input {
+    font-size: 14px;
+  }
+
+  /* main{max-width:880px} above is sized for a single-column phone-width
+     reading measure — reasonable for Settings or a single recipe, but it
+     starves the three-pane layout: 880 - 280 (list) - 20 (gap) leaves the
+     detail column only ~580px, nowhere near enough for Paints Used or
+     Method to lay out in more than one cramped column. Widen it only when
+     the master-detail layout is actually in play. */
+  main:has(.recipe-master) {
+    max-width: 1200px;
+  }
+
+  /* Recipe list + detail, side by side instead of one replacing the other. */
+  .recipe-master {
+    display: grid;
+    grid-template-columns: 300px 1fr;
+    gap: 28px;
+    align-items: start;
+  }
+
+  .recipe-master__list {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    position: sticky;
+    top: calc(var(--topbar-h) + 24px);
+    max-height: calc(100vh - var(--topbar-h) - 48px);
+    overflow-y: auto;
+    padding-right: 4px;
+  }
+
+  .recipe-master__placeholder {
+    display: flex;
+  }
+
+  .recipe-master__mobile-grid {
+    display: none;
+  }
+
+  /* Same reasoning as the recipe-master override above -- content-dense
+     browse/dashboard pages (Paint Library's grid, Profile's two-column
+     layout) are starved by the 880px reading-width cap. Settings, forms,
+     and anything else not opting into this class stay at the narrower,
+     more readable default. */
+  main:has(.view-wide) {
+    max-width: 1320px;
+  }
+
+  /* Profile: an avatar/stats/armies rail alongside the actual content,
+     instead of a single narrow column with the rail's info stacked above
+     it. Grid-only -- on mobile (no media query match) .profile-layout is
+     just a plain block, so .profile-layout__side and __main stack in DOM
+     order exactly as they did before this existed. */
+  .profile-layout {
+    display: grid;
+    grid-template-columns: 260px 1fr;
+    gap: 32px;
+    align-items: start;
+  }
+
+  .profile-layout__side {
+    position: sticky;
+    top: calc(var(--topbar-h) + 24px);
+  }
+
+  /* .empty-state__sub's max-width+auto-margin centers it as a standalone
+     "nothing here" line when it's narrower than its container -- fine at
+     the old ~800px column width, but floats disconnected from the label
+     above it once the main column is this much wider. These renders bare
+     (no .empty-state wrapper), so nothing else depends on the centering. */
+  .profile-layout__main > .empty-state__sub {
+    margin: 0;
+    max-width: none;
+  }
+
+  /* Rating rows are a compact label+stars pair -- fine two-up on desktop,
+     unlike the prose-length Notes rows beside them which stay single
+     column. Cards need their own border here since, without a wrapping
+     .settings-group, .settings-row normally only draws a bottom divider. */
+  .profile-ratings-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 8px;
+  }
+
+  .profile-ratings-grid .settings-row {
+    border: 1px solid var(--line);
+    border-radius: var(--radius-sm);
+    background: var(--bg-panel);
+  }
+
+  /* Home: a capped-width feed column (a feed stretched to fill an ultra-wide
+     monitor reads worse, not better -- this is the same reading-width cap
+     Twitter/Facebook use) plus a rail for something to actually do with the
+     freed space, instead of it just being background. Fixed widths, not 1fr
+     -- any width left over past the rail is meant to stay as page margin. */
+  .home-layout {
+    display: grid;
+    grid-template-columns: 640px 280px;
+    gap: 32px;
+    align-items: start;
+  }
+
+  .home-layout__rail {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    position: sticky;
+    top: calc(var(--topbar-h) + 24px);
+  }
+}
+
+@media (min-width: 1180px) {
+  .recipe-grid {
+    grid-template-columns: repeat(4, 1fr);
+  }
+}
+
+/* A right rail only earns its keep once there's room for list + a full
+   reading-width detail column + itself without squeezing the detail column
+   back down -- narrower than this, .recipe-master__rail stays display:none
+   (set above) and the grid stays the existing two columns. */
+@media (min-width: 1500px) {
+  main:has(.recipe-master) {
+    max-width: 1520px;
+  }
+
+  .recipe-master {
+    grid-template-columns: 300px 1fr 280px;
+  }
+
+  .recipe-master__rail {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    position: sticky;
+    top: calc(var(--topbar-h) + 24px);
+    max-height: calc(100vh - var(--topbar-h) - 48px);
+    overflow-y: auto;
+  }
+}
+
+.hidden {
+  display: none !important;
+}
+
+/* Generic mobile/desktop toggle pair -- same breakpoint and same "both
+   rendered, CSS picks one" trick as side-nav/bottom-nav and the recipe
+   master-detail's own mobile-grid/desktop-list split, just not tied to
+   one specific component. */
+.mobile-only { display: block; }
+.desktop-only { display: none; }
+@media (min-width: 860px) {
+  .mobile-only { display: none; }
+  .desktop-only { display: block; }
+}
+
+/* ============================================================
+   v0.3 — PHOTOS, SWIPE PAGER, SWIPE TRANSITIONS
+   ============================================================ */
+
+/* Photo heroes: the recipe's own photo replaces the emoji tile */
+.recipe-card__hero.has-photo,
+.continue-card__hero.has-photo,
+.detail-hero.has-photo {
+  background-size: cover;
+  background-position: center;
+}
+
+.detail-hero.has-photo {
+  height: 210px;
+}
+
+.detail-hero.has-photo::before {
+  /* keep a subtle bottom fade so the faction bar still reads */
+  background: linear-gradient(to top, color-mix(in srgb, var(--bg-void) 45%, transparent), transparent 45%);
+}
+
+/* Pager under the detail hero */
+.detail-pager {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  margin: 2px 0 12px;
+}
+
+.detail-pager span {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--ink);
+  letter-spacing: 0.04em;
+}
+
+.detail-pager .icon-btn[disabled] {
+  opacity: 0.3;
+  pointer-events: none;
+}
+
+/* Photo field in the add/edit form */
+.photo-field {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.photo-field__preview {
+  width: 84px;
+  height: 84px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--line);
+  background-size: cover;
+  background-position: center;
+  flex-shrink: 0;
+}
+
+/* Directional page transitions when swiping between recipes.
+   Swiping left moves to the NEXT recipe, so it enters from the right. */
+.page-enter.swipe-in-left {
+  animation: swipe-in-from-right 0.24s cubic-bezier(0.2, 0.7, 0.3, 1) both;
+}
+
+.page-enter.swipe-in-right {
+  animation: swipe-in-from-left 0.24s cubic-bezier(0.2, 0.7, 0.3, 1) both;
+}
+
+@keyframes swipe-in-from-right {
+  from { opacity: 0.35; transform: translateX(64px); }
+  to   { opacity: 1;    transform: translateX(0); }
+}
+
+@keyframes swipe-in-from-left {
+  from { opacity: 0.35; transform: translateX(-64px); }
+  to   { opacity: 1;    transform: translateX(0); }
+}
+
+/* ============================================================
+   v0.4 — ARMIES, UNITS, PAINT RACK
+   ============================================================ */
+
+/* Faction chips now carry an emblem rather than a dot */
+.faction-chip__emblem {
+  display: inline-flex;
+  align-items: center;
+  margin-right: 2px;
+}
+
+.faction-chip__count {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--ink);
+  margin-left: 4px;
+}
+
+/* Faction browse grid */
+.alliance-label {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ink-dim);
+  margin: 14px 2px 8px;
+}
+
+.faction-tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(104px, 1fr));
+  gap: 10px;
+  margin-bottom: 6px;
+}
+
+/* A banner tile per army — textured ground, a metal-toned mark, corner
+   rivets, a dark nameplate. All procedural (CSS gradients, an inline SVG
+   noise filter, a per-tile gradient built from the faction's own colour) —
+   there's no photographic or licensed imagery in here, only this app's own
+   original marks. Swapped out entirely for custom faction art via
+   .has-art, same as the old flat-tile version did. */
+.faction-tile {
+  position: relative;
+  aspect-ratio: 1.2;
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  cursor: pointer;
+  background:
+    radial-gradient(circle at 50% 32%, color-mix(in srgb, var(--faction-color, var(--gold)) 40%, var(--bg-raised-2)), color-mix(in srgb, var(--faction-color, var(--gold)) 16%, var(--bg-void)) 78%);
+  border: 1px solid color-mix(in srgb, var(--faction-color, var(--gold)) 55%, var(--line));
+  box-shadow: 0 6px 14px -6px rgba(0, 0, 0, 0.5);
+  transition: transform 0.15s ease, border-color 0.15s ease;
+  /* Per-alliance house style — same idea as a real army's own heraldic
+     "field" pattern, not just a colour swap. Overridden per .faction-tile--*
+     modifier below; a bare .faction-tile (no modifier) gets no pattern. */
+  --tile-pattern: none;
+  --tile-pattern-size: auto;
+}
+
+.faction-tile::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background-image:
+    var(--tile-pattern),
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='90' height='90'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  background-size: var(--tile-pattern-size), auto;
+  mix-blend-mode: overlay;
+  opacity: 0.5;
+  pointer-events: none;
+}
+
+.faction-tile:hover {
+  transform: translateY(-2px);
+  border-color: var(--faction-color, var(--gold));
+}
+
+/* Imperium: disciplined, orderly — a fine diagonal hatch */
+.faction-tile--imperium { --tile-pattern: repeating-linear-gradient(45deg, rgba(255,255,255,0.16) 0 1px, transparent 1px 9px); }
+/* Chaos: warped, crossing — a tight woven X */
+.faction-tile--chaos { --tile-pattern: repeating-linear-gradient(45deg, rgba(255,255,255,0.14) 0 1.5px, transparent 1.5px 7px), repeating-linear-gradient(-45deg, rgba(255,255,255,0.14) 0 1.5px, transparent 1.5px 7px); }
+/* Xenos: alien, organic — a scattered scale/dot texture */
+.faction-tile--xenos { --tile-pattern: radial-gradient(circle, rgba(255,255,255,0.22) 1.4px, transparent 1.6px); --tile-pattern-size: 9px 9px; }
+/* Order (AoS): radiant, clean — a crisp square lattice */
+.faction-tile--order { --tile-pattern: repeating-linear-gradient(0deg, rgba(255,255,255,0.15) 0 1px, transparent 1px 11px), repeating-linear-gradient(90deg, rgba(255,255,255,0.15) 0 1px, transparent 1px 11px); }
+/* Death (AoS): sparse, decayed — a wide, faint crossing weave */
+.faction-tile--death { --tile-pattern: repeating-linear-gradient(60deg, rgba(255,255,255,0.13) 0 1px, transparent 1px 13px), repeating-linear-gradient(-60deg, rgba(255,255,255,0.13) 0 1px, transparent 1px 13px); }
+/* Destruction (AoS): crude, blunt — coarse blotchy dots */
+.faction-tile--destruction { --tile-pattern: radial-gradient(circle, rgba(255,255,255,0.24) 2.2px, transparent 2.6px); --tile-pattern-size: 13px 13px; }
+
+.faction-tile__rivet {
+  position: absolute;
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--faction-color, var(--gold)) 55%, var(--ink-dim));
+  box-shadow: 0 1px 1px rgba(0, 0, 0, 0.5);
+  z-index: 1;
+}
+.faction-tile__rivet.tl { top: 5px; left: 5px; }
+.faction-tile__rivet.tr { top: 5px; right: 5px; }
+.faction-tile__rivet.bl { bottom: 5px; left: 5px; }
+.faction-tile__rivet.br { bottom: 5px; right: 5px; }
+
+.faction-tile__art {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.faction-tile__art.has-art {
+  background-size: contain;
+  background-repeat: no-repeat;
+  background-position: center;
+}
+
+/* A larger, rotated, near-invisible echo of the same mark sat behind the
+   real one — the way an embossed or watermarked seal reads, not a sticker
+   flat on the surface. */
+.faction-tile__watermark {
+  position: absolute;
+  opacity: 0.16;
+  transform: rotate(-10deg) scale(1.15);
+  pointer-events: none;
+}
+
+.faction-tile__count {
+  position: absolute;
+  top: 5px;
+  right: 5px;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.55);
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
+  font-family: var(--font-mono);
+  font-size: 8px;
+  font-weight: 700;
+  color: #fff;
+  z-index: 1;
+}
+
+
+/* Faction detail banner */
+.faction-banner {
+  height: 130px;
+  border-radius: var(--radius-lg);
+  background: var(--bg-panel);
+  border: 1px solid var(--line);
+  border-bottom: 4px solid var(--faction-color, var(--gold));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 14px;
+  overflow: hidden;
+}
+
+.faction-banner.has-art {
+  background-size: contain;
+  background-repeat: no-repeat;
+  background-position: center;
+}
+
+.detail-sub {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--ink);
+  margin-top: 4px;
+}
+
+/* Unit list */
+.unit-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.unit-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: var(--bg-panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  padding: 13px 12px;
+  cursor: pointer;
+  transition: border-color 0.15s ease;
+}
+
+.unit-row:hover {
+  border-color: var(--gold);
+}
+
+.unit-row.is-general {
+  border-style: dashed;
+}
+
+.unit-row__bar {
+  width: 3px;
+  height: 22px;
+  border-radius: 2px;
+  flex-shrink: 0;
+}
+
+.unit-row__name {
+  flex: 1;
+  font-family: var(--font-display);
+  font-size: 14px;
+  color: var(--parchment);
+}
+
+.unit-row__count {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--ink);
+}
+
+.unit-row__chevron {
+  color: var(--ink-dim);
+  display: flex;
+}
+
+/* Breadcrumbs on a recipe */
+.detail-crumbs {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  margin-bottom: 6px;
+}
+
+.detail-crumbs span {
+  cursor: pointer;
+}
+
+.detail-crumbs .sep {
+  color: var(--ink-dim);
+  cursor: default;
+}
+
+.detail-crumbs span:not(.sep):hover {
+  text-decoration: underline;
+}
+
+/* Paint rack */
+.paint-hero {
+  height: 90px;
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--line);
+  margin-bottom: 14px;
+}
+
+.paint-lib-row {
+  cursor: pointer;
+}
+
+.paint-pick-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.paint-pick-row select {
+  flex: 1;
+  min-width: 0;
+}
+
+.paint-pick-row__swatch {
+  width: 26px;
+  height: 26px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--line);
+  flex-shrink: 0;
+}
+
+/* Small button variant */
+.btn-sm {
+  padding: 7px 10px;
+  font-size: 11px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  white-space: nowrap;
+}
+
+/* Inline notice + hints */
+.notice {
+  background: var(--bg-raised);
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--gold);
+  border-radius: var(--radius-sm);
+  padding: 10px 12px;
+  font-size: 12px;
+  color: var(--parchment-dim);
+  margin-bottom: 12px;
+}
+
+.label-hint {
+  color: var(--ink-dim);
+  font-weight: 400;
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+.label-hint--ok {
+  color: var(--success);
+}
+
+.label-hint--warn {
+  color: var(--danger);
+}
+
+.notice--nudge {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  border-left-color: var(--gold-bright);
+}
+
+.notice--nudge__body {
+  flex: 1;
+  min-width: 0;
+}
+
+.notice--nudge__title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--parchment);
+}
+
+.notice--nudge__desc {
+  font-size: 12px;
+  opacity: 0.8;
+  margin-top: 1px;
+}
+
+.fine-print {
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--ink-dim);
+  margin-top: 22px;
+  padding: 0 2px;
+}
+
+.recipe-card__steps {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--ink-dim);
+}
+
+.recipe-card__emblem {
+  display: flex;
+  opacity: 0.85;
+}
+
+.empty-state__glyph {
+  display: flex;
+  justify-content: center;
+  color: var(--ink-dim);
+}
+
+/* 5 tabs need a little more room than 4 */
+.bottom-nav__item span {
+  font-size: 9px;
+}
+
+/* ============================================================
+   v0.5 — ACCOUNTS & SYNC
+   ============================================================ */
+
+.sync-pill {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.03em;
+  color: var(--ink);
+  background: var(--bg-raised);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 5px 10px;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.sync-pill.is-busy {
+  color: var(--gold);
+  border-color: var(--gold-dim, var(--line));
+}
+
+.sync-pill.is-error {
+  color: var(--blood-bright, #c0555f);
+  border-color: var(--blood, #7a2a32);
+}
+
+.sync-pill__dot {
+  display: inline-block;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--success);
+  margin-right: 6px;
+  box-shadow: 0 0 0 2px rgba(92, 122, 41, 0.25);
+  animation: sync-pulse 2s ease-in-out infinite;
+}
+
+@keyframes sync-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.45; }
+}
+
+.settings-row__label strong {
+  color: var(--gold);
+  font-weight: 600;
+}
+
+/* The pill would crowd the search box on a narrow phone */
+@media (max-width: 420px) {
+  .sync-pill { display: none; }
+}
+
+/* Same crowding problem as .sync-pill above, but this one's worth keeping
+   visible rather than hiding outright -- someone using two hobbies still
+   needs a way to switch. Capped and truncated instead. */
+@media (max-width: 420px) {
+  .hobby-switch__trigger { max-width: 84px; }
+  .hobby-switch__label {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+}
+
+/* ============================================================
+   BOOT SPLASH + SIGN-IN GATE
+   Neither has nav, topbar or fab — deliberately chrome-free so
+   there's nothing route-specific to flash before we know whether
+   this visitor is signed in, a returning guest, or neither.
+   ============================================================ */
+.boot-splash {
+  /* 100vh on mobile Safari/Chrome is the *largest possible* viewport (address
+     bar hidden) — sizing to it leaves a gap under the real, visible viewport
+     and causes a jump/flash as the address bar animates in and out on scroll.
+     100dvh tracks the actual visible viewport; the plain 100vh above is only
+     a fallback for browsers that don't understand dvh yet. */
+  min-height: 100vh;
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  color: var(--gold-bright);
+}
+
+.boot-splash__mark {
+  display: flex;
+  opacity: 0.9;
+}
+
+.boot-splash__word {
+  font-family: var(--font-display);
+  font-size: 18px;
+  letter-spacing: 0.04em;
+  color: var(--parchment-dim);
+}
+
+.gate {
+  min-height: 100vh; /* fallback — see .boot-splash comment above */
+  min-height: 100dvh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+
+.gate__card {
+  width: 100%;
+  max-width: 380px;
+  background: var(--bg-panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-raised);
+  padding: 28px 24px;
+  text-align: center;
+}
+
+.gate__brand {
+  font-family: var(--font-display);
+  font-size: 20px;
+  letter-spacing: 0.03em;
+  color: var(--gold-bright);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+.gate__tagline {
+  font-size: 13px;
+  color: var(--ink);
+  margin-top: 6px;
+}
+
+.gate__field {
+  text-align: left;
+  margin-top: 22px;
+  margin-bottom: 0;
+}
+
+.gate__divider {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 20px 0 16px;
+  color: var(--ink-dim);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.gate__divider::before,
+.gate__divider::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: var(--line);
+}
+
+/* Public recipe share page (#/r/<authorId>/<id>) -- same centred-card shell
+   as the sign-in gate, but wide enough for real recipe content (paint list,
+   method steps) and left-aligned rather than the gate's centred form. */
+.public-recipe__card {
+  max-width: 640px;
+  text-align: left;
+}
+
+.public-recipe__banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: var(--gold-dim);
+  border: 1px solid var(--gold-border);
+  border-radius: var(--radius-sm);
+  padding: 10px 14px;
+  margin-bottom: 18px;
+  font-size: 12.5px;
+  color: var(--gold-bright);
+}
+
+.public-recipe__banner span {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.public-recipe__banner a {
+  color: var(--gold-bright);
+  font-weight: 600;
+  text-decoration: underline;
+}
+
+/* ============================================================
+   CONFIRM DIALOG — an in-app "are you sure?" replacing the browser's own
+   confirm(), so it looks like the rest of Forgebook instead of the OS chrome.
+   ============================================================ */
+.confirm-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  animation: confirm-backdrop-in 0.15s ease both;
+}
+
+.confirm-overlay__backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.6);
+}
+
+.confirm-dialog {
+  position: relative;
+  width: 100%;
+  max-width: 360px;
+  background: var(--bg-panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-raised);
+  padding: 22px 20px;
+  animation: confirm-dialog-in 0.18s cubic-bezier(0.2, 0.7, 0.3, 1) both;
+}
+
+.confirm-dialog__message {
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--parchment);
+  margin-bottom: 18px;
+}
+
+.report-reason-input {
+  width: 100%;
+  min-height: 64px;
+  resize: vertical;
+  margin-bottom: 14px;
+  background: var(--bg-raised);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  color: var(--parchment);
+  font-family: var(--font-body);
+  font-size: 13px;
+  padding: 8px 10px;
+}
+.report-reason-input:focus { outline: none; border-color: var(--gold); }
+
+.confirm-dialog__actions {
+  display: flex;
+  gap: 10px;
+}
+
+.confirm-dialog__actions .btn {
+  flex: 1;
+}
+
+@keyframes confirm-backdrop-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes confirm-dialog-in {
+  from { opacity: 0; transform: translateY(8px) scale(0.98); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+/* ============================================================
+   PAINT PICKER — a searchable swatch list for choosing a recipe step's
+   paint, in place of a plain <select> that becomes unusable once a rack has
+   more than a handful of entries. Reuses the filter-overlay bottom-sheet
+   shell and the paint library's row/segmented-control look.
+   ============================================================ */
+/* A fixed height, not content-driven (max-height + shrink-wrap): as the
+   search narrows the row count, a height that tracks content would move the
+   panel's top edge — and the search box right along with it — up and down
+   with every keystroke. Fixed height + an internally-scrolling body keeps
+   the search box pinned in place regardless of how many rows match. */
+.paint-picker__panel {
+  position: relative;
+  width: 100%;
+  max-width: 480px;
+  height: 80vh;
+  background: var(--bg-panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+  display: flex;
+  flex-direction: column;
+  box-shadow: var(--shadow-raised);
+}
+
+@media (min-width: 860px) {
+  .paint-picker__panel {
+    border-radius: var(--radius-lg);
+  }
+}
+
+.paint-picker__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 16px 10px;
+  border-bottom: 1px solid var(--line-soft);
+  flex-shrink: 0;
+}
+
+.paint-picker__title {
+  font-family: var(--font-display);
+  font-size: 16px;
+  color: var(--parchment);
+}
+
+.paint-picker__search {
+  margin: 12px 16px 8px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--bg-raised);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  padding: 0 10px;
+  flex-shrink: 0;
+}
+
+.paint-picker__search svg {
+  width: 15px;
+  height: 15px;
+  stroke: var(--ink);
+  flex-shrink: 0;
+}
+
+.paint-picker__search input {
+  flex: 1;
+  min-width: 0;
+  background: transparent;
+  border: none;
+  color: var(--parchment);
+  font-size: 16px; /* iOS zoom-on-focus guard, same as .field input */
+  padding: 10px 4px;
+}
+
+.paint-picker__search input:focus {
+  outline: none;
+}
+
+.paint-picker__search input::placeholder {
+  color: var(--ink-dim);
+}
+
+.paint-picker__tabs {
+  margin: 0 16px 10px;
+  flex-shrink: 0;
+}
+
+.paint-picker__body {
+  flex: 1;
+  min-height: 0; /* a flex item's min-height defaults to auto, not 0 -- without
+    this it would refuse to shrink below its content's height, defeating the
+    fixed-height panel above and letting it grow again anyway */
+  padding: 4px 16px 16px;
+  overflow-y: auto;
+}
+
+.paint-picker__row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  text-align: left;
+  background: var(--bg-panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  padding: 10px 12px;
+  cursor: pointer;
+  margin-bottom: 8px;
+}
+
+.paint-picker__row:hover {
+  border-color: var(--gold);
+}
+
+.paint-picker__row.is-selected {
+  border-color: var(--gold);
+  background: linear-gradient(180deg, var(--gold-dim), var(--bg-panel));
+}
+
+.paint-picker__row-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.paint-picker__want-tag {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.03em;
+  color: var(--blood-bright);
+  border: 1px solid var(--blood-border);
+  background: var(--blood-dim);
+  border-radius: 999px;
+  padding: 3px 8px;
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+.paint-pick-trigger {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: var(--bg-panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  padding: 8px 12px;
+  color: var(--parchment);
+  cursor: pointer;
+  text-align: left;
+}
+
+.paint-pick-trigger:hover {
+  border-color: var(--gold);
+}
+
+.paint-pick-trigger__label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.paint-pick-trigger__placeholder {
+  color: var(--ink-dim);
+}
+
+/* ============================================================
+   LIGHTBOX — full-size view of a recipe's finished-mini photo.
+   ============================================================ */
+.detail-hero.has-photo {
+  cursor: zoom-in;
+}
+
+.lightbox-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  animation: confirm-backdrop-in 0.15s ease both;
+}
+
+.lightbox-overlay__backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.88);
+}
+
+.lightbox-overlay__img {
+  position: relative;
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-raised);
+  animation: confirm-dialog-in 0.18s cubic-bezier(0.2, 0.7, 0.3, 1) both;
+}
+
+.lightbox-overlay__close {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  z-index: 1;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  border: 1px solid var(--line);
+  background: color-mix(in srgb, var(--bg-void) 70%, transparent);
+  color: var(--parchment);
+  font-size: 26px;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+/* ============================================================
+   SIMILAR COLOURS
+   ============================================================ */
+.colour-match-cta {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  padding: 13px;
+  margin-bottom: 14px;
+  background: var(--kinship-dim);
+  border: 1px solid var(--kinship-border);
+  color: var(--kinship-bright);
+  border-radius: var(--radius-md);
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.colour-match-cta:hover { background: var(--kinship-border); }
+.colour-match-cta svg { width: 18px; height: 18px; stroke: currentColor; fill: none; stroke-width: 2; flex-shrink: 0; }
+
+/* HSV colour wheel: hue around the ring, saturation from centre to edge, at
+   a fixed brightness of 100% -- brightness is the separate slider below. */
+.colour-match-card {
+  background: var(--bg-panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  padding: 16px;
+  margin-bottom: 4px;
+}
+
+.wheel-wrap {
+  position: relative;
+  width: 180px;
+  height: 180px;
+  margin: 2px auto 16px;
+}
+
+#wheel-canvas {
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  display: block;
+  touch-action: none; /* stop the page trying to scroll while dragging */
+  cursor: crosshair;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.35), var(--shadow-raised);
+}
+
+.wheel-indicator {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 20px;
+  height: 20px;
+  margin: -10px 0 0 -10px;
+  border-radius: 50%;
+  border: 3px solid #fff;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.45), 0 2px 6px rgba(0, 0, 0, 0.45);
+  pointer-events: none; /* the canvas beneath handles the actual drag */
+}
+
+.brightness-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 16px;
+}
+
+.brightness-row__label {
+  flex-shrink: 0;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink-dim);
+}
+
+.brightness-row input[type="range"] {
+  flex: 1;
+  -webkit-appearance: none;
+  appearance: none;
+  height: 12px;
+  border-radius: 999px;
+  outline: none;
+  border: 1px solid rgba(0, 0, 0, 0.3);
+}
+
+.brightness-row input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: #fff;
+  border: 2px solid rgba(0, 0, 0, 0.35);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.4);
+  cursor: pointer;
+  margin-top: -1px;
+}
+
+.brightness-row input[type="range"]::-moz-range-thumb {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: #fff;
+  border: 2px solid rgba(0, 0, 0, 0.35);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.4);
+  cursor: pointer;
+}
+
+.brightness-row input[type="range"]::-moz-range-track {
+  height: 12px;
+  border-radius: 999px;
+  border: none;
+}
+
+.colour-match-card__row {
+  display: flex;
+  gap: 14px;
+  align-items: center;
+}
+
+.picker-swatch {
+  width: 64px;
+  height: 64px;
+  border-radius: 14px;
+  border: 1px solid rgba(0, 0, 0, 0.3);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.06), var(--shadow-raised);
+  flex-shrink: 0;
+}
+
+.picker-fields { flex: 1; display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+
+.hex-field {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--bg-raised);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  padding: 8px 10px;
+}
+
+.hex-field span { font-family: var(--font-mono); font-size: 11px; color: var(--ink-dim); }
+
+.hex-field input {
+  flex: 1;
+  min-width: 0;
+  background: transparent;
+  border: none;
+  color: var(--parchment);
+  font-family: var(--font-mono);
+  font-size: 16px; /* iOS zooms the whole page in on focus for any input below 16px */
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+
+.hex-field input:focus { outline: none; }
+
+.swatch-row { display: flex; gap: 6px; }
+
+.swatch-row button {
+  width: 28px;
+  height: 28px;
+  border-radius: 7px;
+  border: 1px solid rgba(0, 0, 0, 0.3);
+  cursor: pointer;
+  padding: 0;
+}
+
+.colour-match-source {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: var(--bg-panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  padding: 12px;
+  margin: 14px 0 4px;
+}
+
+.colour-match-source .paint-row__swatch { width: 44px; height: 44px; border-radius: 10px; flex-shrink: 0; }
+
+.results-source__name { font-family: var(--font-display); font-size: 16px; color: var(--parchment); }
+.results-source__meta { font-size: 11.5px; color: var(--ink); font-family: var(--font-mono); margin-top: 2px; }
+
+/* One shared star-rating partial (starRowHtml in app.js) -- the Similar
+   Colours rating widget, a profile's "Ratings Given" list, and the compact
+   Paint Library badge all render through this same visual language. Filled
+   stars use --gold-bright rather than --kinship, which is already the
+   colour-matching UI's own accent -- reusing it here would read as "another
+   colour-match control" instead of a rating. */
+.star-row { display: inline-flex; flex-direction: row-reverse; gap: 2px; color: var(--line); }
+.star-row__star { display: inline-flex; color: inherit; }
+.star-row__star.is-filled { color: var(--gold-bright); }
+.star-row--interactive .star-row__star { cursor: pointer; }
+.star-row--interactive .star-row__star:hover,
+.star-row--interactive .star-row__star:hover ~ .star-row__star { color: var(--gold-bright); opacity: 0.6; }
+
+.rating-widget {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: var(--bg-panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  padding: 12px;
+  margin: 4px 0 14px;
+}
+.rating-widget__meta { display: flex; flex-direction: column; gap: 2px; }
+.rating-widget__avg { font-family: var(--font-display); font-size: 16px; color: var(--parchment); margin-right: 4px; }
+.rating-widget__count { font-size: 12px; color: var(--ink); }
+.rating-widget__mine { font-size: 11.5px; color: var(--ink-dim); }
+
+/* A recipe's engagement strip -- quick like/dislike (or, on your own
+   recipe, a read-only net score) plus the save toggle, all in one bordered
+   panel with a thin internal divider. These were previously two separate
+   boxes (a vote pill next to a plain square icon-btn) with mismatched
+   heights and corner radii; one shared container reads as a single
+   control cluster instead. */
+.vote-widget {
+  display: flex;
+  align-items: stretch;
+  gap: 10px;
+  background: var(--bg-panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  padding: 6px 8px;
+  margin: 4px 0 14px;
+}
+.vote-widget__votes {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 1;
+}
+.vote-widget__btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  background: var(--bg-raised);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  color: var(--ink);
+  cursor: pointer;
+}
+.vote-widget__btn.is-active { color: var(--gold-bright); border-color: var(--gold); background: var(--gold-dim); }
+.vote-widget__net-group {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--ink);
+  padding: 0 2px;
+}
+.vote-widget__net { font-family: var(--font-display); font-size: 17px; color: var(--parchment); min-width: 1.2em; text-align: center; }
+.vote-widget__divider {
+  width: 1px;
+  align-self: stretch;
+  background: var(--line);
+}
+.vote-widget__save {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  background: none;
+  border: none;
+  color: var(--ink);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.vote-widget__save.is-active { color: var(--gold-bright); }
+
+/* Note/comment composer -- shared shape for both Community Notes (paints)
+   and recipe comments. */
+.note-composer {
+  background: var(--bg-panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  padding: 10px;
+  margin-bottom: 14px;
+}
+.note-composer textarea {
+  width: 100%;
+  min-height: 60px;
+  resize: vertical;
+  background: transparent;
+  border: none;
+  color: var(--parchment);
+  font-family: var(--font-body);
+  font-size: 14px;
+}
+.note-composer textarea:focus { outline: none; }
+.note-composer__footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 6px;
+}
+.char-count { font-size: 11px; color: var(--ink-dim); font-family: var(--font-mono); }
+
+/* @mention autocomplete -- anchored under whichever composer textarea is
+   active (comment or note), same popover language as .search-dropdown. */
+.mention-dropdown {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  z-index: 15;
+  margin-top: 4px;
+  max-height: 220px;
+  overflow-y: auto;
+  background: var(--bg-raised-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-raised);
+  padding: 6px;
+}
+.mention-dropdown__item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  font-size: 13.5px;
+  color: var(--parchment);
+}
+.mention-dropdown__item:hover { background: var(--bg-raised); }
+
+/* A rendered @mention inside a posted comment/note body. */
+.mention { color: var(--gold-bright); font-weight: 600; }
+
+/* One row shape for both a paint's Community Notes and a recipe's comments
+   -- .settings-row's two-slot (label+desc / trailing control) layout doesn't
+   fit a multi-line body plus a trailing icon-button cleanly, so this is a
+   purpose-built row rather than a repurposed one. */
+.comment-row {
+  background: var(--bg-panel);
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-md);
+  padding: 10px 12px;
+  margin-bottom: 8px;
+  position: relative;
+}
+.comment-row__meta {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+.comment-row__author {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--gold-bright);
+  cursor: pointer;
+}
+.comment-row__time { font-size: 11px; color: var(--ink-dim); }
+.comment-row__body { font-size: 13.5px; line-height: 1.5; color: var(--parchment); padding-right: 26px; }
+.comment-row__report {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  background: none;
+  border: none;
+  color: var(--ink-dim);
+  cursor: pointer;
+  padding: 2px;
+}
+.comment-row__report:hover { color: var(--blood-bright); }
+
+.comment-row__linkrow { display: flex; gap: 12px; margin-top: 6px; }
+.comment-row__link {
+  background: none;
+  border: none;
+  padding: 0;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--ink);
+  cursor: pointer;
+}
+.comment-row__link:hover { color: var(--gold-bright); }
+
+/* One level deep only (see commentRowHtml's isReply param) -- indented and
+   tied visually to its parent with a left border, rather than a second
+   full-width card that reads as just another top-level comment. */
+.comment-row--reply {
+  margin-left: 22px;
+  margin-top: -2px;
+  border-left: 2px solid var(--line);
+  border-top-left-radius: 0;
+  border-bottom-left-radius: 0;
+}
+
+.reply-indicator {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--ink-dim);
+  background: var(--bg-raised);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  padding: 6px 10px;
+  margin-bottom: 8px;
+}
+.reply-indicator strong { color: var(--parchment); font-weight: 600; }
+.reply-indicator__cancel {
+  background: none;
+  border: none;
+  color: var(--ink-dim);
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0 2px;
+}
+.reply-indicator__cancel:hover { color: var(--blood-bright); }
+
+/* Activity feed preview cards -- image-forward (Reddit-style: the photo or
+   paint swatch is the first thing that catches your eye scrolling past),
+   not the small thumbnail-left text row this used to be. Vote/comment
+   controls live in .feed-card__actions, a SIBLING of .feed-card__link
+   (which carries the actual data-nav/data-action), never a descendant --
+   the click delegate's [data-nav] check matches on the nearest ancestor,
+   so nesting an interactive vote button inside a data-nav wrapper would
+   let taps meant for it fall through to "open the recipe" instead. */
+.feed-card {
+  background: var(--bg-panel);
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-lg);
+  margin-bottom: 14px;
+  overflow: hidden;
+  transition: border-color 0.15s ease, transform 0.15s ease;
+}
+.feed-card:hover { border-color: var(--line); }
+
+.feed-card__link { display: block; cursor: pointer; }
+
+.feed-card__hero {
+  position: relative;
+  height: 168px;
+  background-color: var(--faction-color, var(--bg-raised));
+  background-image: linear-gradient(135deg, color-mix(in srgb, var(--faction-color, var(--gold)) 55%, var(--bg-void)), color-mix(in srgb, var(--faction-color, var(--gold)) 18%, var(--bg-void)));
+  background-size: cover;
+  background-position: center;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.feed-card__hero.has-photo { background-image: none; background-color: var(--bg-raised); }
+.feed-card__hero .emblem-badge { background: rgba(0, 0, 0, 0.18); border-color: rgba(255, 255, 255, 0.35); }
+
+/* A small label chip identifying what kind of activity this is, laid over
+   the top-left corner of the hero image -- reads clearly over any photo or
+   colour thanks to its own solid backing, the same trick a lot of photo/
+   video feeds use for a category tag. */
+.feed-card__tag {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: #fff;
+  background: rgba(0, 0, 0, 0.55);
+  backdrop-filter: blur(2px);
+  border-radius: 999px;
+  padding: 4px 10px;
+}
+
+.feed-card__body { padding: 12px 14px 10px; }
+.feed-card__meta { display: flex; align-items: center; gap: 6px; margin-bottom: 5px; }
+.feed-card__author { font-size: 12.5px; font-weight: 600; color: var(--gold-bright); }
+.feed-card__dot { color: var(--ink-dim); font-size: 12px; }
+.feed-card__time { font-size: 11.5px; color: var(--ink-dim); }
+.feed-card__title { font-family: var(--font-display); font-size: 18px; line-height: 1.25; color: var(--parchment); text-wrap: balance; }
+.feed-card__brand { font-family: var(--font-body); font-size: 13px; font-weight: 400; color: var(--ink); }
+.feed-card__preview {
+  margin-top: 4px;
+  font-size: 13px;
+  color: var(--ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+.feed-card__no-ratings { font-size: 12.5px; color: var(--ink-dim); }
+
+/* The action bar -- a Reddit-style vote pill (two icon buttons around a
+   score) plus a comment-count button, both independently tappable without
+   opening the card underneath. */
+.feed-card__actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 14px 12px;
+}
+.feed-card__votes {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  background: var(--bg-raised);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 4px;
+}
+.feed-card__votes--readonly { padding: 5px 12px; gap: 6px; font-size: 13px; color: var(--parchment); }
+.feed-card__vote-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: none;
+  border: none;
+  color: var(--ink);
+  cursor: pointer;
+}
+.feed-card__vote-btn:hover { color: var(--gold-bright); }
+.feed-card__vote-btn.is-active { color: var(--gold-bright); background: color-mix(in srgb, var(--gold) 18%, transparent); }
+.feed-card__vote-score { font-family: var(--font-mono); font-weight: 700; font-size: 13px; color: var(--parchment); min-width: 1.4em; text-align: center; }
+.feed-card__comment-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--bg-raised);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 7px 14px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--parchment);
+  cursor: pointer;
+}
+.feed-card__comment-btn:hover { border-color: var(--gold); color: var(--gold-bright); }
+
+/* The quiet half of the feed -- paint ratings/notes, deliberately much less
+   visually heavy than a recipe .feed-card (small swatch, muted colour,
+   single title line) so recipes read as the feed's actual content and this
+   reads as ambient background activity, not a competing "post." */
+.feed-card-minor {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  margin-bottom: 6px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+.feed-card-minor:hover { background: var(--bg-panel); }
+.feed-card-minor__swatch {
+  position: relative;
+  flex-shrink: 0;
+  width: 34px;
+  height: 34px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--line-soft);
+}
+.feed-card-minor__body { flex: 1; min-width: 0; }
+.feed-card-minor__meta { display: flex; align-items: center; gap: 5px; font-size: 11px; color: var(--ink-dim); margin-bottom: 1px; }
+.feed-card-minor__author { font-weight: 600; color: var(--ink); }
+.feed-card-minor__tag { text-transform: uppercase; letter-spacing: 0.03em; font-size: 9.5px; }
+.feed-card-minor__title {
+  font-size: 12.5px;
+  color: var(--ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.feed-card-minor__rating { flex-shrink: 0; font-family: var(--font-mono); font-size: 12px; color: var(--ink-dim); }
+
+/* A note/comment that's flagged, reported past threshold, or admin-hidden --
+   only ever rendered at all for its own author (or an admin); everyone else
+   simply never receives the row (enforced server-side by RLS), so there's
+   no separate "hidden entirely" style needed here. */
+.comment-row.is-pending { opacity: 0.55; }
+.pill-status {
+  display: inline-block;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--danger);
+  background: var(--blood-dim);
+  border: 1px solid var(--blood);
+  border-radius: 999px;
+  padding: 1px 7px;
+}
+
+/* Unpublished-recipe indicator -- a neutral status, not a moderation one,
+   so it deliberately doesn't borrow the danger/blood colouring above. */
+.pill-status--draft {
+  color: var(--ink);
+  background: var(--bg-raised);
+  border-color: var(--line);
+}
+
+/* GM/admin mark next to a display name, wherever it renders -- solid brand
+   gold (not the draft pill's blood/danger tones) so it reads as "official,"
+   and picks up whichever accent the active hobby's currently using for
+   free (var(--gold-bright)), same as every other brand-coloured element. */
+.admin-badge {
+  display: inline-block;
+  font-size: 9px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--ink-on-accent);
+  background: var(--gold-bright);
+  border-radius: 999px;
+  padding: 1px 6px;
+  margin-left: 5px;
+  vertical-align: middle;
+}
+
+/* Avatars — an <img> (background-image, so a broken/slow-loading photo
+   never shows a broken-image glyph) when a profile has one, otherwise a
+   tinted initial-letter circle. Sized per call site via an inline
+   width/height, so one class covers a 16px inline badge through a 64px
+   profile-header portrait. */
+.avatar {
+  display: inline-block;
+  border-radius: 50%;
+  background-color: var(--bg-raised);
+  background-size: cover;
+  background-position: center;
+  border: 1px solid var(--line);
+  flex-shrink: 0;
+  vertical-align: middle;
+}
+/* Same medallion treatment as .emblem-badge -- a lettered fallback avatar
+   is the same kind of thing (a badge standing in for a photo), it just has
+   no per-faction colour to tint it with, so it uses the plain gold accent. */
+.avatar--fallback {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-display);
+  font-weight: 600;
+  color: var(--gold-bright);
+  background: radial-gradient(circle at 32% 28%, var(--gold-dim), var(--bg-raised));
+}
+
+/* An unread notification row -- a brighter border rather than a filled
+   background, so it stands out without fighting the gold accent already
+   used elsewhere on the row (avatar fallback, timestamps). */
+.comment-row.is-unread { border-color: var(--gold); }
+.notif-dot {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--gold-bright);
+  flex-shrink: 0;
+}
+
+/* Global search results — a horizontal-scroll pill row (same mechanics as
+   .faction-row), not an evenly-flexed segmented control: five tabs
+   including the two-word "Armies & Units" would be cramped if forced to
+   share width equally on a narrow phone. */
+.search-tabs {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  padding-bottom: 4px;
+  margin-bottom: 14px;
+}
+.search-tabs::-webkit-scrollbar { display: none; }
+
+.search-tab {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 14px;
+  border-radius: 999px;
+  background: var(--bg-panel);
+  border: 1px solid var(--line);
+  color: var(--parchment-dim);
+  font-size: 13px;
+  cursor: pointer;
+  transition: border-color 0.15s ease, color 0.15s ease, background 0.15s ease;
+}
+.search-tab.is-active {
+  color: var(--parchment);
+  background: var(--bg-raised-2);
+  border-color: var(--gold);
+}
+
+.search-tab__count {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  background: var(--gold);
+  color: var(--ink-on-accent);
+  border-radius: 999px;
+  padding: 1px 6px;
+}
+
+.colour-match-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: var(--bg-panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  padding: 10px 12px;
+  margin-bottom: 8px;
+}
+
+.colour-match-row__info { flex: 1; min-width: 0; }
+
+.colour-match-row__score {
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+  width: 60px;
+}
+
+.colour-match-row__score span {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  color: var(--kinship-bright);
+}
+
+.colour-match-row__bar {
+  width: 100%;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--line-soft);
+  overflow: hidden;
+}
+
+.colour-match-row__bar i {
+  display: block;
+  height: 100%;
+  background: var(--kinship);
+  border-radius: 2px;
+}
+
+/* The paint-library row's swatch and a recipe's Paints-Used swatch both
+   double as the "find similar colours" trigger. */
+.paint-row__swatch[data-action="find-similar-colour"] {
+  cursor: pointer;
+}
+
+/* ============================================================
+   PRINT — a recipe printed from its detail page. Only that page's own
+   content prints; everything else (nav, search, the sidebar recipe list on
+   desktop, every interactive control) is hidden outright. Rather than
+   overriding component CSS one rule at a time, this redefines the same
+   design tokens every component already reads from — dark ink on a warm
+   paper ground instead of parchment on graphite — so the whole page
+   repaints correctly for free. Modelled on [data-theme="light"] above,
+   tuned further toward "cheap to print" (near-white ground, no heavy
+   shadows) since light mode still has to work as a screen theme too.
+   ============================================================ */
+@media print {
+  :root {
+    --bg-void: #fdfbf6;
+    --bg-panel: #ffffff;
+    --bg-raised: #f5f1e6;
+    --bg-raised-2: #ede6d4;
+    --line: #d8cfc0;
+    --line-soft: #e6ddc9;
+
+    --gold: #8a6a35;
+    --gold-bright: #6e5427;
+    --gold-dim: transparent;
+    --gold-border: #d8cfc0;
+
+    --parchment: #1c1912;
+    --parchment-dim: #4a4436;
+    --ink: #8a8375;
+    --ink-dim: #a39c8a;
+
+    --success: #4c6b39;
+    --success-dim: transparent;
+    --success-border: #d8cfc0;
+
+    --shadow-card: none;
+    --shadow-raised: none;
+  }
+
+  /* Printers strip background colours/images by default to save ink unless
+     told otherwise -- without this, every paint swatch and the recipe photo
+     hero print as blank white boxes, which is most of the point of a
+     painting reference sheet gone. */
+  * {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  html {
+    background: none;
+  }
+
+  /* App chrome: none of it belongs on paper. */
+  .side-nav, .topbar, .fab, .bottom-nav, .toast,
+  .recipe-master__list, .detail-pager, .detail-actions {
+    display: none !important;
+  }
+
+  /* Back/edit/delete icons in the header, and every per-row action button
+     (buy-list flag, restock flag, remove-from-rack, the swatch's own
+     "find similar" affordance) -- all of them are things to click, and
+     paper can't click anything. The paint's own colour/name/hex still
+     shows; only the controls around it disappear. */
+  .detail-header button,
+  .lib-row__flag, .lib-row__ring,
+  [data-action="toggle-wanted"], [data-action="toggle-restock"],
+  [data-action="lib-remove"] {
+    display: none !important;
+  }
+
+  .recipe-master {
+    display: block;
+  }
+
+  /* Undo the fixed sidebar's reserved space and the topbar's height, both
+     hidden above but still budgeted for by main's own margin/max-width at
+     desktop widths -- without this the printed page keeps a blank 220px
+     gutter down the left where the sidebar used to be. */
+  main {
+    margin-left: 0;
+    margin-top: 0;
+    max-width: none;
+    padding: 0;
+  }
+
+  /* A masthead and footer line, generated rather than injected into the
+     markup -- print is the only place they're needed, so they're print-only
+     content rather than DOM the live app has to carry around. */
+  .recipe-master__detail::before {
+    content: "Forgebook";
+    display: block;
+    font-family: var(--font-display);
+    font-size: 13px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--gold);
+    border-bottom: 1px solid var(--line);
+    padding-bottom: 12px;
+    margin-bottom: 20px;
+  }
+
+  .recipe-master__detail::after {
+    content: "forgebook.co.uk";
+    display: block;
+    font-family: var(--font-mono);
+    font-size: 10px;
+    color: var(--ink);
+    border-top: 1px solid var(--line);
+    margin-top: 24px;
+    padding-top: 12px;
+  }
+
+  .detail-hero {
+    border: 1px solid var(--line);
+    border-bottom: 3px solid var(--faction-color, var(--gold));
+  }
+
+  .layer-stack, .paint-row, .notes-block {
+    break-inside: avoid;
+  }
+}
