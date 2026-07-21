@@ -1623,6 +1623,7 @@ main {
 .btn-primary {
   background: linear-gradient(155deg, var(--gold-bright), var(--gold));
   color: var(--ink-on-accent);
+  box-shadow: 0 2px 8px var(--gold-dim);
 }
 
 .btn-primary:hover {
