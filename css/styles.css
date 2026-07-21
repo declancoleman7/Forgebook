@@ -739,6 +739,7 @@ main {
   background: var(--bg-panel);
   border: 1px solid var(--line);
   border-radius: var(--radius-md);
+  box-shadow: var(--shadow-card);
   overflow: hidden;
   cursor: pointer;
   transition: transform 0.15s ease, border-color 0.15s ease;
@@ -753,13 +754,26 @@ main {
 
 .recipe-card__hero {
   height: 84px;
-  background: var(--bg-raised);
+  background:
+    radial-gradient(circle at 30% 15%, color-mix(in srgb, var(--faction-color, var(--gold)) 22%, transparent), transparent 65%),
+    var(--bg-raised);
   display: flex;
   align-items: center;
   justify-content: center;
   font-size: 34px;
   position: relative;
   border-bottom: 3px solid var(--faction-color, var(--gold));
+}
+
+/* Same subtle top-left sheen .detail-hero already uses -- these were the
+   one flat, undifferentiated surface left once every other hero/tile in
+   the app (feed cards, the detail hero, emblem badges) had picked up some
+   form of gradient or highlight. */
+.recipe-card__hero::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(circle at 30% 20%, rgba(255, 255, 255, 0.06), transparent 60%);
 }
 
 .recipe-card__stack {
@@ -1180,6 +1194,7 @@ main {
 
 .metastrip {
   display: flex;
+  background: var(--bg-panel);
   border: 1px solid var(--line);
   border-radius: var(--radius-md);
   overflow: hidden;
@@ -3769,7 +3784,7 @@ main {
   color: var(--ink);
   cursor: pointer;
 }
-.vote-widget__btn.is-active { color: var(--gold-bright); border-color: var(--gold); }
+.vote-widget__btn.is-active { color: var(--gold-bright); border-color: var(--gold); background: var(--gold-dim); }
 .vote-widget__net-group {
   display: flex;
   align-items: center;
