@@ -27,10 +27,12 @@ function TypeBadge({ type }) {
 function PaintRow({ p, owned, wanted, onAddToRack, onToggleWanted, onToggleRestock, onInc, onDec }) {
   const navigate = useNavigate();
 
+  const openSimilar = (e) => { e.stopPropagation(); navigate(`/similar/${encodeURIComponent(p.name)}/${encodeURIComponent(p.brand)}`); };
+
   if (owned) {
     return (
       <div className="lib-row is-owned">
-        <div className="paint-row__swatch" style={{ background: p.hex }}><TypeBadge type={p.type} /></div>
+        <div className="paint-row__swatch" title="Find similar colours" style={{ background: p.hex, cursor: 'pointer' }} onClick={openSimilar}><TypeBadge type={p.type} /></div>
         <div className="lib-row__info" onClick={() => navigate(`/paint/${owned.id}`)} style={{ cursor: 'pointer' }}>
           <div className="paint-row__name">{p.name}</div>
           <div className="paint-row__brand">{p.brand} · {p.type}</div>
@@ -49,7 +51,7 @@ function PaintRow({ p, owned, wanted, onAddToRack, onToggleWanted, onToggleResto
 
   return (
     <div className="lib-row" onClick={() => onAddToRack(p)} style={{ cursor: 'pointer' }}>
-      <div className="paint-row__swatch" style={{ background: p.hex }}><TypeBadge type={p.type} /></div>
+      <div className="paint-row__swatch" title="Find similar colours" style={{ background: p.hex }} onClick={openSimilar}><TypeBadge type={p.type} /></div>
       <div className="lib-row__info">
         <div className="paint-row__name">{p.name}</div>
         <div className="paint-row__brand">{p.brand} · {p.type}</div>

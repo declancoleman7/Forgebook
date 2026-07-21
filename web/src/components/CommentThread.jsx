@@ -1,16 +1,18 @@
 import { useMemo, useRef, useState } from 'react';
+import Icon from '../icons.jsx';
 import Avatar from './Avatar.jsx';
 import { relativeTime } from '../utils/format.js';
 import { useAuth } from '../auth/AuthContext.jsx';
 import { useComments, useSubmitComment, useEditComment, useDeleteComment } from '../queries/useComments.js';
 import { useConfirm } from '../confirm/ConfirmContext.jsx';
+import { useReport } from '../report/ReportContext.jsx';
+import { useReportContent } from '../queries/useReports.js';
 import { useToast } from '../toast/ToastContext.jsx';
 
 // Ported from the old app's commentListHtml()/commentRowHtml(). Deferred
-// for a later pass: @mention autocomplete (needs profile search) and the
-// report dialog -- mentions render as plain "@Name" text for now instead
-// of a styled/linked highlight.
-function CommentRow({ c, myId, isReply, onReply, onEdit, onDelete }) {
+// for a later pass: @mention autocomplete -- mentions render as plain
+// "@Name" text for now instead of a styled/linked highlight.
+function CommentRow({ c, myId, isReply, isSignedIn, onReply, onEdit, onDelete, onReport }) {
   const isMine = c.userId === myId;
   const pending = c.flagged || c.status === 'hidden';
 
@@ -32,6 +34,7 @@ function CommentRow({ c, myId, isReply, onReply, onEdit, onDelete }) {
           {isMine && <button className="comment-row__link" onClick={() => onDelete(c.id)}>Delete</button>}
         </div>
       ) : null}
+      {!isMine && isSignedIn && <button className="comment-row__report" title="Report" onClick={() => onReport(c.id)}><Icon name="flag" size={13} /></button>}
     </div>
   );
 }
@@ -39,6 +42,8 @@ function CommentRow({ c, myId, isReply, onReply, onEdit, onDelete }) {
 export default function CommentThread({ ownerId, recipeId }) {
   const { userId, isSignedIn } = useAuth();
   const confirm = useConfirm();
+  const report = useReport();
+  const reportContent = useReportContent();
   const showToast = useToast();
   const { data: comments, isLoading } = useComments(ownerId, recipeId);
   const submitComment = useSubmitComment(ownerId, recipeId);
@@ -82,6 +87,17 @@ export default function CommentThread({ ownerId, recipeId }) {
     }
   };
 
+  const doReport = async (id) => {
+    const reason = await report('comment');
+    if (reason === null) return;
+    try {
+      const res = await reportContent.mutateAsync({ contentType: 'recipe_comment', contentId: id, reason });
+      showToast(res.alreadyReported ? "You've already reported this" : 'Reported — thanks for flagging this');
+    } catch (e) {
+      showToast(e.message || "Couldn't send that report — try again.");
+    }
+  };
+
   return (
     <>
       <div className="section-label">Comments{comments ? ` (${comments.length})` : ''}</div>
@@ -112,9 +128,9 @@ export default function CommentThread({ ownerId, recipeId }) {
       ) : top?.length ? (
         top.map((c) => (
           <div key={c.id}>
-            <CommentRow c={c} myId={userId} isReply={false} onReply={startReply} onEdit={startEdit} onDelete={doDelete} />
+            <CommentRow c={c} myId={userId} isReply={false} isSignedIn={isSignedIn} onReply={startReply} onEdit={startEdit} onDelete={doDelete} onReport={doReport} />
             {repliesFor(c.id).map((r) => (
-              <CommentRow key={r.id} c={r} myId={userId} isReply onReply={startReply} onEdit={startEdit} onDelete={doDelete} />
+              <CommentRow key={r.id} c={r} myId={userId} isReply isSignedIn={isSignedIn} onReply={startReply} onEdit={startEdit} onDelete={doDelete} onReport={doReport} />
             ))}
           </div>
         ))

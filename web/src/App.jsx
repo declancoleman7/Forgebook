@@ -2,11 +2,11 @@ import { Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import { AuthProvider, useAuth } from './auth/AuthContext.jsx';
 import { ToastProvider } from './toast/ToastContext.jsx';
 import { ConfirmProvider } from './confirm/ConfirmContext.jsx';
+import { ReportProvider } from './report/ReportContext.jsx';
 import BootSplash from './components/BootSplash.jsx';
 import Gate from './components/Gate.jsx';
 import PasswordScreen from './components/PasswordScreen.jsx';
 import Layout from './components/Layout.jsx';
-import Placeholder from './pages/Placeholder.jsx';
 import Settings from './pages/Settings.jsx';
 import ChangePassword from './pages/ChangePassword.jsx';
 import Notifications from './pages/Notifications.jsx';
@@ -26,6 +26,7 @@ import ProfileSection from './pages/ProfileSection.jsx';
 import Home from './pages/Home.jsx';
 import PublicRecipe from './pages/PublicRecipe.jsx';
 import PublicProfile from './pages/PublicProfile.jsx';
+import SimilarColours from './pages/SimilarColours.jsx';
 
 // Same "what should be on screen right now" decision as the old app's
 // decideBootState(), just expressed as JSX branches instead of imperative
@@ -69,8 +70,8 @@ function Boot() {
         <Route path="/paint-new" element={<PaintForm />} />
         <Route path="/paint/:id" element={<PaintDetail />} />
         <Route path="/paint-library" element={<PaintLibrary />} />
-        <Route path="/similar" element={<Placeholder title="Similar Colours" />} />
-        <Route path="/similar/:name/:brand" element={<Placeholder title="Similar Colours" />} />
+        <Route path="/similar" element={<SimilarColours />} />
+        <Route path="/similar/:name/:brand" element={<SimilarColours />} />
         <Route path="/u" element={<ProfileSearch />} />
         <Route path="/u/:id" element={<Profile />} />
         <Route path="/u/:id/section/:kind" element={<ProfileSection />} />
@@ -93,10 +94,12 @@ export default function App() {
     <AuthProvider>
       <ToastProvider>
         <ConfirmProvider>
-          <Routes>
-            <Route path="/r/:authorId/:id" element={<PublicRecipe />} />
-            <Route path="*" element={<Boot />} />
-          </Routes>
+          <ReportProvider>
+            <Routes>
+              <Route path="/r/:authorId/:id" element={<PublicRecipe />} />
+              <Route path="*" element={<Boot />} />
+            </Routes>
+          </ReportProvider>
         </ConfirmProvider>
       </ToastProvider>
     </AuthProvider>
