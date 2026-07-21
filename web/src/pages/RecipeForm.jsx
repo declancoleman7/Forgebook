@@ -69,7 +69,7 @@ function RecipeFormInner({ existing, myRecipes }) {
 
   const [recipe, setRecipe] = useState(() => {
     if (draftMatches) { clearRecipeDraft(); return draftCandidate; }
-    if (existing) return { ...JSON.parse(JSON.stringify(existing)), originalPhoto: existing.photo || null };
+    if (existing) return { ...JSON.parse(JSON.stringify(existing)), unit: existing.unit || '', originalPhoto: existing.photo || null };
     return {
       id: null, name: '', faction: activeHobby.factions[0].id, unit: '',
       hobbyId: activeHobby.id, difficulty: 2, photo: null, photoPath: null, originalPhoto: null,

@@ -2,6 +2,7 @@ import { useEffect } from 'react';
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import Icon from '../icons.jsx';
 import Avatar from './Avatar.jsx';
+import HobbySwitcher from './HobbySwitcher.jsx';
 import { useAuth } from '../auth/AuthContext.jsx';
 import { useMyProfile } from '../queries/useProfile.js';
 import { useNotifications } from '../queries/useNotifications.js';
@@ -68,8 +69,7 @@ export default function Layout() {
       <header className="topbar">
         <div className="topbar__brand"><span className="glyph"><Icon name="book" size={16} /></span> Forgebook</div>
         <div className="topbar__spacer" />
-        {/* Hobby switcher dropdown is wired up once its data hooks exist
-            (multi-hobby Stage 3 work) -- static chrome only for now. */}
+        <HobbySwitcher />
         <button className="topbar__bell" aria-label="Notifications" onClick={() => navigate('/notifications')}>
           <Icon name="bell" size={18} />
           {unreadCount > 0 && <span className="topbar__bell-badge">{unreadCount > 9 ? '9+' : unreadCount}</span>}
