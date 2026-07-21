@@ -13,6 +13,9 @@ import Notifications from './pages/Notifications.jsx';
 import MyRack from './pages/MyRack.jsx';
 import PaintDetail from './pages/PaintDetail.jsx';
 import PaintLibrary from './pages/PaintLibrary.jsx';
+import Collection from './pages/Collection.jsx';
+import FactionDetail from './pages/FactionDetail.jsx';
+import UnitDetail from './pages/UnitDetail.jsx';
 
 // Same "what should be on screen right now" decision as the old app's
 // decideBootState(), just expressed as JSX branches instead of imperative
@@ -31,9 +34,9 @@ function Boot() {
     <Routes>
       <Route element={<Layout />}>
         <Route path="/home" element={<Placeholder title="Home" />} />
-        <Route path="/factions" element={<Placeholder title="Collection" />} />
-        <Route path="/faction/:id" element={<Placeholder title="Faction" />} />
-        <Route path="/faction/:id/unit/:unit" element={<Placeholder title="Unit" />} />
+        <Route path="/factions" element={<Collection />} />
+        <Route path="/faction/:id" element={<FactionDetail />} />
+        <Route path="/faction/:id/unit/:unit" element={<UnitDetail />} />
         <Route path="/recipes" element={<Placeholder title="Search" />} />
         <Route path="/recipe-new" element={<Placeholder title="New recipe" />} />
         <Route path="/recipe/:id" element={<Placeholder title="Recipe" />} />

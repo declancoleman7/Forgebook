@@ -8,7 +8,7 @@ import { useToast } from '../toast/ToastContext.jsx';
 import { useTheme } from '../hooks/useTheme.js';
 import { useMyProfile, useUpdateDisplayName, useUploadAvatar } from '../queries/useProfile.js';
 import { useMyHobbies, useAddHobby } from '../queries/useHobbies.js';
-import { HOBBIES } from '../data/hobbies.js';
+import { HOBBIES } from '../data/factions.js';
 import { downscaleImageSquare } from '../utils/image.js';
 import { promptInstall } from '../installPrompt.js';
 
