@@ -654,6 +654,7 @@ main {
   background: linear-gradient(120deg, var(--bg-panel), var(--bg-raised));
   border: 1px solid var(--line);
   border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-card);
   padding: 14px;
   cursor: pointer;
   transition: border-color 0.15s ease;
@@ -1139,6 +1140,7 @@ main {
   background: var(--bg-panel);
   border: 1px solid var(--line);
   border-bottom: 4px solid var(--faction-color, var(--gold));
+  box-shadow: var(--shadow-raised);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -2237,6 +2239,7 @@ main {
   background: var(--bg-panel);
   border: 1px solid var(--line);
   border-radius: var(--radius-md);
+  box-shadow: var(--shadow-card);
   overflow: hidden;
   margin-bottom: 20px;
 }
@@ -4173,6 +4176,9 @@ main {
   flex-shrink: 0;
   vertical-align: middle;
 }
+/* Same medallion treatment as .emblem-badge -- a lettered fallback avatar
+   is the same kind of thing (a badge standing in for a photo), it just has
+   no per-faction colour to tint it with, so it uses the plain gold accent. */
 .avatar--fallback {
   display: inline-flex;
   align-items: center;
@@ -4180,7 +4186,7 @@ main {
   font-family: var(--font-display);
   font-weight: 600;
   color: var(--gold-bright);
-  background: var(--bg-raised);
+  background: radial-gradient(circle at 32% 28%, var(--gold-dim), var(--bg-raised));
 }
 
 /* An unread notification row -- a brighter border rather than a filled
