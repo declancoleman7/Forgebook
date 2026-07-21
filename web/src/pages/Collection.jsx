@@ -1,14 +1,13 @@
+import { useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { emblemPaths } from '../data/factions.js';
 import { useActiveHobby } from '../hooks/useActiveHobby.js';
+import { useVisibleRecipes } from '../queries/useRecipes.js';
 
 function slug(s) {
   return encodeURIComponent(String(s).trim().toLowerCase().replace(/\s+/g, '-'));
 }
 
-// Recipe counts per faction are deferred until the recipes data layer
-// exists (Stage 3 batch 4) -- every tile shows no count for now, same as
-// "Used In" elsewhere; nothing else about the tile depends on it.
 function FactionTile({ f, count }) {
   const navigate = useNavigate();
   const gradId = `mg-${f.id}`;
@@ -37,6 +36,12 @@ function FactionTile({ f, count }) {
 
 export default function Collection() {
   const h = useActiveHobby();
+  const { data: recipes = [] } = useVisibleRecipes();
+  const countByFaction = useMemo(() => {
+    const map = new Map();
+    recipes.forEach((r) => map.set(r.faction, (map.get(r.faction) || 0) + 1));
+    return map;
+  }, [recipes]);
 
   return (
     <div className="page-enter">
@@ -48,7 +53,7 @@ export default function Collection() {
           return (
             <div key={alliance}>
               {!h.flatBrowse && <div className="alliance-label">{alliance}</div>}
-              <div className="faction-tiles">{facs.map((f) => <FactionTile key={f.id} f={f} count={0} />)}</div>
+              <div className="faction-tiles">{facs.map((f) => <FactionTile key={f.id} f={f} count={countByFaction.get(f.id) || 0} />)}</div>
             </div>
           );
         }).filter(Boolean);

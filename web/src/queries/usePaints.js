@@ -177,6 +177,48 @@ export function useToggleWanted() {
   });
 }
 
+// Saved paints are keyed by paint_key alone (never an id) -- only
+// PAINT_LIBRARY entries are ever save-able (see paintFromKey() at the call
+// site), same as the old app's own getSavedPaintKeys()/isPaintSaved().
+export function useSavedPaintKeys() {
+  const { userId } = useAuth();
+  return useQuery({
+    queryKey: ['savedPaints', userId],
+    queryFn: async () => {
+      const { data, error } = await supabase.from('saved_paints').select('paint_key').eq('user_id', userId);
+      if (error) throw error;
+      return (data || []).map((row) => row.paint_key);
+    },
+    enabled: !!userId,
+  });
+}
+
+export function useToggleSavePaint() {
+  const { userId } = useAuth();
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ key, saved }) => {
+      if (saved) {
+        const { error } = await supabase.from('saved_paints').delete().eq('user_id', userId).eq('paint_key', key);
+        if (error) throw error;
+      } else {
+        const { error } = await supabase.from('saved_paints').upsert({ paint_key: key, user_id: userId });
+        if (error) throw error;
+      }
+      return { key, saved: !saved };
+    },
+    onMutate: async ({ key, saved }) => {
+      await qc.cancelQueries({ queryKey: ['savedPaints', userId] });
+      const prev = qc.getQueryData(['savedPaints', userId]);
+      qc.setQueryData(['savedPaints', userId], (list = []) => (saved ? list.filter((k) => k !== key) : [...new Set([...list, key])]));
+      return { prev };
+    },
+    onError: (err, vars, ctx) => {
+      if (ctx?.prev) qc.setQueryData(['savedPaints', userId], ctx.prev);
+    },
+  });
+}
+
 export function useDeletePaint() {
   const { userId } = useAuth();
   const qc = useQueryClient();

@@ -1,11 +1,11 @@
 import { useParams, useNavigate } from 'react-router-dom';
 import Icon from '../icons.jsx';
 import EmptyState from '../components/EmptyState.jsx';
+import RecipeCard from '../components/RecipeCard.jsx';
 import { faction } from '../data/factions.js';
 import { useActiveHobby } from '../hooks/useActiveHobby.js';
+import { useVisibleRecipes } from '../queries/useRecipes.js';
 
-// Recipes-per-unit is deferred until the recipes data layer exists (Stage
-// 3 batch 4) -- always shows the empty state for now.
 export default function UnitDetail() {
   const { id, unit } = useParams();
   const navigate = useNavigate();
@@ -13,7 +13,8 @@ export default function UnitDetail() {
   const f = faction(id);
   const isGeneral = !unit || unit === '_general';
   const label = isGeneral ? 'General' : decodeURIComponent(unit);
-  const recipes = [];
+  const { data: visibleRecipes = [] } = useVisibleRecipes();
+  const recipes = visibleRecipes.filter((r) => r.faction === id && (isGeneral ? !r.unit : r.unit === label));
 
   return (
     <div className="page-enter">
@@ -24,7 +25,11 @@ export default function UnitDetail() {
       <div className="detail-title">{label}</div>
       <div className="detail-sub">{recipes.length} recipe{recipes.length === 1 ? '' : 's'}{isGeneral ? ` that apply to the ${h.wholeGroupLabel}` : ''}</div>
 
-      <EmptyState icon="book" title="Nothing here yet" sub="Tap + to add the first recipe for this unit." />
+      {recipes.length ? (
+        <div className="recipe-grid" style={{ marginTop: 14 }}>{recipes.map((r) => <RecipeCard key={r.authorId ? `${r.authorId}:${r.id}` : r.id} r={r} />)}</div>
+      ) : (
+        <EmptyState icon="book" title="Nothing here yet" sub="Tap + to add the first recipe for this unit." />
+      )}
     </div>
   );
 }

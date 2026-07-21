@@ -18,7 +18,7 @@ function toRemoteRecipe(r, userId) {
     updated_at: new Date().toISOString(), deleted: false,
   };
 }
-function fromRemoteRecipe(row) {
+export function fromRemoteRecipe(row) {
   return {
     id: row.id, name: row.name, faction: row.faction, unit: row.unit,
     hobbyId: row.hobby_id || 'warhammer', difficulty: row.difficulty, photoPath: row.photo_path,

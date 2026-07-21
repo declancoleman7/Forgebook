@@ -5,12 +5,11 @@ import { useAuth } from '../auth/AuthContext.jsx';
 import { useMyProfile } from '../queries/useProfile.js';
 import { useNotifications } from '../queries/useNotifications.js';
 
-const NAV_ITEMS = [
+const STATIC_NAV_ITEMS = [
   { route: 'home', label: 'Home', icon: 'home', path: '/home' },
   { route: 'factions', label: 'Collection', icon: 'shield', path: '/factions' },
   { route: 'recipes', label: 'Search', icon: 'search', path: '/recipes' },
   { route: 'paints', label: 'Paints', icon: 'paintdrop', path: '/paints' },
-  { route: 'profile', label: 'Profile', icon: 'user', path: '/u' },
 ];
 
 // Same "is this tab the active one" grouping as the old render()'s tail --
@@ -42,8 +41,15 @@ function NavGlyph({ item, size }) {
 export default function Layout() {
   const { pathname } = useLocation();
   const navigate = useNavigate();
+  const { userId } = useAuth();
   const { data: notifications } = useNotifications();
   const unreadCount = notifications?.filter((n) => !n.read).length || 0;
+  // The Profile tab always points at your OWN profile -- baked in here the
+  // same way the old app's buildShell() baked currentUserId() into its
+  // static nav markup once at boot, not the bare "Find a Painter" search
+  // screen (/u with no id), which the old app's own nav never links to
+  // either (see ProfileSearch.jsx).
+  const NAV_ITEMS = [...STATIC_NAV_ITEMS, { route: 'profile', label: 'Profile', icon: 'user', path: `/u/${userId}` }];
 
   return (
     <div id="app">

@@ -20,6 +20,9 @@ import RecipesSearch from './pages/RecipesSearch.jsx';
 import RecipeDetail from './pages/RecipeDetail.jsx';
 import RecipeForm from './pages/RecipeForm.jsx';
 import PaintForm from './pages/PaintForm.jsx';
+import ProfileSearch from './pages/ProfileSearch.jsx';
+import Profile from './pages/Profile.jsx';
+import ProfileSection from './pages/ProfileSection.jsx';
 
 // Same "what should be on screen right now" decision as the old app's
 // decideBootState(), just expressed as JSX branches instead of imperative
@@ -52,9 +55,9 @@ function Boot() {
         <Route path="/paint-library" element={<PaintLibrary />} />
         <Route path="/similar" element={<Placeholder title="Similar Colours" />} />
         <Route path="/similar/:name/:brand" element={<Placeholder title="Similar Colours" />} />
-        <Route path="/u" element={<Placeholder title="Find a Painter" />} />
-        <Route path="/u/:id" element={<Placeholder title="Profile" />} />
-        <Route path="/u/:id/section/:kind" element={<Placeholder title="Profile section" />} />
+        <Route path="/u" element={<ProfileSearch />} />
+        <Route path="/u/:id" element={<Profile />} />
+        <Route path="/u/:id/section/:kind" element={<ProfileSection />} />
         <Route path="/settings" element={<Settings />} />
         <Route path="/notifications" element={<Notifications />} />
         <Route path="/change-password" element={<ChangePassword />} />
