@@ -1,13 +1,15 @@
 # Builds the in-progress React migration (web/) and deploys it to a
-# Cloudflare Pages STAGING project -- forgebook.co.uk's real production
-# deploy (GitHub Pages, serving the repo root) is untouched by this
-# workflow entirely. Only runs when something under web/ actually changes.
+# Cloudflare Worker (static assets) STAGING deployment -- forgebook.co.uk's
+# real production deploy (GitHub Pages, serving the repo root) is untouched
+# by this workflow entirely. Only runs when something under web/ actually
+# changes. Deploys via Wrangler (web/wrangler.jsonc), not the Pages API --
+# the current Cloudflare dashboard creates Workers-with-static-assets by
+# default now, not classic "Pages" projects, so this matches what actually
+# exists (forgebook-web-staging.<account>.workers.dev).
 #
-# One-time setup needed before this can succeed (see the migration plan):
-#   1. Create a Cloudflare Pages project (any name, e.g. "forgebook-web-staging").
-#   2. Add two repo secrets: CLOUDFLARE_API_TOKEN, CLOUDFLARE_ACCOUNT_ID.
-#   3. Set CF_PAGES_PROJECT below to match the project name from step 1.
-name: Deploy web/ to Cloudflare Pages (staging)
+# One-time setup needed before this can succeed:
+#   1. Add two repo secrets: CLOUDFLARE_API_TOKEN, CLOUDFLARE_ACCOUNT_ID.
+name: Deploy web/ to Cloudflare (staging)
 
 on:
   push:
@@ -16,9 +18,6 @@ on:
       - "web/**"
       - ".github/workflows/deploy-web-staging.yml"
   workflow_dispatch:
-
-env:
-  CF_PAGES_PROJECT: forgebook-web-staging
 
 jobs:
   build-and-deploy:
@@ -40,10 +39,10 @@ jobs:
         working-directory: web
         run: npm run build
 
-      - name: Deploy to Cloudflare Pages
-        uses: cloudflare/pages-action@v1
+      - name: Deploy via Wrangler
+        uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          projectName: ${{ env.CF_PAGES_PROJECT }}
-          directory: web/dist
+          workingDirectory: web
+          command: deploy
