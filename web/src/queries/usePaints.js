@@ -91,6 +91,34 @@ export function useAddPaintToRack() {
   });
 }
 
+// The Paint Form's save (new custom paint, or editing name/brand/hex/type
+// on an existing one) -- distinct from useAddPaintToRack, which only ever
+// creates a fresh row from an exact PAINT_LIBRARY entry. A new id here
+// matches the old app's own "p-" + timestamp scheme (useAddPaintToRack's
+// rows use "lib-" so the two can never collide).
+export function useSavePaint() {
+  const { userId } = useAuth();
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id, name, brand, hex, type }) => {
+      const row = { id: id || 'p-' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), name, brand, hex, type, quantity: 1 };
+      const current = id ? qc.getQueryData(['paints', userId])?.find((p) => p.id === id) : null;
+      const merged = current ? { ...current, name, brand, hex, type } : row;
+      const { error } = await supabase.from('paints').upsert(toRemotePaint(merged, userId));
+      if (error) throw new Error("Couldn't save that — try again.");
+      return merged;
+    },
+    onSuccess: (saved) => {
+      qc.setQueryData(['paints', userId], (prev) => {
+        if (!prev) return prev;
+        const idx = prev.findIndex((p) => p.id === saved.id);
+        if (idx === -1) return [...prev, saved];
+        const next = [...prev]; next[idx] = saved; return next;
+      });
+    },
+  });
+}
+
 function usePatchPaint() {
   const { userId } = useAuth();
   const qc = useQueryClient();

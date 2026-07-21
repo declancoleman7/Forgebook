@@ -3,6 +3,7 @@ import Icon from '../icons.jsx';
 import EmptyState from '../components/EmptyState.jsx';
 import { PAINT_LIBRARY, paintKey } from '../data/paints.js';
 import { useMyPaints, useUpdateQuantity, useToggleRestock, useDeletePaint } from '../queries/usePaints.js';
+import { useMyRecipes } from '../queries/useRecipes.js';
 import { useConfirm } from '../confirm/ConfirmContext.jsx';
 import { useToast } from '../toast/ToastContext.jsx';
 
@@ -12,12 +13,18 @@ export default function PaintDetail() {
   const confirm = useConfirm();
   const showToast = useToast();
   const { data: paints } = useMyPaints();
+  const { data: myRecipes = [] } = useMyRecipes();
   const { inc, dec } = useUpdateQuantity();
   const toggleRestock = useToggleRestock();
   const deletePaint = useDeletePaint();
 
   const p = paints?.find((x) => x.id === id);
   if (!p) return <EmptyState icon="paintdrop" title="Paint not found" sub="It may have been removed from the rack." />;
+
+  const wantMatches = (want) => !!want && paintKey(want.name, want.brand) === paintKey(p.name, p.brand);
+  const usedIn = myRecipes.filter((r) => (r.steps || []).some((s) =>
+    s.paintId === p.id || s.mixPaintId === p.id || wantMatches(s.wantPaint) || wantMatches(s.mixWantPaint)
+  ));
 
   // Library-backed rows (added via the library's own "add to rack") only
   // let the rack track quantity/restock -- name/brand/hex/type are edited
@@ -26,10 +33,14 @@ export default function PaintDetail() {
   // batch 5's paint form) still gets the full editor.
   const fromLibrary = !!PAINT_LIBRARY.find((x) => paintKey(x.name, x.brand) === paintKey(p.name, p.brand));
 
+  const removeConfirmMessage = usedIn.length
+    ? `This paint is used in ${usedIn.length} recipe${usedIn.length === 1 ? '' : 's'}. Deleting it will leave those steps without a paint. Continue?`
+    : `Remove ${p.name} from your rack?`;
+
   const doDec = async () => {
     const next = (p.quantity || 1) - 1;
     if (next <= 0) {
-      if (await confirm(`Remove ${p.name} from your rack?`)) {
+      if (await confirm(removeConfirmMessage)) {
         await deletePaint.mutateAsync(p.id);
         showToast('Removed from rack');
         navigate('/paints');
@@ -40,7 +51,7 @@ export default function PaintDetail() {
   };
 
   const doDelete = async () => {
-    if (await confirm(`Remove ${p.name} from your rack?`)) {
+    if (await confirm(removeConfirmMessage)) {
       await deletePaint.mutateAsync(p.id);
       showToast('Removed from rack');
       navigate('/paints');
@@ -92,9 +103,16 @@ export default function PaintDetail() {
         </div>
       </div>
 
-      {/* "Used In" needs the recipes data layer -- Stage 3 batch 4. */}
       <div className="section-label">Used In</div>
-      <div className="empty-state__sub">Not used in any recipe yet.</div>
+      {usedIn.length ? usedIn.map((r) => (
+        <div key={r.id} className="paint-row" onClick={() => navigate(`/recipe/${r.id}`)} style={{ cursor: 'pointer' }}>
+          <div className="paint-row__swatch" style={{ background: p.hex }} />
+          <div>
+            <div className="paint-row__name">{r.name}</div>
+            <div className="paint-row__brand">{r.unit || 'General'}</div>
+          </div>
+        </div>
+      )) : <div className="empty-state__sub">Not used in any recipe yet.</div>}
     </div>
   );
 }

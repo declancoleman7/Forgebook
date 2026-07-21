@@ -102,6 +102,23 @@ export function usePushRecipe() {
   });
 }
 
+// Storage-only -- the caller folds the returned path into the recipe
+// payload it's about to upsert via usePushRecipe, same order of operations
+// as the old app's recipe-save handler (upload first, then push the row
+// pointing at it).
+export function useUploadRecipePhoto() {
+  const { userId } = useAuth();
+  return useMutation({
+    mutationFn: async ({ dataUrl, recipeId }) => {
+      const blob = await (await fetch(dataUrl)).blob();
+      const path = `${userId}/${recipeId}-${Math.random().toString(36).slice(2, 10)}.jpg`;
+      const { error } = await supabase.storage.from(CONFIG.photoBucket).upload(path, blob, { contentType: 'image/jpeg', upsert: true });
+      if (error) throw error;
+      return path;
+    },
+  });
+}
+
 export function useDeleteRecipe() {
   const { userId } = useAuth();
   const qc = useQueryClient();

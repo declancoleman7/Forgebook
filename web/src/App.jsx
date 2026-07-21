@@ -18,6 +18,8 @@ import FactionDetail from './pages/FactionDetail.jsx';
 import UnitDetail from './pages/UnitDetail.jsx';
 import RecipesSearch from './pages/RecipesSearch.jsx';
 import RecipeDetail from './pages/RecipeDetail.jsx';
+import RecipeForm from './pages/RecipeForm.jsx';
+import PaintForm from './pages/PaintForm.jsx';
 
 // Same "what should be on screen right now" decision as the old app's
 // decideBootState(), just expressed as JSX branches instead of imperative
@@ -40,12 +42,12 @@ function Boot() {
         <Route path="/faction/:id" element={<FactionDetail />} />
         <Route path="/faction/:id/unit/:unit" element={<UnitDetail />} />
         <Route path="/recipes" element={<RecipesSearch />} />
-        <Route path="/recipe-new" element={<Placeholder title="New recipe" />} />
+        <Route path="/recipe-new" element={<RecipeForm />} />
         <Route path="/recipe/:id" element={<RecipeDetail />} />
-        <Route path="/recipe/:id/edit" element={<Placeholder title="Edit recipe" />} />
+        <Route path="/recipe/:id/edit" element={<RecipeForm />} />
         <Route path="/recipe/:id/by/:authorId" element={<RecipeDetail />} />
         <Route path="/paints" element={<MyRack />} />
-        <Route path="/paint-new" element={<Placeholder title="New paint" />} />
+        <Route path="/paint-new" element={<PaintForm />} />
         <Route path="/paint/:id" element={<PaintDetail />} />
         <Route path="/paint-library" element={<PaintLibrary />} />
         <Route path="/similar" element={<Placeholder title="Similar Colours" />} />
