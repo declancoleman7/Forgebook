@@ -1,0 +1,126 @@
+import { useMemo, useRef, useState } from 'react';
+import Avatar from './Avatar.jsx';
+import { relativeTime } from '../utils/format.js';
+import { useAuth } from '../auth/AuthContext.jsx';
+import { useComments, useSubmitComment, useEditComment, useDeleteComment } from '../queries/useComments.js';
+import { useConfirm } from '../confirm/ConfirmContext.jsx';
+import { useToast } from '../toast/ToastContext.jsx';
+
+// Ported from the old app's commentListHtml()/commentRowHtml(). Deferred
+// for a later pass: @mention autocomplete (needs profile search) and the
+// report dialog -- mentions render as plain "@Name" text for now instead
+// of a styled/linked highlight.
+function CommentRow({ c, myId, isReply, onReply, onEdit, onDelete }) {
+  const isMine = c.userId === myId;
+  const pending = c.flagged || c.status === 'hidden';
+
+  return (
+    <div className={`comment-row ${pending ? 'is-pending' : ''} ${isReply ? 'comment-row--reply' : ''}`}>
+      <div className="comment-row__meta">
+        <span className="comment-row__author">
+          <Avatar displayName={c.author.displayName} url={c.author.avatarUrl} size={16} />
+          {' '}{c.author.displayName}{c.author.isAdmin && <span className="admin-badge" title="Forgebook admin">GM</span>}
+        </span>
+        <span className="comment-row__time">{relativeTime(c.createdAt)}{c.edited ? ' · edited' : ''}</span>
+        {pending && <span className="pill-status">{c.status === 'hidden' ? 'Hidden — reported' : 'Hidden — pending review'}</span>}
+      </div>
+      <div className="comment-row__body">{c.body}</div>
+      {(!isMine && !isReply) || isMine ? (
+        <div className="comment-row__linkrow">
+          {!isMine && !isReply && <button className="comment-row__link" onClick={() => onReply(c)}>Reply</button>}
+          {isMine && <button className="comment-row__link" onClick={() => onEdit(c)}>Edit</button>}
+          {isMine && <button className="comment-row__link" onClick={() => onDelete(c.id)}>Delete</button>}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+export default function CommentThread({ ownerId, recipeId }) {
+  const { userId, isSignedIn } = useAuth();
+  const confirm = useConfirm();
+  const showToast = useToast();
+  const { data: comments, isLoading } = useComments(ownerId, recipeId);
+  const submitComment = useSubmitComment(ownerId, recipeId);
+  const editComment = useEditComment(ownerId, recipeId);
+  const deleteComment = useDeleteComment(ownerId, recipeId);
+
+  const [body, setBody] = useState('');
+  const [editingId, setEditingId] = useState(null);
+  const [replyingTo, setReplyingTo] = useState(null); // { id, authorName } | null
+  const textareaRef = useRef(null);
+
+  const { top, repliesFor } = useMemo(() => {
+    const sorted = comments ? [...comments].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)) : comments;
+    const topLevel = sorted ? sorted.filter((c) => !c.parentCommentId) : sorted;
+    const replies = (id) => (comments || []).filter((c) => c.parentCommentId === id).sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
+    return { top: topLevel, repliesFor: replies };
+  }, [comments]);
+
+  const startReply = (c) => { setReplyingTo({ id: c.id, authorName: c.author.displayName }); setEditingId(null); textareaRef.current?.focus(); };
+  const startEdit = (c) => { setEditingId(c.id); setBody(c.body); setReplyingTo(null); textareaRef.current?.focus(); };
+  const cancelReply = () => setReplyingTo(null);
+
+  const submit = async () => {
+    const trimmed = body.trim();
+    if (!trimmed) return;
+    try {
+      if (editingId) {
+        await editComment.mutateAsync({ id: editingId, body: trimmed });
+      } else {
+        await submitComment.mutateAsync({ body: trimmed, parentCommentId: replyingTo?.id });
+      }
+      setBody(''); setEditingId(null); setReplyingTo(null);
+    } catch (e) {
+      showToast(e.message || 'Something went wrong — try again.');
+    }
+  };
+
+  const doDelete = async (id) => {
+    if (await confirm('Delete this comment?')) {
+      deleteComment.mutate(id);
+    }
+  };
+
+  return (
+    <>
+      <div className="section-label">Comments{comments ? ` (${comments.length})` : ''}</div>
+      {isSignedIn ? (
+        <div className="note-composer">
+          {replyingTo && (
+            <div className="reply-indicator">
+              Replying to <strong>{replyingTo.authorName}</strong>
+              <button type="button" className="reply-indicator__cancel" onClick={cancelReply} aria-label="Cancel reply">&times;</button>
+            </div>
+          )}
+          <div style={{ position: 'relative' }}>
+            <textarea ref={textareaRef} id="comment-input" maxLength={500} spellCheck autoCapitalize="sentences"
+              placeholder="Ask a question or share a tip..." value={body} onChange={(e) => setBody(e.target.value)} />
+          </div>
+          <div className="note-composer__footer">
+            <span className="char-count">{body.length}/500</span>
+            <button className="btn btn-primary btn-sm" disabled={submitComment.isPending || editComment.isPending} onClick={submit}>
+              {editingId ? 'Save edit' : 'Post comment'}
+            </button>
+          </div>
+        </div>
+      ) : (
+        <div className="fine-print" style={{ marginBottom: 14 }}>Sign in to comment.</div>
+      )}
+      {isLoading ? (
+        <div className="empty-state__sub">Loading comments…</div>
+      ) : top?.length ? (
+        top.map((c) => (
+          <div key={c.id}>
+            <CommentRow c={c} myId={userId} isReply={false} onReply={startReply} onEdit={startEdit} onDelete={doDelete} />
+            {repliesFor(c.id).map((r) => (
+              <CommentRow key={r.id} c={r} myId={userId} isReply onReply={startReply} onEdit={startEdit} onDelete={doDelete} />
+            ))}
+          </div>
+        ))
+      ) : (
+        <div className="empty-state__sub">No comments yet.</div>
+      )}
+    </>
+  );
+}

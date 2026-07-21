@@ -33,6 +33,23 @@ export function useMyPaints() {
   });
 }
 
+// Other users' rack paints -- needed to resolve a shared recipe's step
+// paintIds (which only make sense against their OWN author's rack, never
+// the viewer's). authorIds is typically the small set of authors whose
+// recipes are currently on screen, not "everyone."
+export function useSharedPaints(authorIds) {
+  const key = [...new Set(authorIds || [])].sort();
+  return useQuery({
+    queryKey: ['sharedPaints', ...key],
+    queryFn: async () => {
+      const { data, error } = await supabase.from('paints').select('*').in('user_id', key).eq('deleted', false);
+      if (error) throw error;
+      return (data || []).map((row) => ({ ...fromRemotePaint(row), authorId: row.user_id }));
+    },
+    enabled: key.length > 0,
+  });
+}
+
 // Lives in its own paint_wants table rather than on a rack row -- a
 // wanted-but-unowned paint has no business in the rack itself. Returns the
 // plain array of paintKey() strings, same shape the old app's
