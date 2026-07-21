@@ -1,9 +1,11 @@
+import { useEffect } from 'react';
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import Icon from '../icons.jsx';
 import Avatar from './Avatar.jsx';
 import { useAuth } from '../auth/AuthContext.jsx';
 import { useMyProfile } from '../queries/useProfile.js';
 import { useNotifications } from '../queries/useNotifications.js';
+import { registerServiceWorker } from '../serviceWorker.js';
 
 const STATIC_NAV_ITEMS = [
   { route: 'home', label: 'Home', icon: 'home', path: '/home' },
@@ -50,6 +52,8 @@ export default function Layout() {
   // screen (/u with no id), which the old app's own nav never links to
   // either (see ProfileSearch.jsx).
   const NAV_ITEMS = [...STATIC_NAV_ITEMS, { route: 'profile', label: 'Profile', icon: 'user', path: `/u/${userId}` }];
+
+  useEffect(() => { registerServiceWorker(); }, []);
 
   return (
     <div id="app">
