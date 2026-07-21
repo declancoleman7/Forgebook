@@ -1,6 +1,9 @@
-import { NavLink, Outlet, useLocation } from 'react-router-dom';
+import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import Icon from '../icons.jsx';
+import Avatar from './Avatar.jsx';
 import { useAuth } from '../auth/AuthContext.jsx';
+import { useMyProfile } from '../queries/useProfile.js';
+import { useNotifications } from '../queries/useNotifications.js';
 
 const NAV_ITEMS = [
   { route: 'home', label: 'Home', icon: 'home', path: '/home' },
@@ -23,13 +26,13 @@ function isActiveNavRoute(navRoute, pathname) {
   return false;
 }
 
-// The profile tab's icon slot becomes the signed-in user's own avatar --
-// Stage 2 wires in the real profile-picture lookup; a plain fallback
-// letter avatar for now.
+// The profile tab's icon slot becomes the signed-in user's own avatar,
+// kept fresh as it changes (Settings) since this is part of the persistent
+// shell, not the routed page.
 function ProfileGlyph({ size }) {
   const { email } = useAuth();
-  const letter = (email || '?').trim()[0]?.toUpperCase() || '?';
-  return <span className="avatar avatar--fallback" style={{ width: size, height: size, fontSize: Math.round(size * 0.5) }}>{letter}</span>;
+  const { data: profile } = useMyProfile();
+  return <Avatar displayName={profile?.displayName || email} url={profile?.avatarUrl} size={size} />;
 }
 
 function NavGlyph({ item, size }) {
@@ -38,6 +41,9 @@ function NavGlyph({ item, size }) {
 
 export default function Layout() {
   const { pathname } = useLocation();
+  const navigate = useNavigate();
+  const { data: notifications } = useNotifications();
+  const unreadCount = notifications?.filter((n) => !n.read).length || 0;
 
   return (
     <div id="app">
@@ -52,11 +58,11 @@ export default function Layout() {
       <header className="topbar">
         <div className="topbar__brand"><span className="glyph"><Icon name="book" size={16} /></span> Forgebook</div>
         <div className="topbar__spacer" />
-        {/* Hobby switcher dropdown + notification bell + sync pill are wired
-            up once their data hooks exist (Stage 2/3) -- static chrome
-            only for now. */}
-        <button className="topbar__bell" aria-label="Notifications">
+        {/* Hobby switcher dropdown is wired up once its data hooks exist
+            (multi-hobby Stage 3 work) -- static chrome only for now. */}
+        <button className="topbar__bell" aria-label="Notifications" onClick={() => navigate('/notifications')}>
           <Icon name="bell" size={18} />
+          {unreadCount > 0 && <span className="topbar__bell-badge">{unreadCount > 9 ? '9+' : unreadCount}</span>}
         </button>
       </header>
       <main id="view-root">
