@@ -1062,6 +1062,7 @@ main {
   background: var(--bg-raised);
   border: 1px solid var(--line);
   border-radius: var(--radius-md);
+  box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.18);
   padding: 8px 10px;
   margin-bottom: 12px;
 }
@@ -1679,6 +1680,10 @@ main {
   background: var(--bg-panel);
   border: 1px solid var(--line);
   border-radius: var(--radius-sm);
+  /* A faint recess -- the material-language counterpart to raised
+     buttons/cards elsewhere: this is where you type INTO the surface,
+     not tap something sitting on top of it. */
+  box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.18);
   padding: 10px 12px;
   color: var(--parchment);
   /* 16px, not the 14px used elsewhere: iOS Safari auto-zooms the whole page
