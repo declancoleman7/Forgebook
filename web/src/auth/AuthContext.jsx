@@ -93,6 +93,9 @@ export function AuthProvider({ children }) {
     isSignedIn,
     email: isSignedIn ? session.user.email : null,
     userId: isSignedIn ? session.user.id : null,
+    // Only meaningful for the very first fetch after a fresh signup, before
+    // any profiles row exists -- see useMyProfile()'s fetchOrCreateMyProfile.
+    signupDisplayNameHint: isSignedIn ? session.user.user_metadata?.display_name || null : null,
     needsPasswordSetup: isSignedIn && !session.user.user_metadata?.password_set,
     inPasswordRecovery: passwordRecovery,
     signIn,

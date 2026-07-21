@@ -7,7 +7,8 @@ import Gate from './components/Gate.jsx';
 import PasswordScreen from './components/PasswordScreen.jsx';
 import Layout from './components/Layout.jsx';
 import Placeholder from './pages/Placeholder.jsx';
-import SettingsPlaceholder from './pages/SettingsPlaceholder.jsx';
+import Settings from './pages/Settings.jsx';
+import ChangePassword from './pages/ChangePassword.jsx';
 
 // Same "what should be on screen right now" decision as the old app's
 // decideBootState(), just expressed as JSX branches instead of imperative
@@ -43,9 +44,9 @@ function Boot() {
         <Route path="/u" element={<Placeholder title="Find a Painter" />} />
         <Route path="/u/:id" element={<Placeholder title="Profile" />} />
         <Route path="/u/:id/section/:kind" element={<Placeholder title="Profile section" />} />
-        <Route path="/settings" element={<SettingsPlaceholder />} />
+        <Route path="/settings" element={<Settings />} />
         <Route path="/notifications" element={<Placeholder title="Notifications" />} />
-        <Route path="/change-password" element={<Placeholder title="Change password" />} />
+        <Route path="/change-password" element={<ChangePassword />} />
         <Route path="*" element={<Navigate to="/home" replace />} />
       </Route>
     </Routes>
