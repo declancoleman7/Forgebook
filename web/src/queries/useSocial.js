@@ -112,6 +112,20 @@ export function useViewedProfile(id) {
   });
 }
 
+// Home's "Suggested Painters" rail (desktop only) -- a batch with no query
+// to filter by, unlike useSearchProfiles; the caller excludes self/already-
+// followed and slices it down.
+export function useSuggestedProfiles() {
+  return useQuery({
+    queryKey: ['suggestedProfiles'],
+    queryFn: async () => {
+      const { data, error } = await supabase.from('profiles').select('user_id, display_name, avatar_path, is_admin').limit(30);
+      if (error) return [];
+      return (data || []).map((row) => ({ userId: row.user_id, displayName: row.display_name, avatarUrl: avatarUrl(row.avatar_path), isAdmin: !!row.is_admin }));
+    },
+  });
+}
+
 export function useSearchProfiles(query) {
   const q = query.trim();
   return useQuery({

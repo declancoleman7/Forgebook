@@ -23,6 +23,7 @@ import PaintForm from './pages/PaintForm.jsx';
 import ProfileSearch from './pages/ProfileSearch.jsx';
 import Profile from './pages/Profile.jsx';
 import ProfileSection from './pages/ProfileSection.jsx';
+import Home from './pages/Home.jsx';
 
 // Same "what should be on screen right now" decision as the old app's
 // decideBootState(), just expressed as JSX branches instead of imperative
@@ -40,7 +41,7 @@ function Boot() {
   return (
     <Routes>
       <Route element={<Layout />}>
-        <Route path="/home" element={<Placeholder title="Home" />} />
+        <Route path="/home" element={<Home />} />
         <Route path="/factions" element={<Collection />} />
         <Route path="/faction/:id" element={<FactionDetail />} />
         <Route path="/faction/:id/unit/:unit" element={<UnitDetail />} />
