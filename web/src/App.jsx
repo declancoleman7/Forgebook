@@ -10,6 +10,9 @@ import Placeholder from './pages/Placeholder.jsx';
 import Settings from './pages/Settings.jsx';
 import ChangePassword from './pages/ChangePassword.jsx';
 import Notifications from './pages/Notifications.jsx';
+import MyRack from './pages/MyRack.jsx';
+import PaintDetail from './pages/PaintDetail.jsx';
+import PaintLibrary from './pages/PaintLibrary.jsx';
 
 // Same "what should be on screen right now" decision as the old app's
 // decideBootState(), just expressed as JSX branches instead of imperative
@@ -36,10 +39,10 @@ function Boot() {
         <Route path="/recipe/:id" element={<Placeholder title="Recipe" />} />
         <Route path="/recipe/:id/edit" element={<Placeholder title="Edit recipe" />} />
         <Route path="/recipe/:id/by/:authorId" element={<Placeholder title="Recipe" />} />
-        <Route path="/paints" element={<Placeholder title="My Rack" />} />
+        <Route path="/paints" element={<MyRack />} />
         <Route path="/paint-new" element={<Placeholder title="New paint" />} />
-        <Route path="/paint/:id" element={<Placeholder title="Paint" />} />
-        <Route path="/paint-library" element={<Placeholder title="Paint Library" />} />
+        <Route path="/paint/:id" element={<PaintDetail />} />
+        <Route path="/paint-library" element={<PaintLibrary />} />
         <Route path="/similar" element={<Placeholder title="Similar Colours" />} />
         <Route path="/similar/:name/:brand" element={<Placeholder title="Similar Colours" />} />
         <Route path="/u" element={<Placeholder title="Find a Painter" />} />
