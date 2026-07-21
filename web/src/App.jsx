@@ -1,4 +1,4 @@
-import { Navigate, Route, Routes } from 'react-router-dom';
+import { Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import { AuthProvider, useAuth } from './auth/AuthContext.jsx';
 import { ToastProvider } from './toast/ToastContext.jsx';
 import { ConfirmProvider } from './confirm/ConfirmContext.jsx';
@@ -24,6 +24,8 @@ import ProfileSearch from './pages/ProfileSearch.jsx';
 import Profile from './pages/Profile.jsx';
 import ProfileSection from './pages/ProfileSection.jsx';
 import Home from './pages/Home.jsx';
+import PublicRecipe from './pages/PublicRecipe.jsx';
+import PublicProfile from './pages/PublicProfile.jsx';
 
 // Same "what should be on screen right now" decision as the old app's
 // decideBootState(), just expressed as JSX branches instead of imperative
@@ -32,8 +34,21 @@ import Home from './pages/Home.jsx';
 // loading state instead of one big blocking fetch before anything renders.
 function Boot() {
   const { booting, inPasswordRecovery, isSignedIn, needsPasswordSetup } = useAuth();
+  const location = useLocation();
 
   if (booting) return <BootSplash />;
+
+  // A signed-out visitor hitting a profile link sees the public, shell-less
+  // profile instead of the sign-in gate -- mirrors the old app's
+  // `route === "profile" && params.id && !isSignedIn()` bypass of its own
+  // normal decideBootState() gate. /u/:id/section/:kind has no signed-out
+  // equivalent (follower/notes/ratings lists are never public), so that one
+  // still falls through to the gate below.
+  if (!isSignedIn) {
+    const m = location.pathname.match(/^\/u\/([^/]+)$/);
+    if (m) return <PublicProfile id={decodeURIComponent(m[1])} />;
+  }
+
   if (inPasswordRecovery) return <PasswordScreen mode="recovery" />;
   if (isSignedIn && needsPasswordSetup) return <PasswordScreen mode="setup" />;
   if (!isSignedIn) return <Gate />;
@@ -68,12 +83,20 @@ function Boot() {
   );
 }
 
+// The public recipe share link is entirely separate from the signed-in
+// app -- no shell, no auth gate, works for a visitor with no Forgebook
+// account and no session at all -- so it's routed here, outside Boot()'s
+// booting/gate logic entirely, same as the old app's renderPublicRecipe()
+// bypassing decideBootState() outright.
 export default function App() {
   return (
     <AuthProvider>
       <ToastProvider>
         <ConfirmProvider>
-          <Boot />
+          <Routes>
+            <Route path="/r/:authorId/:id" element={<PublicRecipe />} />
+            <Route path="*" element={<Boot />} />
+          </Routes>
         </ConfirmProvider>
       </ToastProvider>
     </AuthProvider>
