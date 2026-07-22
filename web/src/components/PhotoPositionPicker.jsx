@@ -9,7 +9,7 @@ import Icon from '../icons.jsx';
 // page renders. One normalized (0-1, 0-1) focal point works across every
 // display context (card thumbnail, detail hero, feed card) since each just
 // crops around the same point at its own aspect ratio.
-export default function PhotoPositionPicker({ photo, focalX, focalY, onChange, onClose }) {
+export default function PhotoPositionPicker({ photo, focalX, focalY, onChange, onClose, previewShape = 'hero', previewLabel = 'Preview (recipe page)' }) {
   const imgRef = useRef(null);
   const draggingRef = useRef(false);
 
@@ -57,8 +57,11 @@ export default function PhotoPositionPicker({ photo, focalX, focalY, onChange, o
             <div className="photo-position-picker__marker" style={{ left: `${focalX * 100}%`, top: `${focalY * 100}%` }} />
           </div>
         </div>
-        <div className="photo-position-picker__preview-label">Preview (recipe page)</div>
-        <div className="photo-position-picker__preview" style={{ backgroundImage: `url('${photo}')`, backgroundPosition: `${focalX * 100}% ${focalY * 100}%` }} />
+        <div className="photo-position-picker__preview-label">{previewLabel}</div>
+        <div
+          className={`photo-position-picker__preview ${previewShape === 'circle' ? 'photo-position-picker__preview--circle' : ''}`}
+          style={{ backgroundImage: `url('${photo}')`, backgroundPosition: `${focalX * 100}% ${focalY * 100}%` }}
+        />
         <div className="filter-overlay__footer">
           <button type="button" className="btn btn-ghost btn-block" onClick={() => onChange(0.5, 0.5)}>Reset to center</button>
           <button type="button" className="btn btn-primary btn-block" onClick={onClose}>Done</button>

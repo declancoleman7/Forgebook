@@ -16,7 +16,8 @@ import { useMyProfile, useUploadAvatar } from '../queries/useProfile.js';
 import { useActivityFeed, useRecipeCommentCounts, usePaintRatingSummary } from '../queries/useFeed.js';
 import { useMyFollowingIds, useSuggestedProfiles, useToggleFollow } from '../queries/useSocial.js';
 import { useToast } from '../toast/ToastContext.jsx';
-import { downscaleImageSquare } from '../utils/image.js';
+import { downscaleImage, downscaleImageSquare } from '../utils/image.js';
+import PhotoPositionPicker from '../components/PhotoPositionPicker.jsx';
 
 // Debug-only escape hatch to preview the nudge without a fresh signup --
 // run `localStorage.setItem('fb_debug_avatar_nudge', '1')` in devtools, then
@@ -33,12 +34,24 @@ function AvatarNudge({ profile, onDismiss }) {
   const showToast = useToast();
   const uploadAvatar = useUploadAvatar();
   const fileRef = useRef(null);
+  // Holds the chosen file + an aspect-preserving preview while the user
+  // picks a focal point -- the actual square crop only happens once they
+  // close the picker, same flow as Settings' own avatar upload.
+  const [pending, setPending] = useState(null);
 
   const onFileChosen = async (e) => {
     const file = e.target.files[0];
     e.target.value = '';
     if (!file) return;
-    const url = await downscaleImageSquare(file, 240);
+    const preview = await downscaleImage(file, 800);
+    if (!preview) return showToast('That image could not be read');
+    setPending({ file, preview, focalX: 0.5, focalY: 0.5 });
+  };
+
+  const confirmPosition = async () => {
+    const { file, focalX, focalY } = pending;
+    setPending(null);
+    const url = await downscaleImageSquare(file, 240, focalX, focalY);
     if (!url) return showToast('That image could not be read');
     showToast('Uploading…');
     try {
@@ -59,6 +72,17 @@ function AvatarNudge({ profile, onDismiss }) {
       <button type="button" className="btn btn-primary btn-sm" onClick={() => fileRef.current?.click()}>Add photo</button>
       <button type="button" className="icon-btn" aria-label="Dismiss" onClick={onDismiss}><Icon name="check" size={16} /></button>
       <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={onFileChosen} />
+      {pending && (
+        <PhotoPositionPicker
+          photo={pending.preview}
+          focalX={pending.focalX}
+          focalY={pending.focalY}
+          onChange={(x, y) => setPending((prev) => ({ ...prev, focalX: x, focalY: y }))}
+          onClose={confirmPosition}
+          previewShape="circle"
+          previewLabel="Preview"
+        />
+      )}
     </div>
   );
 }

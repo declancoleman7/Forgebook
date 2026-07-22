@@ -2,6 +2,7 @@ import { useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Icon from '../icons.jsx';
 import Avatar from '../components/Avatar.jsx';
+import PhotoPositionPicker from '../components/PhotoPositionPicker.jsx';
 import { useAuth } from '../auth/AuthContext.jsx';
 import { useConfirm } from '../confirm/ConfirmContext.jsx';
 import { useToast } from '../toast/ToastContext.jsx';
@@ -9,7 +10,7 @@ import { useTheme } from '../hooks/useTheme.js';
 import { useMyProfile, useUpdateDisplayName, useUploadAvatar } from '../queries/useProfile.js';
 import { useMyHobbies, useAddHobby } from '../queries/useHobbies.js';
 import { HOBBIES } from '../data/factions.js';
-import { downscaleImageSquare } from '../utils/image.js';
+import { downscaleImage, downscaleImageSquare } from '../utils/image.js';
 import { promptInstall } from '../installPrompt.js';
 
 // Ported from the old app's viewSettings(). Export/import and the
@@ -30,6 +31,11 @@ export default function Settings() {
   const addHobby = useAddHobby();
 
   const [nameDraft, setNameDraft] = useState(null); // null until first edited, then tracks the input
+  // Holds the chosen file + an aspect-preserving preview while the user
+  // picks a focal point -- the actual square crop (downscaleImageSquare)
+  // only happens once they close the picker, using that point instead of
+  // always taking the dead center.
+  const [avatarPending, setAvatarPending] = useState(null);
 
   const profile = profileQuery.data;
   const displayName = nameDraft ?? profile?.displayName ?? '';
@@ -46,8 +52,17 @@ export default function Settings() {
 
   const onAvatarChosen = async (e) => {
     const file = e.target.files[0];
+    e.target.value = '';
     if (!file) return;
-    const url = await downscaleImageSquare(file, 240);
+    const preview = await downscaleImage(file, 800);
+    if (!preview) return showToast('That image could not be read');
+    setAvatarPending({ file, preview, focalX: 0.5, focalY: 0.5 });
+  };
+
+  const confirmAvatarPosition = async () => {
+    const { file, focalX, focalY } = avatarPending;
+    setAvatarPending(null);
+    const url = await downscaleImageSquare(file, 240, focalX, focalY);
     if (!url) return showToast('That image could not be read');
     showToast('Uploading…');
     try {
@@ -184,6 +199,18 @@ export default function Settings() {
         so please use a password you don't rely on elsewhere. An account is required to use
         Forgebook.
       </div>
+
+      {avatarPending && (
+        <PhotoPositionPicker
+          photo={avatarPending.preview}
+          focalX={avatarPending.focalX}
+          focalY={avatarPending.focalY}
+          onChange={(x, y) => setAvatarPending((prev) => ({ ...prev, focalX: x, focalY: y }))}
+          onClose={confirmAvatarPosition}
+          previewShape="circle"
+          previewLabel="Preview"
+        />
+      )}
     </div>
   );
 }

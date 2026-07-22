@@ -27,15 +27,20 @@ export function downscaleImage(file, maxDim) {
   });
 }
 
-export function downscaleImageSquare(file, size) {
+// focalX/focalY (0-1, default 0.5/0.5 = center) let the crop window follow
+// wherever the subject actually is instead of always taking the dead
+// center -- centers the square crop on that point, clamped so it never
+// runs past the image's edges. focalX/focalY=0.5 reduces to exactly the
+// old always-center behavior.
+export function downscaleImageSquare(file, size, focalX = 0.5, focalY = 0.5) {
   return new Promise((resolve) => {
     const reader = new FileReader();
     reader.onload = () => {
       const img = new Image();
       img.onload = () => {
         const side = Math.min(img.width, img.height);
-        const sx = (img.width - side) / 2;
-        const sy = (img.height - side) / 2;
+        const sx = Math.max(0, Math.min(img.width - side, focalX * img.width - side / 2));
+        const sy = Math.max(0, Math.min(img.height - side, focalY * img.height - side / 2));
         const canvas = document.createElement('canvas');
         canvas.width = size; canvas.height = size;
         const ctx = canvas.getContext('2d');
