@@ -88,3 +88,69 @@ export function useDeleteComment(ownerId, recipeId) {
     },
   });
 }
+
+// --- Comment likes --------------------------------------------------------
+// Same "fetch the whole aggregate view, look up client-side" shape as
+// useRecipeVoteSummary/useMyRecipeVotes -- upvote-only (no dislike), so a
+// vote is either present or absent rather than a +1/-1 value.
+
+export function useCommentVoteCounts() {
+  return useQuery({
+    queryKey: ['commentVoteCounts'],
+    queryFn: async () => {
+      const { data, error } = await supabase.from('comment_vote_counts').select('*');
+      if (error) throw error;
+      return (data || []).map((row) => ({ commentId: row.comment_id, likeCount: row.like_count }));
+    },
+  });
+}
+
+export function useMyCommentVotes() {
+  const { userId } = useAuth();
+  return useQuery({
+    queryKey: ['myCommentVotes', userId],
+    queryFn: async () => {
+      const { data, error } = await supabase.from('comment_votes').select('comment_id').eq('user_id', userId);
+      if (error) throw error;
+      return (data || []).map((row) => row.comment_id);
+    },
+    enabled: !!userId,
+  });
+}
+
+export function useToggleCommentVote() {
+  const { userId } = useAuth();
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ commentId, liked }) => {
+      if (liked) {
+        const { error } = await supabase.from('comment_votes').delete().eq('user_id', userId).eq('comment_id', commentId);
+        if (error) throw error;
+      } else {
+        const { error } = await supabase.from('comment_votes').insert({ comment_id: commentId, user_id: userId });
+        if (error) throw error;
+      }
+    },
+    onMutate: async ({ commentId, liked }) => {
+      await qc.cancelQueries({ queryKey: ['myCommentVotes', userId] });
+      await qc.cancelQueries({ queryKey: ['commentVoteCounts'] });
+      const prevMine = qc.getQueryData(['myCommentVotes', userId]);
+      const prevCounts = qc.getQueryData(['commentVoteCounts']);
+
+      qc.setQueryData(['myCommentVotes', userId], (prev = []) => (liked ? prev.filter((id) => id !== commentId) : [...prev, commentId]));
+      qc.setQueryData(['commentVoteCounts'], (prev = []) => {
+        const idx = prev.findIndex((c) => c.commentId === commentId);
+        const row = idx > -1 ? { ...prev[idx] } : { commentId, likeCount: 0 };
+        row.likeCount = Math.max(0, row.likeCount + (liked ? -1 : 1));
+        const next = [...prev];
+        if (idx > -1) next[idx] = row; else next.push(row);
+        return next;
+      });
+      return { prevMine, prevCounts };
+    },
+    onError: (err, vars, context) => {
+      if (context?.prevMine) qc.setQueryData(['myCommentVotes', userId], context.prevMine);
+      if (context?.prevCounts) qc.setQueryData(['commentVoteCounts'], context.prevCounts);
+    },
+  });
+}

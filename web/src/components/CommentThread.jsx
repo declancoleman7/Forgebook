@@ -6,14 +6,14 @@ import MentionTextarea from './MentionTextarea.jsx';
 import MentionText from './MentionText.jsx';
 import { relativeTime } from '../utils/format.js';
 import { useAuth } from '../auth/AuthContext.jsx';
-import { useComments, useSubmitComment, useEditComment, useDeleteComment } from '../queries/useComments.js';
+import { useComments, useSubmitComment, useEditComment, useDeleteComment, useCommentVoteCounts, useMyCommentVotes, useToggleCommentVote } from '../queries/useComments.js';
 import { useConfirm } from '../confirm/ConfirmContext.jsx';
 import { useReport } from '../report/ReportContext.jsx';
 import { useReportContent } from '../queries/useReports.js';
 import { useToast } from '../toast/ToastContext.jsx';
 
 // Ported from the old app's commentListHtml()/commentRowHtml().
-function CommentRow({ c, myId, isReply, isSignedIn, onReply, onEdit, onDelete, onReport }) {
+function CommentRow({ c, myId, isReply, isSignedIn, likeCount, liked, onReply, onEdit, onDelete, onReport, onToggleLike }) {
   const isMine = c.userId === myId;
   const pending = c.flagged || c.status === 'hidden';
 
@@ -29,8 +29,15 @@ function CommentRow({ c, myId, isReply, isSignedIn, onReply, onEdit, onDelete, o
         {pending && <span className="pill-status">{c.status === 'hidden' ? 'Hidden — reported' : 'Hidden — pending review'}</span>}
       </div>
       <div className="comment-row__body"><MentionText text={c.body} /></div>
-      {(!isMine && !isReply) || isMine ? (
+      {(!isMine && isSignedIn) || (!isMine && !isReply) || isMine || likeCount > 0 ? (
         <div className="comment-row__linkrow">
+          {!isMine && isSignedIn ? (
+            <motion.button whileTap={{ scale: 0.85 }} className={`comment-row__like ${liked ? 'is-active' : ''}`} aria-label={liked ? 'Unlike' : 'Like'} onClick={() => onToggleLike(c.id, liked)}>
+              <Icon name="thumb-up" size={12} /> {likeCount > 0 && <motion.span key={likeCount}>{likeCount}</motion.span>}
+            </motion.button>
+          ) : (
+            likeCount > 0 && <span className="comment-row__like-count"><Icon name="thumb-up" size={12} /> {likeCount}</span>
+          )}
           {!isMine && !isReply && <button className="comment-row__link" onClick={() => onReply(c)}>Reply</button>}
           {isMine && <button className="comment-row__link" onClick={() => onEdit(c)}>Edit</button>}
           {isMine && <button className="comment-row__link" onClick={() => onDelete(c.id)}>Delete</button>}
@@ -51,6 +58,9 @@ export default function CommentThread({ ownerId, recipeId }) {
   const submitComment = useSubmitComment(ownerId, recipeId);
   const editComment = useEditComment(ownerId, recipeId);
   const deleteComment = useDeleteComment(ownerId, recipeId);
+  const { data: voteCounts } = useCommentVoteCounts();
+  const { data: myVotes } = useMyCommentVotes();
+  const toggleLike = useToggleCommentVote();
 
   const [body, setBody] = useState('');
   const [editingId, setEditingId] = useState(null);
@@ -101,6 +111,8 @@ export default function CommentThread({ ownerId, recipeId }) {
     }
   };
 
+  const doToggleLike = (id, liked) => toggleLike.mutate({ commentId: id, liked });
+
   return (
     <>
       <div className="section-label">Comments{comments ? ` (${comments.length})` : ''}</div>
@@ -135,9 +147,13 @@ export default function CommentThread({ ownerId, recipeId }) {
       ) : top?.length ? (
         <AnimatePresence initial={false}>
           {top.flatMap((c) => [
-            <CommentRow key={c.id} c={c} myId={userId} isReply={false} isSignedIn={isSignedIn} onReply={startReply} onEdit={startEdit} onDelete={doDelete} onReport={doReport} />,
+            <CommentRow key={c.id} c={c} myId={userId} isReply={false} isSignedIn={isSignedIn}
+              likeCount={voteCounts?.find((v) => v.commentId === c.id)?.likeCount || 0} liked={!!myVotes?.includes(c.id)}
+              onReply={startReply} onEdit={startEdit} onDelete={doDelete} onReport={doReport} onToggleLike={doToggleLike} />,
             ...repliesFor(c.id).map((r) => (
-              <CommentRow key={r.id} c={r} myId={userId} isReply isSignedIn={isSignedIn} onReply={startReply} onEdit={startEdit} onDelete={doDelete} onReport={doReport} />
+              <CommentRow key={r.id} c={r} myId={userId} isReply isSignedIn={isSignedIn}
+                likeCount={voteCounts?.find((v) => v.commentId === r.id)?.likeCount || 0} liked={!!myVotes?.includes(r.id)}
+                onReply={startReply} onEdit={startEdit} onDelete={doDelete} onReport={doReport} onToggleLike={doToggleLike} />
             )),
           ])}
         </AnimatePresence>

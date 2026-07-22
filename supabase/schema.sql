@@ -248,6 +248,26 @@ create table if not exists public.recipe_votes (
 );
 create index if not exists recipe_votes_recipe_idx on public.recipe_votes (recipe_owner_id, recipe_id);
 
+-- Comment likes -- upvote-only (no dislike), unlike recipe_votes above.
+-- A plain join table (liked = row exists) rather than a value column.
+create table if not exists public.comment_votes (
+  comment_id uuid        not null references public.recipe_comments (id) on delete cascade,
+  user_id    uuid        not null references auth.users (id) on delete cascade,
+  created_at timestamptz not null default now(),
+  primary key (comment_id, user_id)
+);
+create index if not exists comment_votes_comment_idx on public.comment_votes (comment_id);
+
+-- Same "don't leak that a hidden/reported comment exists" concern as
+-- recipe_comment_counts below -- a plain view bypasses recipe_comments' own
+-- RLS entirely, so this where-clause reproduces its public-visible subset.
+create or replace view public.comment_vote_counts as
+select cv.comment_id, count(*) as like_count
+from public.comment_votes cv
+join public.recipe_comments c on c.id = cv.comment_id
+where c.deleted = false and c.status = 'visible' and c.flagged = false
+group by cv.comment_id;
+
 -- Both counts stored (net is computed client-side for display) so dislike
 -- counts stay independently queryable later even though only the net score
 -- is ever shown. Fully public, same as paint_rating_summary above -- nothing
@@ -734,6 +754,39 @@ create policy "read all recipe votes" on public.recipe_votes
   for select
   using (deleted = false);
 
+-- Comment likes -- unlike recipe_votes above, NOT fully public: a like on a
+-- hidden/pending comment must stay as invisible to a stranger as the
+-- comment itself (same reasoning as comment_vote_counts' view above).
+-- Self-like is blocked by the with-check's "c.user_id <> auth.uid()".
+alter table public.comment_votes enable row level security;
+
+drop policy if exists "own comment vote" on public.comment_votes;
+create policy "own comment vote" on public.comment_votes
+  for all
+  using      (auth.uid() = user_id)
+  with check (
+    auth.uid() = user_id
+    and exists (
+      select 1 from public.recipe_comments c
+      where c.id = comment_id and c.user_id <> auth.uid()
+    )
+  );
+
+drop policy if exists "read comment votes on visible comments" on public.comment_votes;
+create policy "read comment votes on visible comments" on public.comment_votes
+  for select
+  using (
+    exists (
+      select 1 from public.recipe_comments c
+      where c.id = comment_id
+        and (
+          (c.deleted = false and c.status = 'visible' and c.flagged = false)
+          or c.user_id = auth.uid()
+          or exists (select 1 from public.profiles p where p.user_id = auth.uid() and p.is_admin)
+        )
+    )
+  );
+
 -- No public "read all" policy on either table below, unlike recipe_votes/
 -- paint_ratings above -- a save is private to the saver, nobody else ever
 -- needs to read another user's saved rows, so a single "for all" policy
@@ -825,7 +878,7 @@ create index if not exists notifications_recipient_idx on public.notifications (
 -- already has this table, so widening the inline check above needs its own
 -- explicit migration to reach one that predates the 'like'/'reply' types.
 alter table public.notifications drop constraint if exists notifications_type_check;
-alter table public.notifications add constraint notifications_type_check check (type in ('comment', 'rating', 'mention', 'like', 'reply'));
+alter table public.notifications add constraint notifications_type_check check (type in ('comment', 'rating', 'mention', 'like', 'reply', 'comment_like'));
 
 -- Lets the rating trigger's steps @> ... containment check (below) use an
 -- index instead of scanning every published recipe row it's handed.
@@ -1087,6 +1140,39 @@ drop trigger if exists recipe_votes_notify on public.recipe_votes;
 create trigger recipe_votes_notify
   after insert or update of value on public.recipe_votes
   for each row execute function public.notify_on_recipe_vote();
+
+-- "Someone liked your comment" -- fires on every fresh insert (a genuine
+-- new like, since unliking is a real DELETE with no trigger attached, so
+-- retract-then-re-like is treated as a new like each time, not deduped).
+-- Self-like is already blocked by comment_votes' own "own comment vote"
+-- with-check, so no self-notify guard is needed here.
+create or replace function public.notify_on_comment_vote()
+returns trigger
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  comment_author uuid;
+  r_owner uuid;
+  r_id text;
+begin
+  select user_id, recipe_owner_id, recipe_id into comment_author, r_owner, r_id
+  from public.recipe_comments where id = new.comment_id;
+
+  if comment_author is not null then
+    insert into public.notifications (recipient_id, actor_id, type, recipe_owner_id, recipe_id, comment_id)
+    values (comment_author, new.user_id, 'comment_like', r_owner, r_id, new.comment_id);
+  end if;
+
+  return new;
+end;
+$$;
+
+drop trigger if exists comment_votes_notify on public.comment_votes;
+create trigger comment_votes_notify
+  after insert on public.comment_votes
+  for each row execute function public.notify_on_comment_vote();
 
 -- ------------------------------------------------------------
 -- Hobby log RLS
