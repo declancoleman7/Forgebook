@@ -67,6 +67,7 @@ export default function CommentThread({ ownerId, recipeId }) {
   const startReply = (c) => { setReplyingTo({ id: c.id, authorName: c.author.displayName }); setEditingId(null); textareaRef.current?.focus(); };
   const startEdit = (c) => { setEditingId(c.id); setBody(c.body); setReplyingTo(null); textareaRef.current?.focus(); };
   const cancelReply = () => setReplyingTo(null);
+  const cancelEdit = () => { setEditingId(null); setBody(''); };
 
   const submit = async () => {
     const trimmed = body.trim();
@@ -109,6 +110,12 @@ export default function CommentThread({ ownerId, recipeId }) {
             <div className="reply-indicator">
               Replying to <strong>{replyingTo.authorName}</strong>
               <button type="button" className="reply-indicator__cancel" onClick={cancelReply} aria-label="Cancel reply">&times;</button>
+            </div>
+          )}
+          {editingId && (
+            <div className="reply-indicator">
+              Editing your comment
+              <button type="button" className="reply-indicator__cancel" onClick={cancelEdit} aria-label="Cancel edit">&times;</button>
             </div>
           )}
           <div style={{ position: 'relative' }}>
