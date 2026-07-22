@@ -19,5 +19,5 @@ export function paintCategory(type) {
 }
 
 export function paintMatchesQuery(p, q) {
-  return p.name.toLowerCase().includes(q) || (p.brand || '').toLowerCase().includes(q);
+  return p.name.toLowerCase().includes(q) || (p.brand || '').toLowerCase().includes(q) || (p.type || '').toLowerCase().includes(q);
 }
