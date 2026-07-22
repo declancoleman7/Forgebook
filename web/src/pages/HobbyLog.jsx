@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import Icon from '../icons.jsx';
 import EmptyState from '../components/EmptyState.jsx';
 import RecipePicker from '../components/RecipePicker.jsx';
+import EmblemSvg from '../components/EmblemSvg.jsx';
 import { HOBBIES, faction as findFaction } from '../data/factions.js';
 import { downscaleImage } from '../utils/image.js';
 import { useMyHobbyLog, useCreateHobbyLogEntry, useUpdateHobbyLogEntry, useDeleteHobbyLogEntry, useUploadHobbyLogPhoto } from '../queries/useHobbyLog.js';
@@ -46,7 +47,7 @@ function EntryCard({ entry, onEdit }) {
   );
 }
 
-function EntryForm({ existing, myRecipes, onClose }) {
+function EntryForm({ existing, myRecipes, prefill, onClose }) {
   const { userId } = useAuth();
   const showToast = useToast();
   const confirm = useConfirm();
@@ -59,7 +60,7 @@ function EntryForm({ existing, myRecipes, onClose }) {
 
   const [entry, setEntry] = useState(() => existing
     ? { ...existing, originalPhoto: existing.photo || null }
-    : { id: null, title: '', notes: '', status: 'owned', hobbyId: '', factionId: '', photo: null, photoPath: null, originalPhoto: null, isPublic: false, recipeLinks: [] });
+    : { id: null, title: '', notes: '', status: 'owned', hobbyId: prefill?.hobbyId || '', factionId: prefill?.factionId || '', photo: null, photoPath: null, originalPhoto: null, isPublic: false, recipeLinks: [] });
 
   const patch = (fields) => setEntry((e) => ({ ...e, ...fields }));
   const hobby = HOBBIES.find((h) => h.id === entry.hobbyId);
@@ -224,43 +225,154 @@ function EntryForm({ existing, myRecipes, onClose }) {
   );
 }
 
+function FactionDashTile({ f, count, label, icon, onClick }) {
+  return (
+    <div className="faction-tile" style={{ '--faction-color': f.color }} title={label} onClick={onClick}>
+      <div className="faction-tile__rivet tl" /><div className="faction-tile__rivet tr" /><div className="faction-tile__rivet bl" /><div className="faction-tile__rivet br" />
+      <div className="faction-tile__count">{count}</div>
+      <div className="faction-tile__art">
+        <span className="emblem-badge emblem-badge--lg">{icon || <EmblemSvg emblemKey={f.emblem} size={30} />}</span>
+      </div>
+      <div className="faction-tile__label">{label}</div>
+    </div>
+  );
+}
+
 export default function HobbyLog() {
   const navigate = useNavigate();
   const { data: entries = [], isLoading } = useMyHobbyLog();
   const { data: myRecipes = [] } = useMyRecipes();
   const [filter, setFilter] = useState('all');
   const [editingId, setEditingId] = useState(null); // null | 'new' | entry id
+  // null = hobby-picker dashboard; 'all' = flat list of everything (the
+  // escape hatch, same view this page used to open straight to);
+  // otherwise a hobby id, drilling into that hobby's factions below.
+  const [browseHobbyId, setBrowseHobbyId] = useState(null);
+  // null = faction grid; '__general__' = this hobby's entries with no
+  // faction set; otherwise a faction id, scoping the list to just that one.
+  const [browseFactionId, setBrowseFactionId] = useState(null);
 
   if (editingId) {
     const existing = editingId === 'new' ? null : entries.find((e) => e.id === editingId);
-    return <EntryForm key={editingId} existing={existing} myRecipes={myRecipes} onClose={() => setEditingId(null)} />;
+    const prefill = editingId === 'new' && browseHobbyId && browseHobbyId !== 'all'
+      ? { hobbyId: browseHobbyId, factionId: browseFactionId && browseFactionId !== '__general__' ? browseFactionId : '' }
+      : null;
+    return <EntryForm key={editingId} existing={existing} myRecipes={myRecipes} prefill={prefill} onClose={() => setEditingId(null)} />;
   }
 
-  const filtered = filter === 'all' ? entries : entries.filter((e) => e.status === filter);
-  const countFor = (s) => entries.filter((e) => e.status === s).length;
+  if (isLoading) return <div className="empty-state__sub">Loading…</div>;
+
+  // --- Level 0: pick a hobby -------------------------------------------
+  if (!browseHobbyId) {
+    const hobbyCounts = new Map();
+    let unsorted = 0;
+    entries.forEach((e) => { if (e.hobbyId) hobbyCounts.set(e.hobbyId, (hobbyCounts.get(e.hobbyId) || 0) + 1); else unsorted++; });
+
+    return (
+      <div className="page-enter">
+        <div className="detail-header">
+          <button className="icon-btn" onClick={() => navigate(-1)}><Icon name="back" size={18} /></button>
+          <div className="page-title" style={{ margin: 0 }}>Hobby Log</div>
+          <button className="icon-btn" onClick={() => setEditingId('new')}><Icon name="plus" size={18} /></button>
+        </div>
+        <div className="detail-sub" style={{ marginBottom: 14 }}>
+          Track what you're painting project by project. Pick a hobby to see the armies or categories you've logged something for.
+        </div>
+        <div className="settings-group">
+          {HOBBIES.map((h) => {
+            const n = hobbyCounts.get(h.id) || 0;
+            return (
+              <div key={h.id} className="settings-row" style={{ cursor: 'pointer' }} onClick={() => setBrowseHobbyId(h.id)}>
+                <div>
+                  <div className="settings-row__label">{h.label}</div>
+                  <div className="settings-row__desc">{n} project{n === 1 ? '' : 's'} logged</div>
+                </div>
+                <Icon name="chevron" size={18} />
+              </div>
+            );
+          })}
+          {unsorted > 0 && (
+            <div className="settings-row" style={{ cursor: 'pointer' }} onClick={() => { setBrowseHobbyId('all'); setBrowseFactionId(null); }}>
+              <div>
+                <div className="settings-row__label">Not linked to a hobby</div>
+                <div className="settings-row__desc">{unsorted} project{unsorted === 1 ? '' : 's'}</div>
+              </div>
+              <Icon name="chevron" size={18} />
+            </div>
+          )}
+        </div>
+        <button type="button" className="btn btn-ghost btn-block" style={{ marginTop: 14 }} onClick={() => setBrowseHobbyId('all')}>
+          Browse everything at once
+        </button>
+      </div>
+    );
+  }
+
+  const isFlatAll = browseHobbyId === 'all';
+
+  // --- Level 1: pick a faction/category within the chosen hobby ---------
+  if (!isFlatAll && !browseFactionId) {
+    const hobby = HOBBIES.find((h) => h.id === browseHobbyId);
+    const hobbyEntries = entries.filter((e) => e.hobbyId === browseHobbyId);
+    const factionCounts = new Map();
+    let generalCount = 0;
+    hobbyEntries.forEach((e) => { if (e.factionId) factionCounts.set(e.factionId, (factionCounts.get(e.factionId) || 0) + 1); else generalCount++; });
+    const ownedFactions = [...factionCounts.keys()].map((id) => findFaction(id)).filter(Boolean);
+
+    return (
+      <div className="page-enter">
+        <div className="detail-header">
+          <button className="icon-btn" onClick={() => setBrowseHobbyId(null)}><Icon name="back" size={18} /></button>
+          <div className="page-title" style={{ margin: 0 }}>{hobby?.label || 'Browse'}</div>
+          <button className="icon-btn" onClick={() => setEditingId('new')}><Icon name="plus" size={18} /></button>
+        </div>
+        {ownedFactions.length || generalCount ? (
+          <div className="faction-tiles">
+            {ownedFactions.map((f) => (
+              <FactionDashTile key={f.id} f={f} count={factionCounts.get(f.id)} label={f.label} onClick={() => setBrowseFactionId(f.id)} />
+            ))}
+            {generalCount > 0 && (
+              <FactionDashTile f={{ color: 'var(--ink-dim)' }} count={generalCount} label="General" icon={<Icon name="paintdrop" size={22} />} onClick={() => setBrowseFactionId('__general__')} />
+            )}
+          </div>
+        ) : (
+          <EmptyState icon="paintdrop" title="Nothing logged yet" sub={`Tap + to log your first ${(hobby?.groupLabel || 'project').toLowerCase()}.`} />
+        )}
+      </div>
+    );
+  }
+
+  // --- Level 2: the entry list, scoped to whatever was picked above -----
+  const scopedEntries = isFlatAll ? entries : entries.filter((e) => (
+    browseFactionId === '__general__' ? e.hobbyId === browseHobbyId && !e.factionId : e.hobbyId === browseHobbyId && e.factionId === browseFactionId
+  ));
+  const filtered = filter === 'all' ? scopedEntries : scopedEntries.filter((e) => e.status === filter);
+  const countFor = (s) => scopedEntries.filter((e) => e.status === s).length;
+  const titleLabel = isFlatAll ? 'All entries' : browseFactionId === '__general__' ? 'General' : (findFaction(browseFactionId)?.label || 'Entries');
+  const goBack = () => (isFlatAll ? setBrowseHobbyId(null) : setBrowseFactionId(null));
 
   return (
     <div className="page-enter">
       <div className="detail-header">
-        <button className="icon-btn" onClick={() => navigate(-1)}><Icon name="back" size={18} /></button>
-        <div className="page-title" style={{ margin: 0 }}>Hobby Log</div>
+        <button className="icon-btn" onClick={goBack}><Icon name="back" size={18} /></button>
+        <div className="page-title" style={{ margin: 0 }}>{titleLabel}</div>
         <button className="icon-btn" onClick={() => setEditingId('new')}><Icon name="plus" size={18} /></button>
       </div>
-      <div className="detail-sub" style={{ marginBottom: 14 }}>
-        Track what you're painting project by project, separate from the step-by-step recipes themselves.
-        Mark public entries to share them on your profile.
-      </div>
+      {isFlatAll && (
+        <div className="detail-sub" style={{ marginBottom: 14 }}>
+          Track what you're painting project by project, separate from the step-by-step recipes themselves.
+          Mark public entries to share them on your profile.
+        </div>
+      )}
 
       <div className="lib-filter-seg lib-filter-seg--wrap">
-        <button className={filter === 'all' ? 'is-active' : ''} onClick={() => setFilter('all')}>All <span className="b">{entries.length}</span></button>
+        <button className={filter === 'all' ? 'is-active' : ''} onClick={() => setFilter('all')}>All <span className="b">{scopedEntries.length}</span></button>
         {STATUSES.map((s) => (
           <button key={s.id} className={filter === s.id ? 'is-active' : ''} onClick={() => setFilter(s.id)}>{s.label} <span className="b">{countFor(s.id)}</span></button>
         ))}
       </div>
 
-      {isLoading ? (
-        <div className="empty-state__sub">Loading…</div>
-      ) : !filtered.length ? (
+      {!filtered.length ? (
         <EmptyState icon="paintdrop" title="Nothing here yet" sub="Tap + to log a project you're working on." />
       ) : (
         <div className="hobbylog-list">
