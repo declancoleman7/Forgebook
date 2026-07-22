@@ -1,4 +1,5 @@
 import { useMemo, useRef, useState } from 'react';
+import { AnimatePresence, motion } from 'framer-motion';
 import Icon from '../icons.jsx';
 import Avatar from './Avatar.jsx';
 import { relativeTime } from '../utils/format.js';
@@ -17,7 +18,8 @@ function CommentRow({ c, myId, isReply, isSignedIn, onReply, onEdit, onDelete, o
   const pending = c.flagged || c.status === 'hidden';
 
   return (
-    <div className={`comment-row ${pending ? 'is-pending' : ''} ${isReply ? 'comment-row--reply' : ''}`}>
+    <motion.div layout initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }} transition={{ duration: 0.18 }}
+      className={`comment-row ${pending ? 'is-pending' : ''} ${isReply ? 'comment-row--reply' : ''}`}>
       <div className="comment-row__meta">
         <span className="comment-row__author">
           <Avatar displayName={c.author.displayName} url={c.author.avatarUrl} size={16} />
@@ -35,7 +37,7 @@ function CommentRow({ c, myId, isReply, isSignedIn, onReply, onEdit, onDelete, o
         </div>
       ) : null}
       {!isMine && isSignedIn && <button className="comment-row__report" title="Report" onClick={() => onReport(c.id)}><Icon name="flag" size={13} /></button>}
-    </div>
+    </motion.div>
   );
 }
 
@@ -126,14 +128,14 @@ export default function CommentThread({ ownerId, recipeId }) {
       {isLoading ? (
         <div className="empty-state__sub">Loading comments…</div>
       ) : top?.length ? (
-        top.map((c) => (
-          <div key={c.id}>
-            <CommentRow c={c} myId={userId} isReply={false} isSignedIn={isSignedIn} onReply={startReply} onEdit={startEdit} onDelete={doDelete} onReport={doReport} />
-            {repliesFor(c.id).map((r) => (
+        <AnimatePresence initial={false}>
+          {top.flatMap((c) => [
+            <CommentRow key={c.id} c={c} myId={userId} isReply={false} isSignedIn={isSignedIn} onReply={startReply} onEdit={startEdit} onDelete={doDelete} onReport={doReport} />,
+            ...repliesFor(c.id).map((r) => (
               <CommentRow key={r.id} c={r} myId={userId} isReply isSignedIn={isSignedIn} onReply={startReply} onEdit={startEdit} onDelete={doDelete} onReport={doReport} />
-            ))}
-          </div>
-        ))
+            )),
+          ])}
+        </AnimatePresence>
       ) : (
         <div className="empty-state__sub">No comments yet.</div>
       )}

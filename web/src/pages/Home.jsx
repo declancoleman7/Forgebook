@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { motion } from 'framer-motion';
 import Icon from '../icons.jsx';
 import Avatar from '../components/Avatar.jsx';
 import EmblemSvg from '../components/EmblemSvg.jsx';
@@ -148,19 +149,19 @@ function FeedRecipeCard({ item, kind, myId, commentCounts }) {
       </div>
       <div className="feed-card__actions">
         {isMine ? (
-          <div className="feed-card__votes feed-card__votes--readonly"><Icon name="thumb-up" size={15} /><span className="feed-card__vote-score">{net}</span></div>
+          <div className="feed-card__votes feed-card__votes--readonly"><Icon name="thumb-up" size={15} /><motion.span key={net} initial={{ scale: 1.35 }} animate={{ scale: 1 }} className="feed-card__vote-score">{net}</motion.span></div>
         ) : (
           <div className="feed-card__votes">
-            <button className={`feed-card__vote-btn ${mine === 1 ? 'is-active' : ''}`} aria-label="Like" onClick={() => voteRecipe.mutate({ ownerId, recipeId: r.id, value: 1, retract: mine === 1 })}><Icon name="thumb-up" size={15} /></button>
-            <span className="feed-card__vote-score">{net}</span>
-            <button className={`feed-card__vote-btn ${mine === -1 ? 'is-active' : ''}`} aria-label="Dislike" onClick={() => voteRecipe.mutate({ ownerId, recipeId: r.id, value: -1, retract: mine === -1 })}><Icon name="thumb-down" size={15} /></button>
+            <motion.button whileTap={{ scale: 0.85 }} className={`feed-card__vote-btn ${mine === 1 ? 'is-active' : ''}`} aria-label="Like" onClick={() => voteRecipe.mutate({ ownerId, recipeId: r.id, value: 1, retract: mine === 1 })}><Icon name="thumb-up" size={15} /></motion.button>
+            <motion.span key={net} initial={{ scale: 1.35 }} animate={{ scale: 1 }} className="feed-card__vote-score">{net}</motion.span>
+            <motion.button whileTap={{ scale: 0.85 }} className={`feed-card__vote-btn ${mine === -1 ? 'is-active' : ''}`} aria-label="Dislike" onClick={() => voteRecipe.mutate({ ownerId, recipeId: r.id, value: -1, retract: mine === -1 })}><Icon name="thumb-down" size={15} /></motion.button>
           </div>
         )}
         <div className="feed-card__comment-btn" style={{ cursor: 'pointer' }} onClick={openRecipe}><Icon name="comment" size={15} /> {commentCount} Comment{commentCount === 1 ? '' : 's'}</div>
         {!isMine && (
-          <button className={`icon-btn ${saved ? 'is-active' : ''}`} aria-label={saved ? 'Remove from saved' : 'Save'} onClick={() => toggleSave.mutate({ ownerId, recipeId: r.id, saved })}>
+          <motion.button whileTap={{ scale: 0.85 }} className={`icon-btn ${saved ? 'is-active' : ''}`} aria-label={saved ? 'Remove from saved' : 'Save'} onClick={() => toggleSave.mutate({ ownerId, recipeId: r.id, saved })}>
             <Icon name="bookmark" size={15} />
-          </button>
+          </motion.button>
         )}
       </div>
     </div>

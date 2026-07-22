@@ -1,4 +1,5 @@
 import { useEffect } from 'react';
+import { AnimatePresence, motion } from 'framer-motion';
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import Icon from '../icons.jsx';
 import Avatar from './Avatar.jsx';
@@ -88,7 +89,16 @@ export default function Layout() {
         </button>
       </header>
       <main id="view-root">
-        <Outlet />
+        {/* Each routed page already animates its own entrance via the
+            .page-enter CSS keyframe (untouched here) -- this layer adds
+            the half that CSS animations can't do on their own, a quick
+            fade for whichever page is leaving, so a route change doesn't
+            just cut instantly from one screen to the next. */}
+        <AnimatePresence>
+          <motion.div key={pathname} exit={{ opacity: 0 }} transition={{ duration: 0.12 }}>
+            <Outlet />
+          </motion.div>
+        </AnimatePresence>
       </main>
       <NavLink className="fab" to="/recipe-new" aria-label="Add recipe">
         <Icon name="plus" size={24} />

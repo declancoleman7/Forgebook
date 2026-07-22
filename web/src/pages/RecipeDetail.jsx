@@ -1,4 +1,5 @@
 import { useParams, useNavigate } from 'react-router-dom';
+import { motion } from 'framer-motion';
 import Icon from '../icons.jsx';
 import Avatar from '../components/Avatar.jsx';
 import EmblemSvg from '../components/EmblemSvg.jsx';
@@ -68,20 +69,20 @@ function VoteWidget({ recipe, ownerId }) {
     <div className="vote-widget">
       <div className="vote-widget__votes">
         {isOwn ? (
-          <span className="vote-widget__net-group"><Icon name="thumb-up" size={14} /><span className="vote-widget__net">{net}</span></span>
+          <span className="vote-widget__net-group"><Icon name="thumb-up" size={14} /><motion.span key={net} initial={{ scale: 1.35 }} animate={{ scale: 1 }} className="vote-widget__net">{net}</motion.span></span>
         ) : (
           <>
-            <button className={`vote-widget__btn ${mine === 1 ? 'is-active' : ''}`} aria-label="Like" onClick={() => cast(1)}><Icon name="thumb-up" size={16} /></button>
-            <span className="vote-widget__net">{net}</span>
-            <button className={`vote-widget__btn ${mine === -1 ? 'is-active' : ''}`} aria-label="Dislike" onClick={() => cast(-1)}><Icon name="thumb-down" size={16} /></button>
+            <motion.button whileTap={{ scale: 0.85 }} className={`vote-widget__btn ${mine === 1 ? 'is-active' : ''}`} aria-label="Like" onClick={() => cast(1)}><Icon name="thumb-up" size={16} /></motion.button>
+            <motion.span key={net} initial={{ scale: 1.35 }} animate={{ scale: 1 }} className="vote-widget__net">{net}</motion.span>
+            <motion.button whileTap={{ scale: 0.85 }} className={`vote-widget__btn ${mine === -1 ? 'is-active' : ''}`} aria-label="Dislike" onClick={() => cast(-1)}><Icon name="thumb-down" size={16} /></motion.button>
           </>
         )}
       </div>
       <span className="vote-widget__divider" />
-      <button className={`vote-widget__save ${saved ? 'is-active' : ''}`} aria-label={saved ? 'Remove from saved' : 'Save this recipe'} title={saved ? 'Saved' : 'Save'}
+      <motion.button whileTap={{ scale: 0.85 }} className={`vote-widget__save ${saved ? 'is-active' : ''}`} aria-label={saved ? 'Remove from saved' : 'Save this recipe'} title={saved ? 'Saved' : 'Save'}
         onClick={() => toggleSave.mutate({ ownerId, recipeId: recipe.id, saved })}>
         <Icon name="bookmark" size={17} />
-      </button>
+      </motion.button>
     </div>
   );
 }
