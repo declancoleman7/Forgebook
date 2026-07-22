@@ -3,7 +3,9 @@ import Icon from '../icons.jsx';
 import Avatar from './Avatar.jsx';
 import EmblemSvg from './EmblemSvg.jsx';
 import { faction } from '../data/factions.js';
+import { paintKey } from '../data/paints.js';
 import { useRecipeVoteSummary, useSavedRecipes } from '../queries/useRecipes.js';
+import { useMyPaints, useSharedPaints } from '../queries/usePaints.js';
 import { useAuth } from '../auth/AuthContext.jsx';
 
 function DifficultyDots({ level = 1, max = 5 }) {
@@ -19,9 +21,22 @@ export default function RecipeCard({ r }) {
   const { userId } = useAuth();
   const { data: voteSummary } = useRecipeVoteSummary();
   const { data: savedRecipes } = useSavedRecipes();
+  const { data: myPaints = [] } = useMyPaints();
+  const { data: sharedPaints = [] } = useSharedPaints(r.authorId ? [r.authorId] : []);
 
   const fac = faction(r.faction);
-  const stack = (r.steps || []).slice(0, 6).map(() => fac.color); // step-paint-colour stack needs the paint form's data (Stage 3 batch 5); faction colour stands in for now
+  // Ported from the old app's recipeCardHtml() -- a shared recipe's steps
+  // resolve against its AUTHOR's rack, never the viewer's, same split
+  // RecipeDetail.jsx's own resolveStepPaint uses. Falls back to the
+  // faction colour only when a step's paint can't be resolved at all
+  // (deleted, or a want-snapshot with no hex somehow).
+  const pool = r.authorId ? sharedPaints : myPaints;
+  const resolveStepPaint = (s) => {
+    if (s.paintId) return pool.find((p) => p.id === s.paintId) || null;
+    if (!s.wantPaint) return null;
+    return myPaints.find((p) => paintKey(p.name, p.brand) === paintKey(s.wantPaint.name, s.wantPaint.brand)) || s.wantPaint;
+  };
+  const stack = (r.steps || []).slice(0, 6).map((s) => resolveStepPaint(s)?.hex || fac.color);
   const ownerId = r.authorId || userId;
   const summary = r.published !== false ? voteSummary?.find((v) => v.recipeOwnerId === ownerId && v.recipeId === r.id) : null;
   const net = summary ? summary.likeCount - summary.dislikeCount : 0;

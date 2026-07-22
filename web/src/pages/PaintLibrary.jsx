@@ -6,6 +6,7 @@ import { PAINT_LIBRARY, paintKey, paintCategory, paintMatchesQuery } from '../da
 import { useMyPaints, useWantToBuy, useAddPaintToRack, useToggleWanted, useToggleRestock, useUpdateQuantity, useDeletePaint } from '../queries/usePaints.js';
 import { useConfirm } from '../confirm/ConfirmContext.jsx';
 import { useToast } from '../toast/ToastContext.jsx';
+import PaintLibFilterOverlay from '../components/PaintLibFilterOverlay.jsx';
 
 const CATEGORY_GLYPH = {
   wash: '<path d="M12 3C12 3 6 10 6 14.5C6 18.09 8.69 21 12 21C15.31 21 18 18.09 18 14.5C18 10 12 3 12 3Z"/>',
@@ -71,6 +72,9 @@ const ROW_HEIGHT = 62;
 export default function PaintLibrary() {
   const [query, setQuery] = useState('');
   const [filter, setFilter] = useState('all'); // all | owned | want
+  const [filterOpen, setFilterOpen] = useState(false);
+  const [brands, setBrands] = useState([]);
+  const [categories, setCategories] = useState([]);
   const scrollRef = useRef(null);
   const confirm = useConfirm();
   const showToast = useToast();
@@ -91,10 +95,14 @@ export default function PaintLibrary() {
     return !!ownedByKey.get(paintKey(p.name, p.brand))?.needsRestock;
   }, [ownedByKey, wantedKeys, isOwnedEntry]);
 
+  const allBrands = useMemo(() => [...new Set(PAINT_LIBRARY.map((p) => p.brand).filter(Boolean))].sort(), []);
+
   const q = query.trim().toLowerCase();
   let entries = q ? PAINT_LIBRARY.filter((p) => paintMatchesQuery(p, q)) : PAINT_LIBRARY;
   if (filter === 'owned') entries = entries.filter(isOwnedEntry);
   else if (filter === 'want') entries = entries.filter(needsPurchaseEntry);
+  if (brands.length) entries = entries.filter((p) => brands.includes(p.brand));
+  if (categories.length) entries = entries.filter((p) => categories.includes(paintCategory(p.type)));
 
   const totalCount = PAINT_LIBRARY.length;
   const ownedCount = useMemo(() => PAINT_LIBRARY.filter(isOwnedEntry).length, [isOwnedEntry]);
@@ -153,6 +161,10 @@ export default function PaintLibrary() {
           <Icon name="search" size={14} />
           <input type="text" placeholder="Search paints" value={query} onChange={(e) => setQuery(e.target.value)} />
         </div>
+        <button type="button" className="filter-icon-btn" aria-label="Filters" onClick={() => setFilterOpen(true)}>
+          <Icon name="filter" size={16} />
+          {(brands.length + categories.length) > 0 && <span className="filter-icon-btn__count">{brands.length + categories.length}</span>}
+        </button>
       </div>
 
       <div className="lib-progress">
@@ -197,6 +209,18 @@ export default function PaintLibrary() {
             })}
           </div>
         </div>
+      )}
+
+      {filterOpen && (
+        <PaintLibFilterOverlay
+          allBrands={allBrands}
+          brands={brands}
+          categories={categories}
+          onToggleBrand={(b) => setBrands((prev) => (b === null ? [] : prev.includes(b) ? prev.filter((x) => x !== b) : [...prev, b]))}
+          onToggleCategory={(c) => setCategories((prev) => (c === null ? [] : prev.includes(c) ? prev.filter((x) => x !== c) : [...prev, c]))}
+          onClear={() => { setBrands([]); setCategories([]); }}
+          onClose={() => setFilterOpen(false)}
+        />
       )}
     </div>
   );

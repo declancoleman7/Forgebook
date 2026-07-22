@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase, CONFIG } from '../supabase.js';
 import { useAuth } from '../auth/AuthContext.jsx';
 import { useActiveHobbyId } from '../hooks/useActiveHobby.js';
+import { useIncludeShared } from '../hooks/useIncludeShared.js';
 
 function photoUrl(path) {
   return path ? `${CONFIG.supabaseUrl}/storage/v1/object/public/${CONFIG.photoBucket}/${path}` : null;
@@ -65,13 +66,17 @@ export function useSharedRecipes() {
 }
 
 // Own + shared, scoped to whichever hobby is active -- same as the old
-// app's getVisibleRecipes().
+// app's getVisibleRecipes(), including its includeShared toggle (the
+// Recipes filter window's "Show recipes shared by others" switch, which
+// affects every browsing screen -- Recipes, Armies, Units -- that reads
+// through here, not just the search page itself).
 export function useVisibleRecipes() {
   const mine = useMyRecipes();
   const shared = useSharedRecipes();
   const activeHobbyId = useActiveHobbyId();
-  const recipes = [...(mine.data || []), ...(shared.data || [])].filter((r) => (r.hobbyId || 'warhammer') === activeHobbyId);
-  return { data: recipes, isLoading: mine.isLoading || shared.isLoading };
+  const includeShared = useIncludeShared();
+  const recipes = [...(mine.data || []), ...(includeShared ? (shared.data || []) : [])].filter((r) => (r.hobbyId || 'warhammer') === activeHobbyId);
+  return { data: recipes, isLoading: mine.isLoading || (includeShared && shared.isLoading) };
 }
 
 export function useFindRecipe(id, authorId) {
