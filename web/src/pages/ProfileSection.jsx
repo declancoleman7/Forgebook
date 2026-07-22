@@ -4,6 +4,7 @@ import Icon from '../icons.jsx';
 import Avatar from '../components/Avatar.jsx';
 import EmptyState from '../components/EmptyState.jsx';
 import RecipeCard from '../components/RecipeCard.jsx';
+import HobbyStageStack from '../components/HobbyStageStack.jsx';
 import { PAINT_LIBRARY, paintKey } from '../data/paints.js';
 import { useAuth } from '../auth/AuthContext.jsx';
 import { useMyRecipes, useSharedRecipes, useSavedRecipes } from '../queries/useRecipes.js';
@@ -12,7 +13,6 @@ import { useViewedProfile } from '../queries/useSocial.js';
 import { useMyHobbyLog } from '../queries/useHobbyLog.js';
 import { faction } from '../data/factions.js';
 
-const HOBBYLOG_STATUS_LABEL = { owned: 'Owned', built: 'Built', primed: 'Primed', wip: 'Work in Progress', completed: 'Complete' };
 function HobbyLogSectionRow({ entry, navigate }) {
   const f = entry.factionId ? faction(entry.factionId) : null;
   return (
@@ -21,9 +21,9 @@ function HobbyLogSectionRow({ entry, navigate }) {
         {!entry.photo && <Icon name="paintdrop" size={22} />}
       </div>
       <div className="hobbylog-card__body">
-        <div className="hobbylog-card__title">{entry.title}</div>
+        <div className="hobbylog-card__title">{entry.title} <span className="hobbylog-card__qty">×{entry.quantity}</span></div>
+        <HobbyStageStack stageCounts={entry.stageCounts} quantity={entry.quantity} />
         <div className="hobbylog-card__meta">
-          <span className={`hobbylog-status hobbylog-status--${entry.status}`}>{HOBBYLOG_STATUS_LABEL[entry.status]}</span>
           {f && <span className="hobbylog-card__tag" style={{ color: f.color }}>{f.label}</span>}
         </div>
       </div>
@@ -148,7 +148,7 @@ export default function ProfileSection() {
       empty: <div className="empty-state__sub">No followers yet.</div>,
     },
     'hobby-log': {
-      label: isMe ? 'Hobby Log' : 'Public Hobby Log',
+      label: isMe ? 'Pile of Potential' : 'Public Pile of Potential',
       items: isMe ? myHobbyLog : viewedProfile.hobbyLog,
       body: (items) => <div className="hobbylog-list">{items.map((e) => <HobbyLogSectionRow key={e.id} entry={e} navigate={navigate} />)}</div>,
       empty: <div className="empty-state__sub">{isMe ? 'Nothing logged yet.' : 'Nothing public yet.'}</div>,

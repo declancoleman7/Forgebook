@@ -4589,6 +4589,26 @@ main {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.hobbylog-card__qty {
+  font-weight: 400;
+  color: var(--ink-dim);
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+
+/* One unit's whole miniature count, split across whichever build/paint
+   stages it actually has models in right now -- replaces the old single-
+   status badge, since a unit's progress is no longer one value. */
+.hobbylog-stack {
+  display: flex;
+  height: 6px;
+  border-radius: 3px;
+  overflow: hidden;
+  background: var(--bg-raised-2);
+}
+.hobbylog-stack span {
+  height: 100%;
+}
 
 .hobbylog-card__meta {
   display: flex;
@@ -4608,50 +4628,9 @@ main {
   color: var(--gold);
 }
 
-.hobbylog-status {
-  font-family: var(--font-mono);
-  font-size: 10px;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  padding: 2px 8px;
-  border-radius: 999px;
-  border: 1px solid var(--line);
-}
-.hobbylog-status--owned { color: var(--ink-dim); }
-.hobbylog-status--built { color: #8a97a8; border-color: #8a97a8; }
-.hobbylog-status--primed { color: #7fb8c9; border-color: #7fb8c9; }
-.hobbylog-status--wip { color: var(--gold-bright); border-color: var(--gold); }
-.hobbylog-status--completed { color: #4caf6e; border-color: #4caf6e; }
-
-/* A dedicated status picker for the hobby log's 5-stage assembly pipeline
-   (owned/built/primed/wip/completed) -- .difficulty-picker's fixed 40x40px
-   buttons only work for single-digit content, not text labels like "Work
-   in Progress", so this is sized to its content and wraps instead. */
-.status-picker {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-.status-picker button {
-  padding: 8px 14px;
-  border-radius: 999px;
-  background: var(--bg-panel);
-  border: 1px solid var(--line);
-  color: var(--ink);
-  cursor: pointer;
-  font-family: var(--font-mono);
-  font-size: 12px;
-  white-space: nowrap;
-}
-.status-picker button.is-selected {
-  background: var(--gold);
-  border-color: var(--gold);
-  color: var(--ink-on-accent);
-}
-
-/* Lets .lib-filter-seg hold more than 3 short labels (the hobby log's
-   All + 5 status filters) without squeezing every button into an
-   unreadable equal sliver. */
+/* Lets .lib-filter-seg hold more than 3 short labels (the Pile of
+   Potential's All + 9 stage filters) without squeezing every button into
+   an unreadable equal sliver. */
 .lib-filter-seg--wrap {
   flex-wrap: wrap;
 }
@@ -4671,9 +4650,39 @@ main {
 }
 .hoblog-chart__row {
   display: grid;
-  grid-template-columns: 84px 1fr 22px;
+  /* Wide enough for the Pile of Potential's longest stage labels ("Base
+     Prepared", "In Progress") -- the old 5-stage pipeline's labels were all
+     shorter, hence the narrower column this replaced. */
+  grid-template-columns: 100px 1fr 30px;
   align-items: center;
   gap: 10px;
+}
+/* The editable variant (EntryForm's own stage-count breakdown) swaps the
+   trailing static count for a small number input -- same row shape, so it
+   reads as the same chart, just editable. */
+.hoblog-chart__row--edit {
+  grid-template-columns: 100px 1fr 56px;
+}
+.hoblog-chart__row-input {
+  width: 56px;
+  padding: 3px 4px;
+  text-align: right;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  background: var(--bg-panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  color: var(--parchment);
+  /* The native spin-button arrows eat into this box's already-tight width,
+     clipping two-digit counts (a unit of 40 has counts well into double
+     digits) -- typing a number directly is plenty, no stepper needed. */
+  -moz-appearance: textfield;
+  appearance: textfield;
+}
+.hoblog-chart__row-input::-webkit-outer-spin-button,
+.hoblog-chart__row-input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
 }
 .hoblog-chart__row-label {
   font-family: var(--font-mono);

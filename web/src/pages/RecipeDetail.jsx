@@ -7,11 +7,13 @@ import EmblemSvg from '../components/EmblemSvg.jsx';
 import EmptyState from '../components/EmptyState.jsx';
 import CommentThread from '../components/CommentThread.jsx';
 import Lightbox from '../components/Lightbox.jsx';
+import HobbyStageStack from '../components/HobbyStageStack.jsx';
 import { faction } from '../data/factions.js';
 import { paintKey, paintCategory } from '../data/paints.js';
 import { useAuth } from '../auth/AuthContext.jsx';
 import { useFindRecipe, useDeleteRecipe, useRecipeVoteSummary, useMyRecipeVotes, useVoteRecipe, useSavedRecipes, useToggleSaveRecipe } from '../queries/useRecipes.js';
 import { useMyPaints, useSharedPaints, useWantToBuy, useToggleWanted, useAddPaintToRack } from '../queries/usePaints.js';
+import { useMyHobbyLog } from '../queries/useHobbyLog.js';
 import { useConfirm } from '../confirm/ConfirmContext.jsx';
 import { useToast } from '../toast/ToastContext.jsx';
 
@@ -103,6 +105,10 @@ export default function RecipeDetail() {
   const { data: wantedKeys } = useWantToBuy();
   const toggleWanted = useToggleWanted();
   const addToRack = useAddPaintToRack();
+  // A hobby log entry only ever links to the viewer's OWN recipes (see
+  // HobbyLog.jsx's EntryForm), so this reverse lookup only ever has
+  // anything to show on a recipe you own yourself, never a shared one.
+  const { data: myHobbyLog = [] } = useMyHobbyLog();
 
   if (!r) return <EmptyState icon="search" title="Recipe not found" sub="It may have been deleted." />;
 
@@ -258,6 +264,29 @@ export default function RecipeDetail() {
       )) : <div className="empty-state__sub">No steps recorded.</div>}
 
       {r.notes && <><div className="section-label">Notes</div><div className="notes-block">{r.notes}</div></>}
+
+      {!isShared && (() => {
+        const usedByEntries = myHobbyLog.filter((e) => e.recipeLinks.some((l) => l.recipeId === r.id));
+        if (!usedByEntries.length) return null;
+        return (
+          <>
+            <div className="section-label">Used by</div>
+            <div className="hobbylog-list">
+              {usedByEntries.map((entry) => (
+                <div key={entry.id} className="hobbylog-card" style={{ cursor: 'pointer' }} onClick={() => navigate('/hobby-log')}>
+                  <div className={`hobbylog-card__photo ${entry.photo ? 'has-photo' : ''}`} style={entry.photo ? { backgroundImage: `url('${entry.photo}')` } : undefined}>
+                    {!entry.photo && <Icon name="paintdrop" size={22} />}
+                  </div>
+                  <div className="hobbylog-card__body">
+                    <div className="hobbylog-card__title">{entry.title} <span className="hobbylog-card__qty">×{entry.quantity}</span></div>
+                    <HobbyStageStack stageCounts={entry.stageCounts} quantity={entry.quantity} />
+                  </div>
+                </div>
+              ))}
+            </div>
+          </>
+        );
+      })()}
 
       {r.published && <CommentThread ownerId={ownerId} recipeId={r.id} />}
     </div>

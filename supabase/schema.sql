@@ -404,6 +404,29 @@ alter table public.hobby_log_entries drop constraint if exists hobby_log_entries
 alter table public.hobby_log_entries add constraint hobby_log_entries_status_check check (status in ('owned', 'built', 'primed', 'wip', 'completed'));
 alter table public.hobby_log_entries alter column status set default 'owned';
 
+-- Superseded by quantity + stage_counts below (a real unit tracker, not one
+-- status per whole project) -- status itself is kept, not dropped, so a
+-- mistake here is never unrecoverable; the app simply stops reading it.
+alter table public.hobby_log_entries add column if not exists quantity integer not null default 1;
+alter table public.hobby_log_entries add column if not exists stage_counts jsonb not null default '{}'::jsonb;
+
+-- One-time backfill for rows created before quantity/stage_counts existed --
+-- guarded by "stage_counts = '{}'" so re-pasting this file never re-runs it
+-- against an already-migrated row.
+update public.hobby_log_entries
+set quantity = 1,
+    stage_counts = jsonb_build_object(
+      case status
+        when 'owned' then 'unassembled'
+        when 'built' then 'assembled'
+        when 'primed' then 'primed'
+        when 'wip' then 'in_progress'
+        else 'finished'
+      end,
+      1
+    )
+where stage_counts = '{}'::jsonb;
+
 create index if not exists hobby_log_user_updated_idx on public.hobby_log_entries (user_id, updated_at);
 create index if not exists hobby_log_public_idx on public.hobby_log_entries (user_id, created_at) where is_public and not deleted;
 

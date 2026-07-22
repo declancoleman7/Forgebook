@@ -5,6 +5,7 @@ import Avatar from '../components/Avatar.jsx';
 import EmblemSvg from '../components/EmblemSvg.jsx';
 import EmptyState from '../components/EmptyState.jsx';
 import RecipeCard from '../components/RecipeCard.jsx';
+import HobbyStageStack from '../components/HobbyStageStack.jsx';
 import { faction } from '../data/factions.js';
 import { PAINT_LIBRARY, paintKey } from '../data/paints.js';
 import { useAuth } from '../auth/AuthContext.jsx';
@@ -69,8 +70,6 @@ function RatingRow({ r }) {
   );
 }
 
-const HOBBYLOG_STATUS_LABEL = { owned: 'Owned', built: 'Built', primed: 'Primed', wip: 'Work in Progress', completed: 'Complete' };
-
 function HobbyLogRow({ entry }) {
   const navigate = useNavigate();
   const f = entry.factionId ? faction(entry.factionId) : null;
@@ -80,9 +79,9 @@ function HobbyLogRow({ entry }) {
         {!entry.photo && <Icon name="paintdrop" size={22} />}
       </div>
       <div className="hobbylog-card__body">
-        <div className="hobbylog-card__title">{entry.title}</div>
+        <div className="hobbylog-card__title">{entry.title} <span className="hobbylog-card__qty">×{entry.quantity}</span></div>
+        <HobbyStageStack stageCounts={entry.stageCounts} quantity={entry.quantity} />
         <div className="hobbylog-card__meta">
-          <span className={`hobbylog-status hobbylog-status--${entry.status}`}>{HOBBYLOG_STATUS_LABEL[entry.status]}</span>
           {f && <span className="hobbylog-card__tag" style={{ color: f.color }}>{f.label}</span>}
         </div>
       </div>
@@ -192,7 +191,7 @@ export default function Profile() {
         <button className="icon-btn" onClick={() => navigate('/home')}><Icon name="back" size={18} /></button>
         {isMe ? (
           <div style={{ display: 'flex', gap: 8 }}>
-            <button className="icon-btn" onClick={() => navigate('/hobby-log')} aria-label="Hobby log"><Icon name="clipboard-check" size={18} /></button>
+            <button className="icon-btn" onClick={() => navigate('/hobby-log')} aria-label="Pile of Potential"><Icon name="clipboard-check" size={18} /></button>
             <button className="icon-btn" onClick={() => navigate('/settings')}><Icon name="settings" size={18} /></button>
           </div>
         ) : <div style={{ width: 36 }} />}
@@ -234,7 +233,7 @@ export default function Profile() {
             ? <div className="profile-ratings-grid">{viewedProfile.ratings.slice(0, 4).map((r) => <RatingRow key={r.paintKey} r={r} />)}</div>
             : <div className="empty-state__sub">No ratings yet.</div>}
 
-          <SectionLabel label={isMe ? 'Hobby Log' : 'Public Hobby Log'} count={(isMe ? myHobbyLog : viewedProfile.hobbyLog).length} kind="hobby-log" profileId={id} />
+          <SectionLabel label={isMe ? 'Pile of Potential' : 'Public Pile of Potential'} count={(isMe ? myHobbyLog : viewedProfile.hobbyLog).length} kind="hobby-log" profileId={id} />
           {(isMe ? myHobbyLog : viewedProfile.hobbyLog).length
             ? <div className="hobbylog-list">{(isMe ? myHobbyLog : viewedProfile.hobbyLog).slice(0, 4).map((e) => <HobbyLogRow key={e.id} entry={e} />)}</div>
             : <div className="empty-state__sub">{isMe ? 'Nothing logged yet — tap the paint drop above to start.' : 'Nothing public yet.'}</div>}
