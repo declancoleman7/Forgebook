@@ -3,10 +3,8 @@
 // unit. Order matters (used for both display and the "which stage absorbs
 // a quantity change" logic in HobbyLog.jsx's EntryForm).
 export const HOBBY_STAGES = [
-  { id: 'wishlist', label: 'Wishlist', color: 'var(--ink-dim)' },
   { id: 'unassembled', label: 'Unassembled', color: '#8a97a8' },
   { id: 'assembled', label: 'Assembled', color: '#7f9bc9' },
-  { id: 'base_prepared', label: 'Base Prepared', color: '#7fb8c9' },
   { id: 'primed', label: 'Primed', color: '#9c8fc9' },
   { id: 'in_progress', label: 'In Progress', color: 'var(--gold-bright)' },
   { id: 'painted', label: 'Painted', color: '#d68f4a' },
