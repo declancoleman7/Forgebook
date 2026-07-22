@@ -4,7 +4,7 @@ import Icon from '../icons.jsx';
 import Avatar from '../components/Avatar.jsx';
 import MentionTextarea from '../components/MentionTextarea.jsx';
 import MentionText from '../components/MentionText.jsx';
-import { PAINT_LIBRARY, paintCategory, paintKey } from '../data/paints.js';
+import { PAINT_LIBRARY, PAINT_CATEGORY_LABEL, paintCategory, paintKey } from '../data/paints.js';
 import { colourSimilarity, hexToHsv, hsvToHex } from '../utils/colour.js';
 import { relativeTime } from '../utils/format.js';
 import { useAuth } from '../auth/AuthContext.jsx';
@@ -60,7 +60,10 @@ function resolveSourceType(myPaints, name, brand) {
 
 // Shared by the full render and the live-drag path, so the two can never
 // rank results differently -- ported from the old app's computeColourMatches().
-function computeColourMatches(hex, excludeKey, resultFilter, sourceBrand, sourceType, myPaints) {
+// categories (wash/contrast/metallic/primer/base) narrows the pool BEFORE
+// the top-20 slice below, not after -- filtering post-slice would silently
+// drop good matches of the wanted type that just missed the top 20 overall.
+function computeColourMatches(hex, excludeKey, resultFilter, sourceBrand, sourceType, myPaints, categories) {
   const sourceCat = sourceType ? paintCategory(sourceType) : null;
   let matches = PAINT_LIBRARY
     .filter((p) => paintKey(p.name, p.brand) !== excludeKey)
@@ -70,6 +73,7 @@ function computeColourMatches(hex, excludeKey, resultFilter, sourceBrand, source
   } else if (resultFilter === 'owned') {
     matches = matches.filter((m) => myPaints.some((p) => paintKey(p.name, p.brand) === paintKey(m.paint.name, m.paint.brand)));
   }
+  if (categories?.length) matches = matches.filter((m) => categories.includes(paintCategory(m.paint.type)));
   matches.sort((a, b) => (b.sameCategory - a.sameCategory) || (b.score - a.score));
   return matches.slice(0, 20);
 }
@@ -181,6 +185,7 @@ export default function SimilarColours() {
   const [pickerHex, setPickerHex] = useState('#b8863f');
   const [resultFilter, setResultFilter] = useState(isColourMode ? 'all' : 'other');
   const [hexInputValue, setHexInputValue] = useState('');
+  const [categories, setCategories] = useState([]);
 
   const activeHex = isColourMode ? pickerHex : (resolveSourceHex(myPaints, sourceName, sourceBrand) || '#b8863f');
   const sourceType = !isColourMode ? resolveSourceType(myPaints, sourceName, sourceBrand) : null;
@@ -189,9 +194,11 @@ export default function SimilarColours() {
   useEffect(() => { setHexInputValue(activeHex.replace('#', '').toUpperCase()); }, [activeHex]);
 
   const matches = useMemo(
-    () => computeColourMatches(activeHex, excludeKey, resultFilter, !isColourMode ? sourceBrand : null, sourceType, myPaints),
-    [activeHex, excludeKey, resultFilter, isColourMode, sourceBrand, sourceType, myPaints]
+    () => computeColourMatches(activeHex, excludeKey, resultFilter, !isColourMode ? sourceBrand : null, sourceType, myPaints, categories),
+    [activeHex, excludeKey, resultFilter, isColourMode, sourceBrand, sourceType, myPaints, categories]
   );
+
+  const toggleCategory = (c) => setCategories((prev) => (c === null ? [] : prev.includes(c) ? prev.filter((x) => x !== c) : [...prev, c]));
 
   const paintNotesQuery = usePaintNotes(!isColourMode ? paintKey(sourceName, sourceBrand) : null);
   const submitNote = useSubmitNote(!isColourMode ? paintKey(sourceName, sourceBrand) : null);
@@ -308,6 +315,13 @@ export default function SimilarColours() {
         <button className={resultFilter === 'all' ? 'is-active' : ''} onClick={() => setResultFilter('all')}>All brands</button>
         <button className={resultFilter === 'other' ? 'is-active' : ''} disabled={isColourMode} style={isColourMode ? { opacity: 0.4 } : undefined} onClick={() => setResultFilter('other')}>Other brands</button>
         <button className={resultFilter === 'owned' ? 'is-active' : ''} onClick={() => setResultFilter('owned')}>On my rack</button>
+      </div>
+
+      <div className="faction-row" style={{ marginBottom: 10 }}>
+        <div className={`faction-chip ${!categories.length ? 'is-active' : ''}`} onClick={() => toggleCategory(null)}>All types</div>
+        {['base', 'wash', 'contrast', 'metallic', 'primer'].map((c) => (
+          <div key={c} className={`faction-chip ${categories.includes(c) ? 'is-active' : ''}`} onClick={() => toggleCategory(c)}>{PAINT_CATEGORY_LABEL[c]}</div>
+        ))}
       </div>
 
       {matches.length ? (() => {
