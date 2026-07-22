@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase, CONFIG } from '../supabase.js';
 import { useAuth } from '../auth/AuthContext.jsx';
 import { fromRemoteRecipe } from './useRecipes.js';
+import { fromRemoteHobbyLogEntry, HOBBY_LOG_SELECT_WITH_RECIPES } from './useHobbyLog.js';
 
 function avatarUrl(path) {
   return path ? `${CONFIG.supabaseUrl}/storage/v1/object/public/avatar-photos/${path}` : null;
@@ -102,13 +103,14 @@ export function useViewedProfile(id) {
   return useQuery({
     queryKey: ['viewedProfile', id],
     queryFn: async () => {
-      const [profRes, recipesRes, notesRes, ratingsRes, followerRes, followingRes] = await Promise.all([
+      const [profRes, recipesRes, notesRes, ratingsRes, followerRes, followingRes, hobbyLogRes] = await Promise.all([
         supabase.from('profiles').select('*').eq('user_id', id).maybeSingle(),
         supabase.from('recipes').select('*').eq('user_id', id).eq('published', true).eq('deleted', false),
         supabase.from('paint_notes').select('*').eq('user_id', id).eq('deleted', false),
         supabase.from('paint_ratings').select('*').eq('user_id', id).eq('deleted', false),
         supabase.from('follows').select('follower_id').eq('followed_id', id),
         supabase.from('follows').select('followed_id').eq('follower_id', id),
+        supabase.from('hobby_log_entries').select(HOBBY_LOG_SELECT_WITH_RECIPES).eq('user_id', id).eq('is_public', true).eq('deleted', false).order('updated_at', { ascending: false }),
       ]);
       if (!profRes.data) return null;
       const followerIds = (followerRes.data || []).map((row) => row.follower_id);
@@ -122,6 +124,7 @@ export function useViewedProfile(id) {
         recipes: (recipesRes.data || []).map((row) => ({ ...fromRemoteRecipe(row), authorId: id })),
         notes: (notesRes.data || []).map(fromRemoteNote),
         ratings: (ratingsRes.data || []).map(fromRemoteRating),
+        hobbyLog: (hobbyLogRes.data || []).map(fromRemoteHobbyLogEntry),
         followerIds, followingIds, followerObjs, followingObjs,
       };
     },

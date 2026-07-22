@@ -27,6 +27,7 @@ import Home from './pages/Home.jsx';
 import PublicRecipe from './pages/PublicRecipe.jsx';
 import PublicProfile from './pages/PublicProfile.jsx';
 import SimilarColours from './pages/SimilarColours.jsx';
+import HobbyLog from './pages/HobbyLog.jsx';
 
 // Same "what should be on screen right now" decision as the old app's
 // decideBootState(), just expressed as JSX branches instead of imperative
@@ -75,6 +76,7 @@ function Boot() {
         <Route path="/u" element={<ProfileSearch />} />
         <Route path="/u/:id" element={<Profile />} />
         <Route path="/u/:id/section/:kind" element={<ProfileSection />} />
+        <Route path="/hobby-log" element={<HobbyLog />} />
         <Route path="/settings" element={<Settings />} />
         <Route path="/notifications" element={<Notifications />} />
         <Route path="/change-password" element={<ChangePassword />} />

@@ -4487,3 +4487,113 @@ main {
     break-inside: avoid;
   }
 }
+
+/* ============================================================
+   HOBBY LOG
+   ============================================================ */
+.hobbylog-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.hobbylog-card {
+  display: flex;
+  gap: 12px;
+  padding: 10px;
+  background: var(--bg-panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition: border-color 0.15s ease;
+}
+.hobbylog-card:hover { border-color: var(--gold); }
+
+.hobbylog-card__photo {
+  flex-shrink: 0;
+  width: 56px;
+  height: 56px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-raised);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--ink-dim);
+}
+.hobbylog-card__photo.has-photo {
+  background-size: cover;
+  background-position: center;
+}
+
+.hobbylog-card__body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  justify-content: center;
+}
+
+.hobbylog-card__title {
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.hobbylog-card__meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  color: var(--ink-dim);
+}
+
+.hobbylog-card__tag { font-weight: 600; }
+
+.hobbylog-card__public {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  color: var(--gold);
+}
+
+.hobbylog-status {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+}
+.hobbylog-status--new { color: var(--ink-dim); }
+.hobbylog-status--wip { color: var(--gold-bright); border-color: var(--gold); }
+.hobbylog-status--completed { color: #4caf6e; border-color: #4caf6e; }
+
+/* A generic on/off switch -- Settings' own boolean choices have all been
+   two-button segmented toggles so far; this is the first true switch,
+   introduced for the hobby log's public/private setting. */
+.toggle {
+  position: relative;
+  width: 40px;
+  height: 22px;
+  border-radius: 999px;
+  background: var(--bg-raised);
+  border: 1px solid var(--line);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.toggle i {
+  position: absolute;
+  top: 1px;
+  left: 1px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--ink-dim);
+  transition: transform 0.15s ease, background 0.15s ease;
+}
+.toggle.is-on { border-color: var(--gold); background: color-mix(in srgb, var(--gold) 22%, var(--bg-raised)); }
+.toggle.is-on i { transform: translateX(18px); background: var(--gold); }

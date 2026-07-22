@@ -9,6 +9,27 @@ import { useAuth } from '../auth/AuthContext.jsx';
 import { useMyRecipes, useSharedRecipes, useSavedRecipes } from '../queries/useRecipes.js';
 import { useSavedPaintKeys } from '../queries/usePaints.js';
 import { useViewedProfile } from '../queries/useSocial.js';
+import { useMyHobbyLog } from '../queries/useHobbyLog.js';
+import { faction } from '../data/factions.js';
+
+const HOBBYLOG_STATUS_LABEL = { new: 'New', wip: 'Work in progress', completed: 'Completed' };
+function HobbyLogSectionRow({ entry, navigate }) {
+  const f = entry.factionId ? faction(entry.factionId) : null;
+  return (
+    <div className="hobbylog-card" onClick={() => navigate('/hobby-log')}>
+      <div className={`hobbylog-card__photo ${entry.photo ? 'has-photo' : ''}`} style={entry.photo ? { backgroundImage: `url('${entry.photo}')` } : undefined}>
+        {!entry.photo && <Icon name="paintdrop" size={22} />}
+      </div>
+      <div className="hobbylog-card__body">
+        <div className="hobbylog-card__title">{entry.title}</div>
+        <div className="hobbylog-card__meta">
+          <span className={`hobbylog-status hobbylog-status--${entry.status}`}>{HOBBYLOG_STATUS_LABEL[entry.status]}</span>
+          {f && <span className="hobbylog-card__tag" style={{ color: f.color }}>{f.label}</span>}
+        </div>
+      </div>
+    </div>
+  );
+}
 
 const STAR_PATH = 'M12 2l2.9 6.6 7.1.6-5.4 4.7 1.6 7-6.2-3.7-6.2 3.7 1.6-7L2 9.2l7.1-.6L12 2z';
 function StarRow({ value, size = 14 }) {
@@ -41,6 +62,7 @@ export default function ProfileSection() {
   const { data: sharedRecipes = [] } = useSharedRecipes();
   const { data: savedRecipes = [] } = useSavedRecipes();
   const { data: savedPaintKeys = [] } = useSavedPaintKeys();
+  const { data: myHobbyLog = [] } = useMyHobbyLog();
 
   const savedRecipeObjs = useMemo(() => {
     if (!isMe) return [];
@@ -124,6 +146,12 @@ export default function ProfileSection() {
         </div>
       )),
       empty: <div className="empty-state__sub">No followers yet.</div>,
+    },
+    'hobby-log': {
+      label: isMe ? 'Hobby Log' : 'Public Hobby Log',
+      items: isMe ? myHobbyLog : viewedProfile.hobbyLog,
+      body: (items) => <div className="hobbylog-list">{items.map((e) => <HobbyLogSectionRow key={e.id} entry={e} navigate={navigate} />)}</div>,
+      empty: <div className="empty-state__sub">{isMe ? 'Nothing logged yet.' : 'Nothing public yet.'}</div>,
     },
     following: {
       label: 'Following',

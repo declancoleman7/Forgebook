@@ -335,6 +335,45 @@ create table if not exists public.follows (
 );
 create index if not exists follows_followed_idx on public.follows (followed_id);
 
+-- ------------------------------------------------------------
+-- Hobby log — a personal project tracker separate from recipes
+-- themselves ("how I painted it" vs "what I'm working on and how far
+-- along it is"). Reuses the recipe-photos bucket (per-user-folder RLS
+-- already allows any path under the owner's own folder) rather than a
+-- dedicated bucket. Public entries appear on the owner's profile;
+-- everything else about the log stays private by default.
+-- ------------------------------------------------------------
+create table if not exists public.hobby_log_entries (
+  id          uuid        not null default gen_random_uuid(),
+  user_id     uuid        not null references auth.users (id) on delete cascade,
+  title       text        not null,
+  notes       text        default '',
+  status      text        not null default 'new',
+  hobby_id    text,
+  faction_id  text,
+  photo_path  text,
+  is_public   boolean     not null default false,
+  created_at  timestamptz not null default now(),
+  updated_at  timestamptz not null default now(),
+  deleted     boolean     not null default false,
+  primary key (id),
+  check (status in ('new', 'wip', 'completed')),
+  check (char_length(title) between 1 and 120)
+);
+create index if not exists hobby_log_user_updated_idx on public.hobby_log_entries (user_id, updated_at);
+create index if not exists hobby_log_public_idx on public.hobby_log_entries (user_id, created_at) where is_public and not deleted;
+
+-- Which of the owner's own recipes were used on a logged project --
+-- many-to-many, since Paint Pad's version lets one project reference
+-- several recipes (e.g. armour recipe + base recipe).
+create table if not exists public.hobby_log_recipes (
+  log_id          uuid not null references public.hobby_log_entries (id) on delete cascade,
+  recipe_owner_id uuid not null,
+  recipe_id       text not null,
+  primary key (log_id, recipe_owner_id, recipe_id),
+  foreign key (recipe_owner_id, recipe_id) references public.recipes (user_id, id) on delete cascade
+);
+
 -- Sync pulls "everything changed since X", so index that.
 create index if not exists recipes_user_updated_idx     on public.recipes     (user_id, updated_at);
 create index if not exists paints_user_updated_idx      on public.paints      (user_id, updated_at);
@@ -1038,6 +1077,37 @@ drop trigger if exists recipe_votes_notify on public.recipe_votes;
 create trigger recipe_votes_notify
   after insert or update of value on public.recipe_votes
   for each row execute function public.notify_on_recipe_vote();
+
+-- ------------------------------------------------------------
+-- Hobby log RLS
+-- ------------------------------------------------------------
+alter table public.hobby_log_entries enable row level security;
+alter table public.hobby_log_recipes enable row level security;
+
+drop policy if exists "own hobby log entries" on public.hobby_log_entries;
+create policy "own hobby log entries" on public.hobby_log_entries
+  for all
+  using      (auth.uid() = user_id)
+  with check (auth.uid() = user_id);
+
+drop policy if exists "read public hobby log entries" on public.hobby_log_entries;
+create policy "read public hobby log entries" on public.hobby_log_entries
+  for select
+  using (is_public = true and deleted = false);
+
+drop policy if exists "manage own hobby log recipes" on public.hobby_log_recipes;
+create policy "manage own hobby log recipes" on public.hobby_log_recipes
+  for all
+  using      (exists (select 1 from public.hobby_log_entries e where e.id = log_id and e.user_id = auth.uid()))
+  with check (exists (select 1 from public.hobby_log_entries e where e.id = log_id and e.user_id = auth.uid()));
+
+drop policy if exists "read hobby log recipes on visible entries" on public.hobby_log_recipes;
+create policy "read hobby log recipes on visible entries" on public.hobby_log_recipes
+  for select
+  using (exists (
+    select 1 from public.hobby_log_entries e
+    where e.id = log_id and (e.user_id = auth.uid() or (e.is_public = true and e.deleted = false))
+  ));
 
 -- ------------------------------------------------------------
 -- Admin bootstrap — run this block (just this block) whenever you want to

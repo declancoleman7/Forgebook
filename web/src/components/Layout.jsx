@@ -26,7 +26,7 @@ function isActiveNavRoute(navRoute, pathname) {
   if (navRoute === 'factions') return seg === 'factions' || seg === 'faction' || seg === 'unit';
   if (navRoute === 'recipes') return seg === 'recipes' || seg === 'recipe' || seg === 'recipe-new';
   if (navRoute === 'paints') return seg === 'paints' || seg === 'paint' || seg === 'paint-new' || seg === 'paint-library';
-  if (navRoute === 'profile') return seg === 'u' || seg === 'settings' || seg === 'notifications' || seg === 'change-password';
+  if (navRoute === 'profile') return seg === 'u' || seg === 'settings' || seg === 'notifications' || seg === 'change-password' || seg === 'hobby-log';
   return false;
 }
 

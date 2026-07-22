@@ -12,6 +12,7 @@ import { useActiveHobbyId, useActiveHobby } from '../hooks/useActiveHobby.js';
 import { useMyRecipes, useSharedRecipes, useSavedRecipes } from '../queries/useRecipes.js';
 import { useSavedPaintKeys } from '../queries/usePaints.js';
 import { useViewedProfile, useMyFollowingIds, useToggleFollow } from '../queries/useSocial.js';
+import { useMyHobbyLog } from '../queries/useHobbyLog.js';
 
 const STAR_PATH = 'M12 2l2.9 6.6 7.1.6-5.4 4.7 1.6 7-6.2-3.7-6.2 3.7 1.6-7L2 9.2l7.1-.6L12 2z';
 function StarRow({ value, size = 14 }) {
@@ -64,6 +65,27 @@ function RatingRow({ r }) {
         <div className="settings-row__desc">{paint ? paint.brand : ''}</div>
       </div>
       <StarRow value={r.stars} />
+    </div>
+  );
+}
+
+const HOBBYLOG_STATUS_LABEL = { new: 'New', wip: 'Work in progress', completed: 'Completed' };
+
+function HobbyLogRow({ entry }) {
+  const navigate = useNavigate();
+  const f = entry.factionId ? faction(entry.factionId) : null;
+  return (
+    <div className="hobbylog-card" onClick={() => navigate('/hobby-log')}>
+      <div className={`hobbylog-card__photo ${entry.photo ? 'has-photo' : ''}`} style={entry.photo ? { backgroundImage: `url('${entry.photo}')` } : undefined}>
+        {!entry.photo && <Icon name="paintdrop" size={22} />}
+      </div>
+      <div className="hobbylog-card__body">
+        <div className="hobbylog-card__title">{entry.title}</div>
+        <div className="hobbylog-card__meta">
+          <span className={`hobbylog-status hobbylog-status--${entry.status}`}>{HOBBYLOG_STATUS_LABEL[entry.status]}</span>
+          {f && <span className="hobbylog-card__tag" style={{ color: f.color }}>{f.label}</span>}
+        </div>
+      </div>
     </div>
   );
 }
@@ -147,6 +169,7 @@ export default function Profile() {
   const { data: savedPaintKeys = [] } = useSavedPaintKeys();
   const { data: followingIds = [] } = useMyFollowingIds();
   const toggleFollow = useToggleFollow();
+  const { data: myHobbyLog = [] } = useMyHobbyLog();
 
   const savedRecipeObjs = useMemo(() => {
     if (!isMe) return [];
@@ -167,7 +190,12 @@ export default function Profile() {
     <div className="page-enter view-wide">
       <div className="detail-header">
         <button className="icon-btn" onClick={() => navigate('/home')}><Icon name="back" size={18} /></button>
-        {isMe ? <button className="icon-btn" onClick={() => navigate('/settings')}><Icon name="settings" size={18} /></button> : <div style={{ width: 36 }} />}
+        {isMe ? (
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button className="icon-btn" onClick={() => navigate('/hobby-log')} aria-label="Hobby log"><Icon name="paintdrop" size={18} /></button>
+            <button className="icon-btn" onClick={() => navigate('/settings')}><Icon name="settings" size={18} /></button>
+          </div>
+        ) : <div style={{ width: 36 }} />}
       </div>
 
       <div className="profile-layout">
@@ -205,6 +233,11 @@ export default function Profile() {
           {viewedProfile.ratings.length
             ? <div className="profile-ratings-grid">{viewedProfile.ratings.slice(0, 4).map((r) => <RatingRow key={r.paintKey} r={r} />)}</div>
             : <div className="empty-state__sub">No ratings yet.</div>}
+
+          <SectionLabel label={isMe ? 'Hobby Log' : 'Public Hobby Log'} count={(isMe ? myHobbyLog : viewedProfile.hobbyLog).length} kind="hobby-log" profileId={id} />
+          {(isMe ? myHobbyLog : viewedProfile.hobbyLog).length
+            ? <div className="hobbylog-list">{(isMe ? myHobbyLog : viewedProfile.hobbyLog).slice(0, 4).map((e) => <HobbyLogRow key={e.id} entry={e} />)}</div>
+            : <div className="empty-state__sub">{isMe ? 'Nothing logged yet — tap the paint drop above to start.' : 'Nothing public yet.'}</div>}
 
           {isMe && (
             <>
