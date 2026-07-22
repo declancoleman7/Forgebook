@@ -2806,6 +2806,45 @@ main {
   pointer-events: none;
 }
 
+/* A dark disc behind the default emblem so it reads against the tile's
+   own faction-coloured ground -- without it, a mark rendered in the same
+   colour family as its background is hard to pick out at a glance. */
+.faction-tile__icon-badge {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 50px;
+  height: 50px;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.4);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.14), 0 2px 6px rgba(0, 0, 0, 0.35);
+}
+
+/* Visible name label -- previously only a hover-only `title` tooltip,
+   which meant the faction had no on-screen identity without custom art. */
+.faction-tile__label {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 2;
+  padding: 16px 6px 5px;
+  background: linear-gradient(to top, rgba(0, 0, 0, 0.8), rgba(0, 0, 0, 0) 100%);
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  color: #fff;
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6);
+  pointer-events: none;
+}
+
 .faction-tile__count {
   position: absolute;
   top: 5px;

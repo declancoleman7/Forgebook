@@ -32,10 +32,13 @@ function FactionTile({ f, count, art }) {
             <span className="faction-tile__watermark">
               <svg width={66} height={66} viewBox="0 0 24 24" fill={`url(#${gradId})`} stroke="none" style={{ color: f.color }} dangerouslySetInnerHTML={{ __html: emblemPaths(f.emblem) }} />
             </span>
-            <svg width={48} height={48} viewBox="0 0 24 24" fill={`url(#${gradId})`} stroke="none" style={{ color: f.color }} dangerouslySetInnerHTML={{ __html: emblemPaths(f.emblem) }} />
+            <span className="faction-tile__icon-badge">
+              <svg width={38} height={38} viewBox="0 0 24 24" fill={`url(#${gradId})`} stroke="none" style={{ color: f.color }} dangerouslySetInnerHTML={{ __html: emblemPaths(f.emblem) }} />
+            </span>
           </>
         )}
       </div>
+      <div className="faction-tile__label">{f.label}</div>
     </div>
   );
 }
