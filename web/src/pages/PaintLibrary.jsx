@@ -70,6 +70,7 @@ const HEADER_HEIGHT = 34;
 const ROW_HEIGHT = 62;
 
 export default function PaintLibrary() {
+  const navigate = useNavigate();
   const [query, setQuery] = useState('');
   const [filter, setFilter] = useState('all'); // all | owned | want
   const [filterOpen, setFilterOpen] = useState(false);
@@ -184,6 +185,10 @@ export default function PaintLibrary() {
           {(brands.length + categories.length) > 0 && <span className="filter-icon-btn__count">{brands.length + categories.length}</span>}
         </button>
       </div>
+
+      <button type="button" className="colour-match-cta" onClick={() => navigate('/similar')}>
+        <Icon name="search" size={18} /> Match a colour you have in mind
+      </button>
 
       <div className="lib-progress">
         <div className="lib-progress__stats">
