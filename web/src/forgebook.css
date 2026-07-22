@@ -4658,14 +4658,46 @@ main {
   gap: 10px;
 }
 /* The editable variant (EntryForm's own stage-count breakdown) swaps the
-   trailing static count for a small number input -- same row shape, so it
-   reads as the same chart, just editable. */
+   trailing static count for a tap-friendly stepper -- -/+ move models to/
+   from the stage immediately before this one, always balanced by
+   construction (see HobbyLog.jsx's shiftStage()), so there's no separate
+   "does this add up" check needed. The first stage (Unassembled) has no
+   earlier stage to shift with, so it just shows its count as plain text. */
 .hoblog-chart__row--edit {
-  grid-template-columns: 100px 1fr 56px;
+  grid-template-columns: 100px 1fr 100px;
+}
+.hoblog-chart__row-count {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--ink);
+  text-align: right;
+}
+.hoblog-chart__row-stepper {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  justify-content: flex-end;
+}
+.hoblog-chart__row-stepper button {
+  flex-shrink: 0;
+  width: 22px;
+  height: 22px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-panel);
+  border: 1px solid var(--line);
+  color: var(--parchment);
+  font-family: var(--font-mono);
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+}
+.hoblog-chart__row-stepper button:disabled {
+  opacity: 0.3;
+  cursor: default;
 }
 .hoblog-chart__row-input {
-  width: 56px;
-  padding: 3px 4px;
+  width: 40px;
+  padding: 3px 2px;
   text-align: right;
   font-family: var(--font-mono);
   font-size: 12px;
@@ -4675,7 +4707,8 @@ main {
   color: var(--parchment);
   /* The native spin-button arrows eat into this box's already-tight width,
      clipping two-digit counts (a unit of 40 has counts well into double
-     digits) -- typing a number directly is plenty, no stepper needed. */
+     digits) -- the +/- stepper buttons either side already cover the
+     common single-step nudge, this is just for a direct bulk jump. */
   -moz-appearance: textfield;
   appearance: textfield;
 }

@@ -7,7 +7,7 @@ import EntryPicker from '../components/EntryPicker.jsx';
 import EmblemSvg from '../components/EmblemSvg.jsx';
 import HobbyStageStack from '../components/HobbyStageStack.jsx';
 import { HOBBIES, faction as findFaction } from '../data/factions.js';
-import { HOBBY_STAGES, stageTotal } from '../data/hobbyStages.js';
+import { HOBBY_STAGES } from '../data/hobbyStages.js';
 import { downscaleImage } from '../utils/image.js';
 import { useMyHobbyLog, useCreateHobbyLogEntry, useUpdateHobbyLogEntry, useDeleteHobbyLogEntry, useUploadHobbyLogPhoto } from '../queries/useHobbyLog.js';
 import { useMyHobbyProjects, useCreateHobbyProject, useUpdateHobbyProject, useDeleteHobbyProject } from '../queries/useHobbyProjects.js';
@@ -143,7 +143,6 @@ function EntryForm({ existing, myRecipes, prefill, onClose }) {
   const factionsForHobby = hobby ? hobby.factions : [];
   const eligibleRecipes = entry.hobbyId ? myRecipes.filter((r) => (r.hobbyId || 'warhammer') === entry.hobbyId) : myRecipes;
   const linkedRecipes = entry.recipeLinks.map((l) => myRecipes.find((r) => r.id === l.recipeId)).filter(Boolean);
-  const accountedFor = stageTotal(entry.stageCounts);
 
   const toggleRecipe = (r) => {
     const key = { recipeOwnerId: userId, recipeId: r.id };
@@ -175,9 +174,45 @@ function EntryForm({ existing, myRecipes, prefill, onClose }) {
     patch({ quantity: newQty, stageCounts: counts });
   };
 
-  const setStageCount = (stageId, raw) => {
+  // Shifts models forward or back along the pipeline. Advancing (delta>0)
+  // cascades backward through every EARLIER stage, nearest first, not just
+  // the one immediately before -- a bulk correction (typing straight into
+  // Primed) or even a single "+1" tap shouldn't get stuck just because the
+  // immediately-preceding stage happens to read 0 while an earlier one still
+  // has stock (e.g. 22 Unassembled/0 Assembled/10 Primed: advancing Primed
+  // has to reach back past the empty Assembled bucket to Unassembled).
+  // Undoing (delta<0) always lands exactly one step back, never further --
+  // "this batch wasn't as far along as I said" is inherently a one-stage
+  // correction, not a multi-stage rewind. Always clamped to what's actually
+  // available, so the breakdown can never drift from quantity -- no
+  // separate "does this add up" validation needed, it's balanced by
+  // construction. Unassembled (the first stage) has nothing earlier to
+  // shift with; it only changes via the quantity field above.
+  const shiftStage = (stageId, delta) => {
+    const idx = HOBBY_STAGES.findIndex((s) => s.id === stageId);
+    if (idx <= 0 || delta === 0) return;
+    const counts = { ...entry.stageCounts };
+    if (delta > 0) {
+      let remaining = delta;
+      for (let i = idx - 1; i >= 0 && remaining > 0; i--) {
+        const id = HOBBY_STAGES[i].id;
+        const take = Math.min(counts[id] || 0, remaining);
+        counts[id] = (counts[id] || 0) - take;
+        remaining -= take;
+      }
+      counts[stageId] = (counts[stageId] || 0) + (delta - remaining);
+    } else {
+      const prevId = HOBBY_STAGES[idx - 1].id;
+      const take = Math.min(counts[stageId] || 0, -delta);
+      counts[stageId] = (counts[stageId] || 0) - take;
+      counts[prevId] = (counts[prevId] || 0) + take;
+    }
+    patch({ stageCounts: counts });
+  };
+
+  const setStageCountDirect = (stageId, raw) => {
     const n = Math.max(0, parseInt(raw, 10) || 0);
-    patch({ stageCounts: { ...entry.stageCounts, [stageId]: n } });
+    shiftStage(stageId, n - (entry.stageCounts[stageId] || 0));
   };
 
   const onPhotoChosen = async (e) => {
@@ -190,7 +225,6 @@ function EntryForm({ existing, myRecipes, prefill, onClose }) {
 
   const save = async () => {
     if (!entry.title.trim()) { showToast('Give the unit a name first'); return; }
-    if (accountedFor !== entry.quantity) { showToast(`${accountedFor} of ${entry.quantity} accounted for -- adjust the stage counts to match`); return; }
     let photoPath = entry.photo !== (entry.originalPhoto || null) ? null : (entry.photoPath || null);
     if (entry.photo && String(entry.photo).startsWith('data:')) {
       showToast('Uploading photo…');
@@ -243,20 +277,33 @@ function EntryForm({ existing, myRecipes, prefill, onClose }) {
 
       <div className="field">
         <label>Build &amp; paint progress</label>
+        <div className="label-hint" style={{ marginBottom: 8 }}>Tap − / + to move models to or from the stage before it. Unassembled only changes via the miniature count above.</div>
         <div className="hoblog-chart">
-          {HOBBY_STAGES.map((s) => {
+          {HOBBY_STAGES.map((s, idx) => {
             const n = entry.stageCounts[s.id] || 0;
             const pct = entry.quantity ? Math.round((n / entry.quantity) * 100) : 0;
+            // Total available to pull forward from ANY earlier stage, not
+            // just the immediate predecessor -- matches shiftStage's own
+            // cascading behaviour, so the button isn't disabled just
+            // because the one stage right before this happens to read 0.
+            const availableBefore = HOBBY_STAGES.slice(0, idx).reduce((sum, st) => sum + (entry.stageCounts[st.id] || 0), 0);
             return (
               <div key={s.id} className="hoblog-chart__row hoblog-chart__row--edit">
                 <span className="hoblog-chart__row-label">{s.label}</span>
                 <div className="hoblog-chart__row-bar"><i style={{ width: `${pct}%`, background: s.color }} /></div>
-                <input type="number" min="0" className="hoblog-chart__row-input" value={n} onChange={(e) => setStageCount(s.id, e.target.value)} />
+                {idx === 0 ? (
+                  <span className="hoblog-chart__row-count">{n}</span>
+                ) : (
+                  <div className="hoblog-chart__row-stepper">
+                    <button type="button" aria-label={`Move a model back out of ${s.label}`} disabled={n === 0} onClick={() => shiftStage(s.id, -1)}>−</button>
+                    <input type="number" min="0" className="hoblog-chart__row-input" value={n} onChange={(e) => setStageCountDirect(s.id, e.target.value)} />
+                    <button type="button" aria-label={`Move a model into ${s.label}`} disabled={availableBefore === 0} onClick={() => shiftStage(s.id, 1)}>+</button>
+                  </div>
+                )}
               </div>
             );
           })}
         </div>
-        <div className={`label-hint ${accountedFor !== entry.quantity ? 'label-hint--warn' : 'label-hint--ok'}`}>{accountedFor} of {entry.quantity} accounted for</div>
       </div>
 
       <div className="field">
@@ -363,7 +410,7 @@ function ProjectCard({ project, entries, onEdit }) {
   );
 }
 
-function ProjectForm({ existing, entries, onClose }) {
+function ProjectForm({ existing, entries, onClose, onOpenEntry }) {
   const showToast = useToast();
   const confirm = useConfirm();
   const create = useCreateHobbyProject();
@@ -440,9 +487,9 @@ function ProjectForm({ existing, entries, onClose }) {
               {linkedEntries.map((entry) => {
                 const f = entry.factionId ? findFaction(entry.factionId) : null;
                 return (
-                  <div key={entry.id} className="faction-chip is-active" style={{ '--chip-color': f?.color || 'var(--ink-dim)' }}>
+                  <div key={entry.id} className="faction-chip is-active" style={{ '--chip-color': f?.color || 'var(--ink-dim)', cursor: 'pointer' }} onClick={() => onOpenEntry(entry.id)} title={`Open ${entry.title}`}>
                     {entry.title} ×{entry.quantity}
-                    <button type="button" aria-label={`Remove ${entry.title}`} onClick={() => toggleEntry(entry)} style={{ background: 'none', border: 0, color: 'inherit', cursor: 'pointer', padding: 0, marginLeft: 4, display: 'inline-flex' }}>
+                    <button type="button" aria-label={`Remove ${entry.title}`} onClick={(e) => { e.stopPropagation(); toggleEntry(entry); }} style={{ background: 'none', border: 0, color: 'inherit', cursor: 'pointer', padding: 0, marginLeft: 4, display: 'inline-flex' }}>
                       <Icon name="x" size={11} />
                     </button>
                   </div>
@@ -529,7 +576,7 @@ export default function HobbyLog() {
 
   if (editingProjectId) {
     const existing = editingProjectId === 'new' ? null : projects.find((p) => p.id === editingProjectId);
-    return <ProjectForm key={editingProjectId} existing={existing} entries={entries} onClose={() => setEditingProjectId(null)} />;
+    return <ProjectForm key={editingProjectId} existing={existing} entries={entries} onClose={() => setEditingProjectId(null)} onOpenEntry={setEditingId} />;
   }
 
   if (isLoading) return <div className="empty-state__sub">Loading…</div>;
