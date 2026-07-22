@@ -112,12 +112,23 @@ export default function PaintLibrary() {
   const rangeTiles = useMemo(() => {
     const byBrand = new Map();
     for (const p of entriesForRanges) {
-      if (!byBrand.has(p.brand)) byBrand.set(p.brand, { brand: p.brand, total: 0, owned: 0 });
+      if (!byBrand.has(p.brand)) byBrand.set(p.brand, { brand: p.brand, total: 0, owned: 0, hexes: [] });
       const bucket = byBrand.get(p.brand);
       bucket.total++;
       if (isOwnedEntry(p)) bucket.owned++;
+      if (p.hex) bucket.hexes.push(p.hex);
     }
-    return [...byBrand.values()].sort((a, b) => b.total - a.total);
+    return [...byBrand.values()].map((b) => {
+      // Stride through the range rather than just taking the first few --
+      // a brand's paints are usually listed in near-alphabetical clumps by
+      // sub-line, so an even sample reads as more representative of the
+      // whole range than "whatever happened to sort first".
+      const SAMPLE = 6;
+      const stride = Math.max(1, Math.floor(b.hexes.length / SAMPLE));
+      const sampleHexes = [];
+      for (let i = 0; i < b.hexes.length && sampleHexes.length < SAMPLE; i += stride) sampleHexes.push(b.hexes[i]);
+      return { ...b, sampleHexes };
+    }).sort((a, b) => b.total - a.total);
   }, [entriesForRanges, isOwnedEntry]);
 
   const totalCount = PAINT_LIBRARY.length;
@@ -209,10 +220,15 @@ export default function PaintLibrary() {
           <div className="empty-state"><div className="empty-state__title">No matches</div><div className="empty-state__sub">Try a different filter.</div></div>
         ) : (
           <div className="range-tiles">
-            {rangeTiles.map(({ brand, total, owned }) => (
+            {rangeTiles.map(({ brand, total, owned, sampleHexes }) => (
               <div key={brand} className="range-tile" onClick={() => { setBrands([brand]); setView('list'); }}>
                 <div className="range-tile__name">{brand}</div>
                 <div className="range-tile__count">{owned > 0 ? `${owned}/${total} owned` : `${total} paints`}</div>
+                {sampleHexes.length > 0 && (
+                  <div className="range-tile__swatches">
+                    {sampleHexes.map((hex, i) => <span key={i} style={{ background: hex }} />)}
+                  </div>
+                )}
               </div>
             ))}
           </div>

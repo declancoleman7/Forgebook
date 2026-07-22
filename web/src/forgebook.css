@@ -553,6 +553,18 @@ main {
 .range-tile__name { font-weight: 600; margin-bottom: 4px; }
 .range-tile__count { font-family: var(--font-mono); font-size: 11px; color: var(--ink-dim); }
 
+.range-tile__swatches {
+  display: flex;
+  gap: 4px;
+  margin-top: 8px;
+}
+.range-tile__swatches span {
+  flex: 1;
+  height: 14px;
+  border-radius: 3px;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.12);
+}
+
 .filter-icon-btn__count {
   position: absolute;
   top: -4px;
