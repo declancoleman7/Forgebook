@@ -4568,9 +4568,47 @@ main {
   border-radius: 999px;
   border: 1px solid var(--line);
 }
-.hobbylog-status--new { color: var(--ink-dim); }
+.hobbylog-status--owned { color: var(--ink-dim); }
+.hobbylog-status--built { color: #8a97a8; border-color: #8a97a8; }
+.hobbylog-status--primed { color: #7fb8c9; border-color: #7fb8c9; }
 .hobbylog-status--wip { color: var(--gold-bright); border-color: var(--gold); }
 .hobbylog-status--completed { color: #4caf6e; border-color: #4caf6e; }
+
+/* A dedicated status picker for the hobby log's 5-stage assembly pipeline
+   (owned/built/primed/wip/completed) -- .difficulty-picker's fixed 40x40px
+   buttons only work for single-digit content, not text labels like "Work
+   in Progress", so this is sized to its content and wraps instead. */
+.status-picker {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.status-picker button {
+  padding: 8px 14px;
+  border-radius: 999px;
+  background: var(--bg-panel);
+  border: 1px solid var(--line);
+  color: var(--ink);
+  cursor: pointer;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  white-space: nowrap;
+}
+.status-picker button.is-selected {
+  background: var(--gold);
+  border-color: var(--gold);
+  color: var(--ink-on-accent);
+}
+
+/* Lets .lib-filter-seg hold more than 3 short labels (the hobby log's
+   All + 5 status filters) without squeezing every button into an
+   unreadable equal sliver. */
+.lib-filter-seg--wrap {
+  flex-wrap: wrap;
+}
+.lib-filter-seg--wrap button {
+  flex: 0 1 auto;
+}
 
 /* A generic on/off switch -- Settings' own boolean choices have all been
    two-button segmented toggles so far; this is the first true switch,

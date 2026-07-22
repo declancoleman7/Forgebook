@@ -12,7 +12,7 @@ import { useViewedProfile } from '../queries/useSocial.js';
 import { useMyHobbyLog } from '../queries/useHobbyLog.js';
 import { faction } from '../data/factions.js';
 
-const HOBBYLOG_STATUS_LABEL = { new: 'New', wip: 'Work in progress', completed: 'Completed' };
+const HOBBYLOG_STATUS_LABEL = { owned: 'Owned', built: 'Built', primed: 'Primed', wip: 'Work in Progress', completed: 'Complete' };
 function HobbyLogSectionRow({ entry, navigate }) {
   const f = entry.factionId ? faction(entry.factionId) : null;
   return (

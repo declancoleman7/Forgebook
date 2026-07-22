@@ -69,7 +69,7 @@ function RatingRow({ r }) {
   );
 }
 
-const HOBBYLOG_STATUS_LABEL = { new: 'New', wip: 'Work in progress', completed: 'Completed' };
+const HOBBYLOG_STATUS_LABEL = { owned: 'Owned', built: 'Built', primed: 'Primed', wip: 'Work in Progress', completed: 'Complete' };
 
 function HobbyLogRow({ entry }) {
   const navigate = useNavigate();

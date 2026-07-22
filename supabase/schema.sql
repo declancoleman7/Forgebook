@@ -348,7 +348,7 @@ create table if not exists public.hobby_log_entries (
   user_id     uuid        not null references auth.users (id) on delete cascade,
   title       text        not null,
   notes       text        default '',
-  status      text        not null default 'new',
+  status      text        not null default 'owned',
   hobby_id    text,
   faction_id  text,
   photo_path  text,
@@ -357,9 +357,19 @@ create table if not exists public.hobby_log_entries (
   updated_at  timestamptz not null default now(),
   deleted     boolean     not null default false,
   primary key (id),
-  check (status in ('new', 'wip', 'completed')),
+  -- A physical-assembly pipeline, not just a generic progress label: bought
+  -- it, built it, primed it, painting it, done.
+  check (status in ('owned', 'built', 'primed', 'wip', 'completed')),
   check (char_length(title) between 1 and 120)
 );
+
+-- create table if not exists is a permanent no-op on a database that
+-- already has this table, so the original new/wip/completed check needs
+-- its own explicit migration to widen to the 5-stage pipeline above.
+alter table public.hobby_log_entries drop constraint if exists hobby_log_entries_status_check;
+alter table public.hobby_log_entries add constraint hobby_log_entries_status_check check (status in ('owned', 'built', 'primed', 'wip', 'completed'));
+alter table public.hobby_log_entries alter column status set default 'owned';
+
 create index if not exists hobby_log_user_updated_idx on public.hobby_log_entries (user_id, updated_at);
 create index if not exists hobby_log_public_idx on public.hobby_log_entries (user_id, created_at) where is_public and not deleted;
 

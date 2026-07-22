@@ -10,10 +10,14 @@ import { useConfirm } from '../confirm/ConfirmContext.jsx';
 import { useToast } from '../toast/ToastContext.jsx';
 import { useAuth } from '../auth/AuthContext.jsx';
 
+// A physical-assembly pipeline, not a generic progress label -- bought it,
+// built it, primed it, painting it, done.
 const STATUSES = [
-  { id: 'new', label: 'New' },
-  { id: 'wip', label: 'Work in progress' },
-  { id: 'completed', label: 'Completed' },
+  { id: 'owned', label: 'Owned' },
+  { id: 'built', label: 'Built' },
+  { id: 'primed', label: 'Primed' },
+  { id: 'wip', label: 'Work in Progress' },
+  { id: 'completed', label: 'Complete' },
 ];
 
 function StatusBadge({ status }) {
@@ -53,7 +57,7 @@ function EntryForm({ existing, myRecipes, onClose }) {
 
   const [entry, setEntry] = useState(() => existing
     ? { ...existing, originalPhoto: existing.photo || null }
-    : { id: null, title: '', notes: '', status: 'new', hobbyId: '', factionId: '', photo: null, photoPath: null, originalPhoto: null, isPublic: false, recipeLinks: [] });
+    : { id: null, title: '', notes: '', status: 'owned', hobbyId: '', factionId: '', photo: null, photoPath: null, originalPhoto: null, isPublic: false, recipeLinks: [] });
 
   const patch = (fields) => setEntry((e) => ({ ...e, ...fields }));
   const hobby = HOBBIES.find((h) => h.id === entry.hobbyId);
@@ -123,7 +127,7 @@ function EntryForm({ existing, myRecipes, onClose }) {
 
       <div className="field">
         <label>Status</label>
-        <div className="difficulty-picker">
+        <div className="status-picker">
           {STATUSES.map((s) => (
             <button type="button" key={s.id} className={entry.status === s.id ? 'is-selected' : ''} onClick={() => patch({ status: s.id })}>{s.label}</button>
           ))}
@@ -228,11 +232,11 @@ export default function HobbyLog() {
         Mark public entries to share them on your profile.
       </div>
 
-      <div className="lib-filter-seg">
+      <div className="lib-filter-seg lib-filter-seg--wrap">
         <button className={filter === 'all' ? 'is-active' : ''} onClick={() => setFilter('all')}>All <span className="b">{entries.length}</span></button>
-        <button className={filter === 'new' ? 'is-active' : ''} onClick={() => setFilter('new')}>New <span className="b">{countFor('new')}</span></button>
-        <button className={filter === 'wip' ? 'is-active' : ''} onClick={() => setFilter('wip')}>WIP <span className="b">{countFor('wip')}</span></button>
-        <button className={filter === 'completed' ? 'is-active' : ''} onClick={() => setFilter('completed')}>Done <span className="b">{countFor('completed')}</span></button>
+        {STATUSES.map((s) => (
+          <button key={s.id} className={filter === s.id ? 'is-active' : ''} onClick={() => setFilter(s.id)}>{s.label} <span className="b">{countFor(s.id)}</span></button>
+        ))}
       </div>
 
       {isLoading ? (
