@@ -357,11 +357,18 @@ export default function SimilarColours() {
         const same = matches.filter((m) => m.sameCategory);
         const other = matches.filter((m) => !m.sameCategory);
         const mixed = same.length && other.length;
-        const row = (m) => {
+        // PAINT_LIBRARY legitimately has ~30 duplicate name+brand entries
+        // (distinct product-line variants, e.g. two different "Grey Seer"
+        // Citadel SKUs) -- paintKey() alone collides for those, same pitfall
+        // PaintPicker.jsx already works around. Without the index tiebreaker,
+        // React's keyed reconciliation reuses the wrong DOM node across
+        // re-renders as the colour/filter changes, which is what caused
+        // rows to visibly "stick" on stale data after repeated dragging.
+        const row = (m, i) => {
           const owned = myPaints.find((p) => paintKey(p.name, p.brand) === paintKey(m.paint.name, m.paint.brand));
           const wanted = wantedKeys.includes(paintKey(m.paint.name, m.paint.brand));
           return (
-            <div key={paintKey(m.paint.name, m.paint.brand)} className="colour-match-row">
+            <div key={`${paintKey(m.paint.name, m.paint.brand)}-${i}`} className="colour-match-row">
               <div className="paint-row__swatch" title="Find similar colours" style={{ background: m.paint.hex, cursor: 'pointer' }} onClick={() => findSimilarTo(m.paint)}><TypeBadge type={m.paint.type} /></div>
               <div className="colour-match-row__info">
                 <div className="paint-row__name">{m.paint.name}</div>

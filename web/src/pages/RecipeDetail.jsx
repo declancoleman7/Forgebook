@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import Icon from '../icons.jsx';
@@ -5,6 +6,7 @@ import Avatar from '../components/Avatar.jsx';
 import EmblemSvg from '../components/EmblemSvg.jsx';
 import EmptyState from '../components/EmptyState.jsx';
 import CommentThread from '../components/CommentThread.jsx';
+import Lightbox from '../components/Lightbox.jsx';
 import { faction } from '../data/factions.js';
 import { paintKey, paintCategory } from '../data/paints.js';
 import { useAuth } from '../auth/AuthContext.jsx';
@@ -95,6 +97,7 @@ export default function RecipeDetail() {
   const { userId } = useAuth();
   const r = useFindRecipe(id, authorId);
   const deleteRecipe = useDeleteRecipe();
+  const [lightboxOpen, setLightboxOpen] = useState(false);
   const { data: myPaints } = useMyPaints();
   const { data: sharedPaints } = useSharedPaints(authorId ? [authorId] : []);
   const { data: wantedKeys } = useWantToBuy();
@@ -155,9 +158,12 @@ export default function RecipeDetail() {
         )}
       </div>
 
-      <div className={`detail-hero ${r.photo ? 'has-photo' : ''}`} style={{ '--faction-color': f.color, ...(r.photo ? { backgroundImage: `url('${r.photo}')`, backgroundPosition: `${(r.photoFocalX ?? 0.5) * 100}% ${(r.photoFocalY ?? 0.5) * 100}%` } : {}) }}>
+      <div className={`detail-hero ${r.photo ? 'has-photo' : ''}`} style={{ '--faction-color': f.color, cursor: r.photo ? 'pointer' : undefined, ...(r.photo ? { backgroundImage: `url('${r.photo}')`, backgroundPosition: `${(r.photoFocalX ?? 0.5) * 100}% ${(r.photoFocalY ?? 0.5) * 100}%` } : {}) }}
+        onClick={r.photo ? () => setLightboxOpen(true) : undefined}>
         {!r.photo && <span className="emblem-badge emblem-badge--xl"><EmblemSvg emblemKey={f.emblem} size={40} /></span>}
       </div>
+
+      {lightboxOpen && r.photo && <Lightbox url={r.photo} onClose={() => setLightboxOpen(false)} />}
 
       <div className="detail-crumbs">
         <span className="crumb-chip" style={{ '--chip-color': f.color }} onClick={() => navigate(`/faction/${f.id}`)}>{f.label}</span>
