@@ -25,6 +25,7 @@ const PATHS = {
   'thumb-down': '<path d="M17 13V4h3v9h-3z" /><path d="M17 13l-3.5 7c-1.2 0-2-1-2-2.2V15H6a2 2 0 0 1-2-2.4l1.2-6A2 2 0 0 1 7 5h8a2 2 0 0 1 2 2v6z" />',
   comment: '<path d="M4 5h16v11H8l-4 4V5z" />',
   grid: '<rect x="3" y="3" width="8" height="8" rx="1" /><rect x="13" y="3" width="8" height="8" rx="1" /><rect x="3" y="13" width="8" height="8" rx="1" /><rect x="13" y="13" width="8" height="8" rx="1" />',
+  x: '<path d="M6 6l12 12" /><path d="M18 6L6 18" />',
 };
 
 export default function Icon({ name, size = 20, className }) {

@@ -2,6 +2,7 @@ import { useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Icon from '../icons.jsx';
 import EmptyState from '../components/EmptyState.jsx';
+import RecipePicker from '../components/RecipePicker.jsx';
 import { HOBBIES, faction as findFaction } from '../data/factions.js';
 import { downscaleImage } from '../utils/image.js';
 import { useMyHobbyLog, useCreateHobbyLogEntry, useUpdateHobbyLogEntry, useDeleteHobbyLogEntry, useUploadHobbyLogPhoto } from '../queries/useHobbyLog.js';
@@ -54,6 +55,7 @@ function EntryForm({ existing, myRecipes, onClose }) {
   const del = useDeleteHobbyLogEntry();
   const uploadPhoto = useUploadHobbyLogPhoto();
   const photoInputRef = useRef(null);
+  const [pickerOpen, setPickerOpen] = useState(false);
 
   const [entry, setEntry] = useState(() => existing
     ? { ...existing, originalPhoto: existing.photo || null }
@@ -63,6 +65,7 @@ function EntryForm({ existing, myRecipes, onClose }) {
   const hobby = HOBBIES.find((h) => h.id === entry.hobbyId);
   const factionsForHobby = hobby ? (hobby.flatBrowse ? hobby.factions : hobby.factions) : [];
   const eligibleRecipes = entry.hobbyId ? myRecipes.filter((r) => (r.hobbyId || 'warhammer') === entry.hobbyId) : myRecipes;
+  const linkedRecipes = entry.recipeLinks.map((l) => myRecipes.find((r) => r.id === l.recipeId)).filter(Boolean);
 
   const toggleRecipe = (r) => {
     const key = { recipeOwnerId: userId, recipeId: r.id };
@@ -173,18 +176,34 @@ function EntryForm({ existing, myRecipes, onClose }) {
         <input ref={photoInputRef} type="file" accept="image/*" className="hidden" onChange={onPhotoChosen} />
       </div>
 
-      {eligibleRecipes.length > 0 && (
+      {myRecipes.length > 0 && (
         <div className="field">
           <label>Recipes used <span className="label-hint">optional — link how you actually painted this</span></label>
-          <div className="settings-group">
-            {eligibleRecipes.map((r) => (
-              <label key={r.id} className="settings-row" style={{ cursor: 'pointer' }}>
-                <div className="settings-row__label">{r.name}</div>
-                <input type="checkbox" checked={entry.recipeLinks.some((l) => l.recipeId === r.id)} onChange={() => toggleRecipe(r)} />
-              </label>
-            ))}
-          </div>
+          {linkedRecipes.length > 0 && (
+            <div className="faction-row" style={{ marginBottom: 8 }}>
+              {linkedRecipes.map((r) => (
+                <div key={r.id} className="faction-chip is-active" style={{ '--chip-color': findFaction(r.faction).color }}>
+                  {r.name}
+                  <button type="button" aria-label={`Remove ${r.name}`} onClick={() => toggleRecipe(r)} style={{ background: 'none', border: 0, color: 'inherit', cursor: 'pointer', padding: 0, marginLeft: 4, display: 'inline-flex' }}>
+                    <Icon name="x" size={11} />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+          <button type="button" className="repeater-add" style={{ margin: 0 }} onClick={() => setPickerOpen(true)}>
+            <Icon name="search" size={14} /> {linkedRecipes.length ? 'Add another recipe' : 'Choose recipes'}
+          </button>
         </div>
+      )}
+
+      {pickerOpen && (
+        <RecipePicker
+          recipes={eligibleRecipes}
+          selectedIds={new Set(entry.recipeLinks.map((l) => l.recipeId))}
+          onToggle={toggleRecipe}
+          onClose={() => setPickerOpen(false)}
+        />
       )}
 
       <div className="settings-group">
