@@ -3,16 +3,32 @@ import { useNavigate } from 'react-router-dom';
 import Icon from '../icons.jsx';
 import EmptyState from '../components/EmptyState.jsx';
 import RecipePicker from '../components/RecipePicker.jsx';
+import EntryPicker from '../components/EntryPicker.jsx';
 import EmblemSvg from '../components/EmblemSvg.jsx';
 import HobbyStageStack from '../components/HobbyStageStack.jsx';
 import { HOBBIES, faction as findFaction } from '../data/factions.js';
 import { HOBBY_STAGES, stageTotal } from '../data/hobbyStages.js';
 import { downscaleImage } from '../utils/image.js';
 import { useMyHobbyLog, useCreateHobbyLogEntry, useUpdateHobbyLogEntry, useDeleteHobbyLogEntry, useUploadHobbyLogPhoto } from '../queries/useHobbyLog.js';
+import { useMyHobbyProjects, useCreateHobbyProject, useUpdateHobbyProject, useDeleteHobbyProject } from '../queries/useHobbyProjects.js';
 import { useMyRecipes } from '../queries/useRecipes.js';
 import { useConfirm } from '../confirm/ConfirmContext.jsx';
 import { useToast } from '../toast/ToastContext.jsx';
 import { useAuth } from '../auth/AuthContext.jsx';
+
+// A Project's own progress is always derived by summing whichever units are
+// linked to it -- weighted by miniature count, not a per-unit average, so a
+// 40-model unit moves the needle far more than a 1-model one, matching how
+// quantity is the unit of measure everywhere else in the Pile of Potential.
+function sumStageCounts(entries, entryIds) {
+  const linked = entries.filter((e) => entryIds.includes(e.id));
+  const quantity = linked.reduce((sum, e) => sum + (e.quantity || 0), 0);
+  const stageCounts = {};
+  linked.forEach((e) => {
+    HOBBY_STAGES.forEach((s) => { stageCounts[s.id] = (stageCounts[s.id] || 0) + (e.stageCounts?.[s.id] || 0); });
+  });
+  return { quantity, stageCounts };
+}
 
 // Which non-zero stage an entry has made the most progress into -- used to
 // bucket a mixed unit (e.g. half primed, half still unassembled) into one
@@ -330,6 +346,143 @@ function EntryForm({ existing, myRecipes, prefill, onClose }) {
   );
 }
 
+function ProjectCard({ project, entries, onEdit }) {
+  const { quantity, stageCounts } = sumStageCounts(entries, project.entryIds);
+  return (
+    <div className="hobbylog-card" onClick={() => onEdit(project.id)}>
+      <div className="hobbylog-card__photo"><Icon name="clipboard-check" size={22} /></div>
+      <div className="hobbylog-card__body">
+        <div className="hobbylog-card__title">{project.title}</div>
+        <HobbyStageStack stageCounts={stageCounts} quantity={quantity} />
+        <div className="hobbylog-card__meta">
+          <span>{project.entryIds.length} unit{project.entryIds.length === 1 ? '' : 's'}</span>
+          {project.isPublic && <span className="hobbylog-card__public" title="Visible on your public profile"><Icon name="user" size={11} /> Public</span>}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ProjectForm({ existing, entries, onClose }) {
+  const showToast = useToast();
+  const confirm = useConfirm();
+  const create = useCreateHobbyProject();
+  const update = useUpdateHobbyProject();
+  const del = useDeleteHobbyProject();
+  const [pickerOpen, setPickerOpen] = useState(false);
+
+  const [project, setProject] = useState(() => existing
+    ? { ...existing }
+    : { id: null, title: '', notes: '', hobbyId: '', isPublic: false, entryIds: [] });
+
+  const patch = (fields) => setProject((p) => ({ ...p, ...fields }));
+  const eligibleEntries = project.hobbyId ? entries.filter((e) => e.hobbyId === project.hobbyId) : entries;
+  const linkedEntries = project.entryIds.map((id) => entries.find((e) => e.id === id)).filter(Boolean);
+  const { quantity, stageCounts } = sumStageCounts(entries, project.entryIds);
+
+  const toggleEntry = (entry) => {
+    const has = project.entryIds.includes(entry.id);
+    patch({ entryIds: has ? project.entryIds.filter((id) => id !== entry.id) : [...project.entryIds, entry.id] });
+  };
+
+  const save = async () => {
+    if (!project.title.trim()) { showToast('Give the project a name first'); return; }
+    const payload = { id: project.id, title: project.title.trim(), notes: project.notes, hobbyId: project.hobbyId || null, isPublic: project.isPublic, entryIds: project.entryIds };
+    try {
+      if (project.id) await update.mutateAsync(payload);
+      else await create.mutateAsync(payload);
+      showToast('Saved');
+      onClose();
+    } catch (err) {
+      showToast(err.message || "Couldn't save that — try again");
+    }
+  };
+
+  const doDelete = async () => {
+    if (!(await confirm(`Delete "${project.title}"? The units in it aren't affected.`))) return;
+    await del.mutateAsync(project.id);
+    showToast('Deleted');
+    onClose();
+  };
+
+  return (
+    <div className="page-enter">
+      <div className="detail-header">
+        <button className="icon-btn" onClick={onClose}><Icon name="back" size={18} /></button>
+        <div className="page-title" style={{ margin: 0 }}>{project.id ? 'Edit Project' : 'New Project'}</div>
+        <div style={{ width: 36 }} />
+      </div>
+
+      <div className="field">
+        <label>Project name</label>
+        <input type="text" value={project.title} onChange={(e) => patch({ title: e.target.value })} placeholder="e.g. Blood Angels Army" />
+      </div>
+
+      <div className="field">
+        <label>Hobby <span className="label-hint">optional — scopes which units you can link</span></label>
+        <select value={project.hobbyId} onChange={(e) => patch({ hobbyId: e.target.value })}>
+          <option value="">Any hobby</option>
+          {HOBBIES.map((h) => <option key={h.id} value={h.id}>{h.label}</option>)}
+        </select>
+      </div>
+
+      <div className="field">
+        <label>Notes</label>
+        <textarea rows={4} value={project.notes} onChange={(e) => patch({ notes: e.target.value })} placeholder="What's the goal here..." />
+      </div>
+
+      <div className="field">
+        <label>Units in this project</label>
+        {linkedEntries.length > 0 && (
+          <>
+            <HobbyStageStack stageCounts={stageCounts} quantity={quantity} />
+            <div className="faction-row" style={{ margin: '8px 0' }}>
+              {linkedEntries.map((entry) => {
+                const f = entry.factionId ? findFaction(entry.factionId) : null;
+                return (
+                  <div key={entry.id} className="faction-chip is-active" style={{ '--chip-color': f?.color || 'var(--ink-dim)' }}>
+                    {entry.title} ×{entry.quantity}
+                    <button type="button" aria-label={`Remove ${entry.title}`} onClick={() => toggleEntry(entry)} style={{ background: 'none', border: 0, color: 'inherit', cursor: 'pointer', padding: 0, marginLeft: 4, display: 'inline-flex' }}>
+                      <Icon name="x" size={11} />
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          </>
+        )}
+        <button type="button" className="repeater-add" style={{ margin: 0 }} onClick={() => setPickerOpen(true)}>
+          <Icon name="search" size={14} /> {linkedEntries.length ? 'Add another unit' : 'Choose units'}
+        </button>
+      </div>
+
+      {pickerOpen && (
+        <EntryPicker
+          entries={eligibleEntries}
+          selectedIds={new Set(project.entryIds)}
+          onToggle={toggleEntry}
+          onClose={() => setPickerOpen(false)}
+        />
+      )}
+
+      <div className="settings-group">
+        <div className="settings-row">
+          <div>
+            <div className="settings-row__label">Public project</div>
+            <div className="settings-row__desc">Shows on your profile for other people to read. Off by default.</div>
+          </div>
+          <button type="button" className={`toggle ${project.isPublic ? 'is-on' : ''}`} onClick={() => patch({ isPublic: !project.isPublic })}><i /></button>
+        </div>
+      </div>
+
+      <div style={{ display: 'flex', gap: 10, marginTop: 16 }}>
+        <button className="btn btn-primary" style={{ flex: 1 }} onClick={save}>Save</button>
+        {project.id && <button className="btn btn-danger" onClick={doDelete}>Delete</button>}
+      </div>
+    </div>
+  );
+}
+
 function DashTile({ color, count, label, icon, onClick }) {
   return (
     <div className="faction-tile" style={{ '--faction-color': color }} title={label} onClick={onClick}>
@@ -346,9 +499,11 @@ function DashTile({ color, count, label, icon, onClick }) {
 export default function HobbyLog() {
   const navigate = useNavigate();
   const { data: entries = [], isLoading } = useMyHobbyLog();
+  const { data: projects = [] } = useMyHobbyProjects();
   const { data: myRecipes = [] } = useMyRecipes();
   const [filter, setFilter] = useState('all');
   const [editingId, setEditingId] = useState(null); // null | 'new' | entry id
+  const [editingProjectId, setEditingProjectId] = useState(null); // null | 'new' | project id
   // null = hobby-picker dashboard; 'all' = flat list of everything (the
   // escape hatch, same view this page used to open straight to);
   // otherwise a hobby id, drilling into that hobby's systems/factions below.
@@ -370,6 +525,11 @@ export default function HobbyLog() {
       ? { hobbyId: browseHobbyId, factionId: browseFactionId && browseFactionId !== '__general__' ? browseFactionId : '' }
       : null;
     return <EntryForm key={editingId} existing={existing} myRecipes={myRecipes} prefill={prefill} onClose={() => setEditingId(null)} />;
+  }
+
+  if (editingProjectId) {
+    const existing = editingProjectId === 'new' ? null : projects.find((p) => p.id === editingProjectId);
+    return <ProjectForm key={editingProjectId} existing={existing} entries={entries} onClose={() => setEditingProjectId(null)} />;
   }
 
   if (isLoading) return <div className="empty-state__sub">Loading…</div>;
@@ -397,7 +557,18 @@ export default function HobbyLog() {
             <FinishedTrendChart entries={entries} />
           </>
         )}
-        <div className="settings-group">
+
+        <div className="section-label">Projects</div>
+        {projects.length > 0 && (
+          <div className="hobbylog-list" style={{ marginBottom: 10 }}>
+            {projects.map((project) => <ProjectCard key={project.id} project={project} entries={entries} onEdit={setEditingProjectId} />)}
+          </div>
+        )}
+        <button type="button" className="btn btn-ghost btn-block" onClick={() => setEditingProjectId('new')}>
+          <Icon name="plus" size={14} /> New project
+        </button>
+
+        <div className="settings-group" style={{ marginTop: 20 }}>
           {HOBBIES.map((h) => {
             const n = hobbyCounts.get(h.id) || 0;
             return (
