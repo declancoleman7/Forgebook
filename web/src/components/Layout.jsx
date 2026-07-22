@@ -55,6 +55,11 @@ export default function Layout() {
   // screen (/u with no id), which the old app's own nav never links to
   // either (see ProfileSearch.jsx).
   const NAV_ITEMS = [...STATIC_NAV_ITEMS, { route: 'profile', label: 'Profile', icon: 'user', path: `/u/${userId}` }];
+  // The FAB is specifically "add a recipe" -- only useful as a shortcut from
+  // the three browsing tabs it actually saves a trip from. Everywhere else
+  // (forms, a recipe/paint's own detail, settings, etc.) it just sits in the
+  // way, most annoyingly overlapping the recipe form's own fields.
+  const showFab = pathname === '/home' || pathname === '/factions' || pathname === '/recipes';
 
   useEffect(() => { registerServiceWorker(); }, []);
 
@@ -100,9 +105,11 @@ export default function Layout() {
           </motion.div>
         </AnimatePresence>
       </main>
-      <NavLink className="fab" to="/recipe-new" aria-label="Add recipe">
-        <Icon name="plus" size={24} />
-      </NavLink>
+      {showFab && (
+        <NavLink className="fab" to="/recipe-new" aria-label="Add recipe">
+          <Icon name="plus" size={24} />
+        </NavLink>
+      )}
       <nav className="bottom-nav">
         {NAV_ITEMS.map((n) => (
           <NavLink key={n.route} to={n.path} className={`bottom-nav__item ${isActiveNavRoute(n.route, pathname) ? 'is-active' : ''}`} aria-label={n.label}>

@@ -97,16 +97,18 @@ function feedItemActorId(it) {
 // the old app's buildFeedItems(). Comments are grouped per recipe within
 // FEED_WINDOW_MS so "5 new comments on X" reads as one item; ratings/notes
 // are inherently paint-level, so each is its own item.
+//
+// Comment groups are built first and matched against the published list by
+// (ownerId, recipeId) -- a recipe that's both freshly published and freshly
+// commented-on collapses into a single item (the old app showed it twice)
+// instead of two competing cards for the same recipe. Every recipe-shaped
+// item's engagement is scored the same way regardless of which fact earned
+// it a spot in the feed: net votes plus the recipe's total (lifetime, not
+// just this window's burst) comment count, so ranking reflects genuine
+// aggregate interaction rather than whichever event happened to fire it.
 function buildFeedItems({ myRecipes, sharedRecipes, feed, commentCounts, voteSummary, sort, followingIds, activeHobbyId, userId }) {
   const now = Date.now();
   const items = [];
-
-  sharedRecipes
-    .filter((r) => now - new Date(r.updatedAt || 0).getTime() < FEED_WINDOW_MS && (r.hobbyId || 'warhammer') === activeHobbyId)
-    .forEach((r) => items.push({
-      type: 'recipe_published', recipe: r, authorId: r.authorId, at: r.updatedAt,
-      engagement: recipeEngagement(voteSummary, r.authorId, r.id, commentCountFor(commentCounts, r.authorId, r.id)),
-    }));
 
   const commentGroups = {};
   feed.comments
@@ -117,7 +119,24 @@ function buildFeedItems({ myRecipes, sharedRecipes, feed, commentCounts, voteSum
       g.count += 1;
       if (new Date(c.createdAt) > new Date(g.latestAt)) g.latestAt = c.createdAt;
     });
-  Object.values(commentGroups).forEach((g) => {
+
+  const foldedIntoPublished = new Set();
+
+  sharedRecipes
+    .filter((r) => now - new Date(r.updatedAt || 0).getTime() < FEED_WINDOW_MS && (r.hobbyId || 'warhammer') === activeHobbyId)
+    .forEach((r) => {
+      const key = r.authorId + '|' + r.id;
+      const commentGroup = commentGroups[key];
+      if (commentGroup) foldedIntoPublished.add(key);
+      const at = commentGroup && new Date(commentGroup.latestAt) > new Date(r.updatedAt) ? commentGroup.latestAt : r.updatedAt;
+      items.push({
+        type: 'recipe_published', recipe: r, authorId: r.authorId, at,
+        engagement: recipeEngagement(voteSummary, r.authorId, r.id, commentCountFor(commentCounts, r.authorId, r.id)),
+      });
+    });
+
+  Object.entries(commentGroups).forEach(([key, g]) => {
+    if (foldedIntoPublished.has(key)) return;
     const recipe = g.recipeOwnerId === userId
       ? myRecipes.find((r) => r.id === g.recipeId)
       : sharedRecipes.find((r) => r.id === g.recipeId && r.authorId === g.recipeOwnerId);
@@ -125,7 +144,7 @@ function buildFeedItems({ myRecipes, sharedRecipes, feed, commentCounts, voteSum
     if ((recipe.hobbyId || 'warhammer') !== activeHobbyId) return;
     items.push({
       type: 'recipe_comments', recipe, recipeOwnerId: g.recipeOwnerId, count: g.count, at: g.latestAt,
-      engagement: recipeEngagement(voteSummary, g.recipeOwnerId, g.recipeId, g.count),
+      engagement: recipeEngagement(voteSummary, g.recipeOwnerId, g.recipeId, commentCountFor(commentCounts, g.recipeOwnerId, g.recipeId)),
     });
   });
 

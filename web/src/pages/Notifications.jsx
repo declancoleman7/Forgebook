@@ -3,6 +3,7 @@ import Icon from '../icons.jsx';
 import Avatar from '../components/Avatar.jsx';
 import EmptyState from '../components/EmptyState.jsx';
 import { relativeTime } from '../utils/format.js';
+import { useAuth } from '../auth/AuthContext.jsx';
 import { useNotifications, useMarkNotificationRead, useMarkAllNotificationsRead } from '../queries/useNotifications.js';
 
 // Recipe/paint NAME resolution in the notification text (e.g. `commented on
@@ -33,6 +34,7 @@ function NotificationRow({ n, onOpen }) {
 
 export default function Notifications() {
   const navigate = useNavigate();
+  const { userId } = useAuth();
   const { data: notifications = [], isLoading } = useNotifications();
   const markRead = useMarkNotificationRead();
   const markAllRead = useMarkAllNotificationsRead();
@@ -40,7 +42,12 @@ export default function Notifications() {
 
   const openNotification = (n) => {
     if (!n.read) markRead.mutate(n.id);
-    if (n.recipeId) navigate(`/recipe/${n.recipeId}/by/${n.recipeOwnerId}`);
+    // useFindRecipe only looks in *other* people's shared recipes when a
+    // /by/:authorId segment is present -- for a notification about your own
+    // recipe (recipeOwnerId === you), that segment has to be dropped or the
+    // lookup comes back empty ("Recipe not found"), same distinction
+    // RecipeDetail's own links make via isMine elsewhere.
+    if (n.recipeId) navigate(n.recipeOwnerId === userId ? `/recipe/${n.recipeId}` : `/recipe/${n.recipeId}/by/${n.recipeOwnerId}`);
     // Paint-note deep links land once Similar Colours' real page exists (Stage 3).
   };
 

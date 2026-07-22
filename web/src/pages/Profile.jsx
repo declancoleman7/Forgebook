@@ -192,7 +192,7 @@ export default function Profile() {
         <button className="icon-btn" onClick={() => navigate('/home')}><Icon name="back" size={18} /></button>
         {isMe ? (
           <div style={{ display: 'flex', gap: 8 }}>
-            <button className="icon-btn" onClick={() => navigate('/hobby-log')} aria-label="Hobby log"><Icon name="paintdrop" size={18} /></button>
+            <button className="icon-btn" onClick={() => navigate('/hobby-log')} aria-label="Hobby log"><Icon name="clipboard-check" size={18} /></button>
             <button className="icon-btn" onClick={() => navigate('/settings')}><Icon name="settings" size={18} /></button>
           </div>
         ) : <div style={{ width: 36 }} />}
