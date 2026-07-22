@@ -4654,6 +4654,93 @@ main {
   flex: 0 1 auto;
 }
 
+/* Hobby Log dashboard's two at-a-glance charts -- both hand-rolled with
+   plain divs (no chart library in the project) to match the app's existing
+   pattern of CSS-width bars (.lib-progress__bar) and a raw-canvas colour
+   wheel rather than reaching for a new dependency. */
+.hoblog-chart {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 20px;
+}
+.hoblog-chart__row {
+  display: grid;
+  grid-template-columns: 84px 1fr 22px;
+  align-items: center;
+  gap: 10px;
+}
+.hoblog-chart__row-label {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--ink-dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.hoblog-chart__row-bar {
+  height: 8px;
+  border-radius: 4px;
+  background: var(--bg-raised-2);
+  overflow: hidden;
+}
+.hoblog-chart__row-bar i {
+  display: block;
+  height: 100%;
+  border-radius: 4px;
+  transition: width 0.3s ease;
+}
+.hoblog-chart__row-count {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--ink);
+  text-align: right;
+}
+
+.hoblog-trend {
+  margin-bottom: 20px;
+}
+.hoblog-trend__bars {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  height: 90px;
+}
+.hoblog-trend__col {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-end;
+  height: 100%;
+  gap: 4px;
+}
+.hoblog-trend__count {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--ink-dim);
+  min-height: 12px;
+}
+.hoblog-trend__track {
+  flex: 1;
+  width: 100%;
+  display: flex;
+  align-items: flex-end;
+}
+.hoblog-trend__bar {
+  width: 100%;
+  border-radius: 3px 3px 0 0;
+  background: linear-gradient(180deg, var(--gold-bright), var(--gold));
+  min-height: 4px;
+}
+.hoblog-trend__label {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--ink-dim);
+}
+
 /* A generic on/off switch -- Settings' own boolean choices have all been
    two-button segmented toggles so far; this is the first true switch,
    introduced for the hobby log's public/private setting. */

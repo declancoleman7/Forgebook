@@ -27,6 +27,77 @@ function StatusBadge({ status }) {
   return <span className={`hobbylog-status hobbylog-status--${status}`}>{s.label}</span>;
 }
 
+// Matches the .hobbylog-status--* colours above, used as bar fills here.
+const STATUS_BAR_COLOR = {
+  owned: 'var(--ink-dim)',
+  built: '#8a97a8',
+  primed: '#7fb8c9',
+  wip: 'var(--gold-bright)',
+  completed: '#4caf6e',
+};
+
+// STATUSES' own labels are for badges, where "Work in Progress" has room --
+// this chart's label column doesn't, so it gets its own shorter set.
+const STATUS_CHART_LABEL = { owned: 'Owned', built: 'Built', primed: 'Primed', wip: 'WIP', completed: 'Complete' };
+
+function StatusPipelineChart({ entries }) {
+  const total = entries.length;
+  if (!total) return null;
+  return (
+    <div className="hoblog-chart">
+      {STATUSES.map((s) => {
+        const n = entries.filter((e) => e.status === s.id).length;
+        const pct = Math.round((n / total) * 100);
+        return (
+          <div key={s.id} className="hoblog-chart__row">
+            <span className="hoblog-chart__row-label">{STATUS_CHART_LABEL[s.id]}</span>
+            <div className="hoblog-chart__row-bar">
+              <i style={{ width: `${pct}%`, background: STATUS_BAR_COLOR[s.id] }} />
+            </div>
+            <span className="hoblog-chart__row-count">{n}</span>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+// Buckets completed entries by the month they were last updated -- there's
+// no dedicated "completed at" timestamp, so this is a reasonable proxy, not
+// an exact audit trail (editing a completed entry later nudges its month).
+function CompletedTrendChart({ entries }) {
+  const months = [];
+  const today = new Date();
+  for (let i = 5; i >= 0; i--) {
+    const d = new Date(today.getFullYear(), today.getMonth() - i, 1);
+    months.push({ key: `${d.getFullYear()}-${d.getMonth()}`, label: d.toLocaleDateString(undefined, { month: 'short' }) });
+  }
+  const counts = months.map(({ key }) => entries.filter((e) => {
+    if (e.status !== 'completed' || !e.updatedAt) return false;
+    const d = new Date(e.updatedAt);
+    return `${d.getFullYear()}-${d.getMonth()}` === key;
+  }).length);
+  const max = Math.max(1, ...counts);
+  const anyCompleted = counts.some((n) => n > 0);
+  if (!anyCompleted) return null;
+
+  return (
+    <div className="hoblog-trend">
+      <div className="hoblog-trend__bars">
+        {months.map((m, i) => (
+          <div key={m.key} className="hoblog-trend__col">
+            <span className="hoblog-trend__count">{counts[i] || ''}</span>
+            <div className="hoblog-trend__track">
+              <div className="hoblog-trend__bar" style={{ height: `${Math.max(4, (counts[i] / max) * 100)}%` }} />
+            </div>
+            <span className="hoblog-trend__label">{m.label}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function EntryCard({ entry, onEdit }) {
   const f = entry.factionId ? findFaction(entry.factionId) : null;
   return (
@@ -278,6 +349,13 @@ export default function HobbyLog() {
         <div className="detail-sub" style={{ marginBottom: 14 }}>
           Track what you're painting project by project. Pick a hobby to see the armies or categories you've logged something for.
         </div>
+        {entries.length > 0 && (
+          <>
+            <div className="section-label">Your pipeline</div>
+            <StatusPipelineChart entries={entries} />
+            <CompletedTrendChart entries={entries} />
+          </>
+        )}
         <div className="settings-group">
           {HOBBIES.map((h) => {
             const n = hobbyCounts.get(h.id) || 0;
