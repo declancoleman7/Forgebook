@@ -17,7 +17,7 @@ import { promptInstall } from '../installPrompt.js';
 // recipe/paint counts near the bottom are deferred until Stage 3 builds
 // the recipes/paints data layer -- everything else here is real.
 export default function Settings() {
-  const { email, signOut } = useAuth();
+  const { email, userId, signOut } = useAuth();
   const confirm = useConfirm();
   const showToast = useToast();
   const navigate = useNavigate();
@@ -98,7 +98,7 @@ export default function Settings() {
   return (
     <div className="page-enter">
       <div className="detail-header">
-        <button className="icon-btn" onClick={() => navigate('/u')}><Icon name="back" size={18} /></button>
+        <button className="icon-btn" onClick={() => navigate(`/u/${userId}`)}><Icon name="back" size={18} /></button>
         <div className="page-title" style={{ margin: 0 }}>Settings</div>
         <div style={{ width: 36 }} />
       </div>
