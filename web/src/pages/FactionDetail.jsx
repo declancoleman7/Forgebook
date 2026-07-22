@@ -6,19 +6,29 @@ import { faction } from '../data/factions.js';
 import { useActiveHobby } from '../hooks/useActiveHobby.js';
 import { useFactionArt } from '../hooks/useFactionArt.js';
 import { useVisibleRecipes } from '../queries/useRecipes.js';
+import { useMyProfile } from '../queries/useProfile.js';
+import { useGlobalFactionArt, useUploadGlobalFactionEmblem, useRemoveGlobalFactionEmblem } from '../queries/useFactionEmblems.js';
 import { downscaleImage } from '../utils/image.js';
 import { useToast } from '../toast/ToastContext.jsx';
+import { useConfirm } from '../confirm/ConfirmContext.jsx';
 
-// The admin-only global (Supabase-shared) emblem override is deferred;
-// this ports the personal (this-device) override only.
 export default function FactionDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
   const showToast = useToast();
+  const confirm = useConfirm();
   const h = useActiveHobby();
   const f = faction(id);
-  const [art, setArt, clearArt] = useFactionArt(f.id);
+  const [personalArt, setArt, clearArt] = useFactionArt(f.id);
+  const { data: globalArtMap = {} } = useGlobalFactionArt();
+  const globalArt = globalArtMap[f.id] || null;
+  const art = personalArt || globalArt;
+  const { data: profile } = useMyProfile();
+  const isAdmin = !!profile?.isAdmin;
+  const uploadGlobalEmblem = useUploadGlobalFactionEmblem();
+  const removeGlobalEmblem = useRemoveGlobalFactionEmblem();
   const fileRef = useRef(null);
+  const adminFileRef = useRef(null);
   const { data: visibleRecipes = [] } = useVisibleRecipes();
 
   const onArtChosen = async (e) => {
@@ -28,6 +38,30 @@ export default function FactionDetail() {
     if (!url) return showToast('That image could not be read');
     if (!setArt(url)) return showToast('Storage is full');
     showToast('Emblem updated');
+  };
+
+  const onAdminArtChosen = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const url = await downscaleImage(file, 480);
+    if (!url) return showToast('That image could not be read');
+    showToast('Uploading…');
+    try {
+      await uploadGlobalEmblem.mutateAsync({ factionId: f.id, dataUrl: url });
+      showToast('Shared emblem updated for everyone');
+    } catch (err) {
+      showToast(err.message || "Couldn't upload that");
+    }
+  };
+
+  const clearGlobalEmblem = async () => {
+    if (!(await confirm('Remove the shared emblem for this army? Everyone loses it, not just you.', { okLabel: 'Remove' }))) return;
+    try {
+      await removeGlobalEmblem.mutateAsync(f.id);
+      showToast('Shared emblem removed');
+    } catch (err) {
+      showToast(err.message || "Couldn't remove that");
+    }
   };
 
   const { units, general } = useMemo(() => {
@@ -46,7 +80,7 @@ export default function FactionDetail() {
       <div className="detail-header">
         <button className="icon-btn" onClick={() => navigate('/factions')}><Icon name="back" size={18} /></button>
         <button className="btn btn-ghost btn-sm" onClick={() => fileRef.current?.click()}>
-          <Icon name="image" size={14} /> {art ? 'Change emblem' : 'Add emblem'}
+          <Icon name="image" size={14} /> {personalArt ? 'Change emblem' : 'Add emblem'}
         </button>
       </div>
 
@@ -87,7 +121,32 @@ export default function FactionDetail() {
           + New recipe for {f.label}
         </button>
       </div>
-      {art && <button className="btn btn-ghost btn-block" onClick={clearArt}>Remove custom emblem</button>}
+      {personalArt && <button className="btn btn-ghost btn-block" onClick={clearArt}>Remove custom emblem</button>}
+
+      {isAdmin && (
+        <>
+          <div className="section-label">Admin</div>
+          <div className="settings-group">
+            <div className="settings-row">
+              <div>
+                <div className="settings-row__label">Shared emblem</div>
+                <div className="settings-row__desc">Uploads for every signed-in user, not just this device.</div>
+              </div>
+              <button className="btn btn-ghost btn-sm" onClick={() => adminFileRef.current?.click()}>{globalArt ? 'Replace' : 'Upload'}</button>
+            </div>
+            {globalArt && (
+              <div className="settings-row">
+                <div>
+                  <div className="settings-row__label">Remove shared emblem</div>
+                  <div className="settings-row__desc">Everyone goes back to the built-in mark, or their own override if they've set one.</div>
+                </div>
+                <button className="btn btn-danger btn-sm" onClick={clearGlobalEmblem}>Remove</button>
+              </div>
+            )}
+          </div>
+          <input ref={adminFileRef} type="file" accept="image/*" className="hidden" onChange={onAdminArtChosen} />
+        </>
+      )}
     </div>
   );
 }

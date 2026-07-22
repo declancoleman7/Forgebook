@@ -4,6 +4,7 @@ import Icon from '../icons.jsx';
 import Avatar from './Avatar.jsx';
 import HobbySwitcher from './HobbySwitcher.jsx';
 import { useAuth } from '../auth/AuthContext.jsx';
+import { useActiveHobbyId } from '../hooks/useActiveHobby.js';
 import { useMyProfile } from '../queries/useProfile.js';
 import { useNotifications } from '../queries/useNotifications.js';
 import { registerServiceWorker } from '../serviceWorker.js';
@@ -55,6 +56,17 @@ export default function Layout() {
   const NAV_ITEMS = [...STATIC_NAV_ITEMS, { route: 'profile', label: 'Profile', icon: 'user', path: `/u/${userId}` }];
 
   useEffect(() => { registerServiceWorker(); }, []);
+
+  // Per-hobby background art/colour theming -- ported from the old app's
+  // setActiveHobbyId(), which sets this same attribute on <html>. CSS
+  // (forgebook.css) already has the html[data-hobby="dnd"] rules; this was
+  // the missing piece that actually applies the attribute.
+  const activeHobbyId = useActiveHobbyId();
+  useEffect(() => {
+    if (activeHobbyId === 'warhammer') document.documentElement.removeAttribute('data-hobby');
+    else document.documentElement.setAttribute('data-hobby', activeHobbyId);
+    return () => document.documentElement.removeAttribute('data-hobby');
+  }, [activeHobbyId]);
 
   return (
     <div id="app">

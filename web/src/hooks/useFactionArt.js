@@ -38,3 +38,10 @@ export function useFactionArt(factionId) {
 
   return [all[factionId] || null, setArt, clearArt];
 }
+
+// The full per-device override map at once -- for a browse grid rendering
+// every faction's tile, this is one subscription instead of one per tile.
+export function useAllFactionArt() {
+  const raw = useSyncExternalStore(subscribe, readRaw);
+  return useMemo(() => parseAll(raw), [raw]);
+}
