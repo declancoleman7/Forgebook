@@ -160,9 +160,8 @@ export default function RecipeDetail() {
       </div>
 
       <div className="detail-crumbs">
-        <span onClick={() => navigate(`/faction/${f.id}`)} style={{ color: f.color, cursor: 'pointer' }}>{f.label}</span>
-        <span className="sep">/</span>
-        <span onClick={() => navigate(`/faction/${f.id}/unit/${r.unit ? encodeURIComponent(r.unit) : '_general'}`)} style={{ cursor: 'pointer' }}>{r.unit || 'General'}</span>
+        <span className="crumb-chip" style={{ '--chip-color': f.color }} onClick={() => navigate(`/faction/${f.id}`)}>{f.label}</span>
+        <span className="crumb-chip" onClick={() => navigate(`/faction/${f.id}/unit/${r.unit ? encodeURIComponent(r.unit) : '_general'}`)}>{r.unit || 'General'}</span>
       </div>
       <div className="detail-title">{r.name}</div>
       {isShared && (

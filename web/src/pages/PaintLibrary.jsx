@@ -75,6 +75,7 @@ export default function PaintLibrary() {
   const [filterOpen, setFilterOpen] = useState(false);
   const [brands, setBrands] = useState([]);
   const [categories, setCategories] = useState([]);
+  const [view, setView] = useState('list'); // list | ranges
   const scrollRef = useRef(null);
   const confirm = useConfirm();
   const showToast = useToast();
@@ -101,8 +102,22 @@ export default function PaintLibrary() {
   let entries = q ? PAINT_LIBRARY.filter((p) => paintMatchesQuery(p, q)) : PAINT_LIBRARY;
   if (filter === 'owned') entries = entries.filter(isOwnedEntry);
   else if (filter === 'want') entries = entries.filter(needsPurchaseEntry);
+  // Ranges are computed before the brand filter narrows things down --
+  // picking a range tile is itself the way to apply that filter.
+  const entriesForRanges = categories.length ? entries.filter((p) => categories.includes(paintCategory(p.type))) : entries;
   if (brands.length) entries = entries.filter((p) => brands.includes(p.brand));
   if (categories.length) entries = entries.filter((p) => categories.includes(paintCategory(p.type)));
+
+  const rangeTiles = useMemo(() => {
+    const byBrand = new Map();
+    for (const p of entriesForRanges) {
+      if (!byBrand.has(p.brand)) byBrand.set(p.brand, { brand: p.brand, total: 0, owned: 0 });
+      const bucket = byBrand.get(p.brand);
+      bucket.total++;
+      if (isOwnedEntry(p)) bucket.owned++;
+    }
+    return [...byBrand.values()].sort((a, b) => b.total - a.total);
+  }, [entriesForRanges, isOwnedEntry]);
 
   const totalCount = PAINT_LIBRARY.length;
   const ownedCount = useMemo(() => PAINT_LIBRARY.filter(isOwnedEntry).length, [isOwnedEntry]);
@@ -161,6 +176,9 @@ export default function PaintLibrary() {
           <Icon name="search" size={14} />
           <input type="text" placeholder="Search paints" value={query} onChange={(e) => setQuery(e.target.value)} />
         </div>
+        <button type="button" className={`filter-icon-btn ${view === 'ranges' ? 'is-active' : ''}`} aria-label="Browse by range" onClick={() => setView(view === 'ranges' ? 'list' : 'ranges')}>
+          <Icon name="grid" size={16} />
+        </button>
         <button type="button" className="filter-icon-btn" aria-label="Filters" onClick={() => setFilterOpen(true)}>
           <Icon name="filter" size={16} />
           {(brands.length + categories.length) > 0 && <span className="filter-icon-btn__count">{brands.length + categories.length}</span>}
@@ -181,7 +199,20 @@ export default function PaintLibrary() {
         <button className={filter === 'want' ? 'is-active' : ''} onClick={() => setFilter('want')}>To buy <span className="b">{wantCount}</span></button>
       </div>
 
-      {!entries.length ? (
+      {view === 'ranges' ? (
+        !rangeTiles.length ? (
+          <div className="empty-state"><div className="empty-state__title">No matches</div><div className="empty-state__sub">Try a different filter.</div></div>
+        ) : (
+          <div className="range-tiles">
+            {rangeTiles.map(({ brand, total, owned }) => (
+              <div key={brand} className="range-tile" onClick={() => { setBrands([brand]); setView('list'); }}>
+                <div className="range-tile__name">{brand}</div>
+                <div className="range-tile__count">{owned > 0 ? `${owned}/${total} owned` : `${total} paints`}</div>
+              </div>
+            ))}
+          </div>
+        )
+      ) : !entries.length ? (
         <div className="empty-state"><div className="empty-state__title">No matches</div><div className="empty-state__sub">Try a different filter.</div></div>
       ) : (
         <div ref={scrollRef} style={{ height: 'calc(100vh - 420px)', minHeight: 400, overflowY: 'auto', border: '1px solid var(--line)', borderRadius: 'var(--radius-md)', padding: '0 4px' }}>

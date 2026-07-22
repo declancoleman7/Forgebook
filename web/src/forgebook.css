@@ -531,6 +531,27 @@ main {
 }
 .filter-icon-btn:hover { color: var(--gold-bright); border-color: var(--gold); }
 .filter-icon-btn svg { width: 16px; height: 16px; stroke: currentColor; fill: none; }
+.filter-icon-btn.is-active { color: var(--gold-bright); border-color: var(--gold); background: color-mix(in srgb, var(--gold) 14%, var(--bg-panel)); }
+
+/* Paint Library "browse by range" landing grid -- brand cards with an
+   owned/total count, tapping one jumps into the existing flat list
+   pre-filtered to that brand instead of building a separate filtered view. */
+.range-tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 10px;
+}
+.range-tile {
+  padding: 14px 12px;
+  border-radius: var(--radius-md);
+  background: var(--bg-panel);
+  border: 1px solid var(--line);
+  cursor: pointer;
+  transition: border-color 0.15s ease, transform 0.15s ease;
+}
+.range-tile:hover { border-color: var(--gold); transform: translateY(-2px); }
+.range-tile__name { font-weight: 600; margin-bottom: 4px; }
+.range-tile__count { font-family: var(--font-mono); font-size: 11px; color: var(--ink-dim); }
 
 .filter-icon-btn__count {
   position: absolute;
@@ -2946,29 +2967,35 @@ main {
   display: flex;
 }
 
-/* Breadcrumbs on a recipe */
+/* Faction/unit tags on a recipe -- clickable chips linking to "everything
+   else tagged this way" (all recipes for the faction, or for this exact
+   unit), styled as visible pills rather than a plain path-style breadcrumb
+   so the tap-to-browse affordance is obvious at a glance. */
 .detail-crumbs {
   display: flex;
   align-items: center;
   gap: 6px;
+  flex-wrap: wrap;
+  margin-bottom: 10px;
+}
+
+.crumb-chip {
   font-family: var(--font-mono);
   font-size: 10px;
-  letter-spacing: 0.06em;
+  letter-spacing: 0.04em;
   text-transform: uppercase;
-  margin-bottom: 6px;
-}
-
-.detail-crumbs span {
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--chip-color, var(--gold)) 45%, var(--line));
+  background: color-mix(in srgb, var(--chip-color, var(--gold)) 14%, transparent);
+  color: color-mix(in srgb, var(--chip-color, var(--gold)) 70%, var(--parchment));
   cursor: pointer;
+  transition: background 0.15s ease, transform 0.15s ease;
 }
 
-.detail-crumbs .sep {
-  color: var(--ink-dim);
-  cursor: default;
-}
-
-.detail-crumbs span:not(.sep):hover {
-  text-decoration: underline;
+.crumb-chip:hover {
+  background: color-mix(in srgb, var(--chip-color, var(--gold)) 28%, transparent);
+  transform: translateY(-1px);
 }
 
 /* Paint rack */
