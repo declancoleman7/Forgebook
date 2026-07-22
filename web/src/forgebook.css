@@ -4686,7 +4686,10 @@ main {
 .photo-position-picker__panel {
   position: relative;
   width: 100%;
-  max-width: 480px;
+  /* Matches <main>'s own 720px cap (not the narrower 480px other pickers
+     use) so the preview strip below renders at the same width the real
+     recipe page's .detail-hero would get, not just the same height. */
+  max-width: 720px;
   max-height: 90vh;
   background: var(--bg-panel);
   border: 1px solid var(--line);
@@ -4747,7 +4750,11 @@ main {
 
 .photo-position-picker__preview {
   margin: 0 16px 14px;
-  height: 60px;
+  /* Matches .detail-hero's own height exactly (see forgebook.css) -- the
+     panel's max-width below is also raised to match <main>'s 720px cap, so
+     this strip's width:height ratio genuinely mirrors the real recipe page
+     instead of an arbitrary, much-flatter guess. */
+  height: 150px;
   border-radius: var(--radius-sm);
   border: 1px solid var(--line);
   background-size: cover;
