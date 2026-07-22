@@ -13,6 +13,23 @@ function fromRemoteRating(row) {
   return { paintKey: row.paint_key, stars: row.stars, updatedAt: row.updated_at, userId: row.user_id };
 }
 
+// A lightweight, site-wide {userId, displayName} list for @mention
+// highlighting (see utils/mentions.js's splitMentions()) -- the old app
+// amortized an equivalent lookup via a local profiles cache that grew as
+// you browsed; this is a single small query instead (a self-run hobby
+// project's whole userbase is not large enough to make that a real cost),
+// refetched fresh each time a comment/note thread mounts.
+export function useAllProfileNames() {
+  return useQuery({
+    queryKey: ['allProfileNames'],
+    queryFn: async () => {
+      const { data, error } = await supabase.from('profiles').select('user_id, display_name');
+      if (error) throw error;
+      return (data || []).filter((row) => row.display_name).map((row) => ({ userId: row.user_id, displayName: row.display_name }));
+    },
+  });
+}
+
 // Followers/following ids aren't denormalized with names -- batch-resolve
 // them into the {userId, displayName, avatarUrl, isAdmin} shape every
 // profile-row renderer already expects, same one query per profile view

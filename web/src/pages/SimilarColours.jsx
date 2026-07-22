@@ -2,6 +2,8 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import Icon from '../icons.jsx';
 import Avatar from '../components/Avatar.jsx';
+import MentionTextarea from '../components/MentionTextarea.jsx';
+import MentionText from '../components/MentionText.jsx';
 import { PAINT_LIBRARY, paintCategory, paintKey } from '../data/paints.js';
 import { colourSimilarity, hexToHsv, hsvToHex } from '../utils/colour.js';
 import { relativeTime } from '../utils/format.js';
@@ -144,7 +146,7 @@ function NoteRow({ n, myId, onReport }) {
         <span className="comment-row__time">{relativeTime(n.createdAt)}</span>
         {pending && <span className="pill-status">{n.status === 'hidden' ? 'Hidden — reported' : 'Hidden — pending review'}</span>}
       </div>
-      <div className="comment-row__body">{n.body}</div>
+      <div className="comment-row__body"><MentionText text={n.body} /></div>
       {!isMine && <button className="comment-row__report" title="Report" onClick={() => onReport(n.id)}><Icon name="flag" size={13} /></button>}
     </div>
   );
@@ -348,7 +350,7 @@ export default function SimilarColours() {
           </div>
           {isSignedIn ? (
             <div className="note-composer">
-              <textarea maxLength={500} spellCheck placeholder='e.g. "Similar to the old Citadel Goblin Green"' value={noteBody} onChange={(e) => setNoteBody(e.target.value)} />
+              <MentionTextarea maxLength={500} spellCheck placeholder='e.g. "Similar to the old Citadel Goblin Green" (@ to mention someone)' value={noteBody} onChange={(e) => setNoteBody(e.target.value)} />
               <div className="note-composer__footer">
                 <span className="char-count">{noteBody.length}/500</span>
                 <button className="btn btn-primary btn-sm" disabled={submitNote.isPending} onClick={postNote}>Post note</button>

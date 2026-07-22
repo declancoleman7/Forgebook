@@ -2,6 +2,8 @@ import { useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import Icon from '../icons.jsx';
 import Avatar from './Avatar.jsx';
+import MentionTextarea from './MentionTextarea.jsx';
+import MentionText from './MentionText.jsx';
 import { relativeTime } from '../utils/format.js';
 import { useAuth } from '../auth/AuthContext.jsx';
 import { useComments, useSubmitComment, useEditComment, useDeleteComment } from '../queries/useComments.js';
@@ -10,9 +12,7 @@ import { useReport } from '../report/ReportContext.jsx';
 import { useReportContent } from '../queries/useReports.js';
 import { useToast } from '../toast/ToastContext.jsx';
 
-// Ported from the old app's commentListHtml()/commentRowHtml(). Deferred
-// for a later pass: @mention autocomplete -- mentions render as plain
-// "@Name" text for now instead of a styled/linked highlight.
+// Ported from the old app's commentListHtml()/commentRowHtml().
 function CommentRow({ c, myId, isReply, isSignedIn, onReply, onEdit, onDelete, onReport }) {
   const isMine = c.userId === myId;
   const pending = c.flagged || c.status === 'hidden';
@@ -28,7 +28,7 @@ function CommentRow({ c, myId, isReply, isSignedIn, onReply, onEdit, onDelete, o
         <span className="comment-row__time">{relativeTime(c.createdAt)}{c.edited ? ' · edited' : ''}</span>
         {pending && <span className="pill-status">{c.status === 'hidden' ? 'Hidden — reported' : 'Hidden — pending review'}</span>}
       </div>
-      <div className="comment-row__body">{c.body}</div>
+      <div className="comment-row__body"><MentionText text={c.body} /></div>
       {(!isMine && !isReply) || isMine ? (
         <div className="comment-row__linkrow">
           {!isMine && !isReply && <button className="comment-row__link" onClick={() => onReply(c)}>Reply</button>}
@@ -118,10 +118,8 @@ export default function CommentThread({ ownerId, recipeId }) {
               <button type="button" className="reply-indicator__cancel" onClick={cancelEdit} aria-label="Cancel edit">&times;</button>
             </div>
           )}
-          <div style={{ position: 'relative' }}>
-            <textarea ref={textareaRef} id="comment-input" maxLength={500} spellCheck autoCapitalize="sentences"
-              placeholder="Ask a question or share a tip..." value={body} onChange={(e) => setBody(e.target.value)} />
-          </div>
+          <MentionTextarea textareaRef={textareaRef} id="comment-input" maxLength={500} spellCheck autoCapitalize="sentences"
+            placeholder="Ask a question or share a tip... (@ to mention someone)" value={body} onChange={(e) => setBody(e.target.value)} />
           <div className="note-composer__footer">
             <span className="char-count">{body.length}/500</span>
             <button className="btn btn-primary btn-sm" disabled={submitComment.isPending || editComment.isPending} onClick={submit}>
