@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import Icon from '../icons.jsx';
@@ -12,8 +12,56 @@ import { useAuth } from '../auth/AuthContext.jsx';
 import { useActiveHobbyId } from '../hooks/useActiveHobby.js';
 import { useMyRecipes, useSharedRecipes, useRecipeVoteSummary, useMyRecipeVotes, useVoteRecipe, useSavedRecipes, useToggleSaveRecipe } from '../queries/useRecipes.js';
 import { useSavedPaintKeys } from '../queries/usePaints.js';
+import { useMyProfile, useUploadAvatar } from '../queries/useProfile.js';
 import { useActivityFeed, useRecipeCommentCounts, usePaintRatingSummary } from '../queries/useFeed.js';
 import { useMyFollowingIds, useSuggestedProfiles, useToggleFollow } from '../queries/useSocial.js';
+import { useToast } from '../toast/ToastContext.jsx';
+import { downscaleImageSquare } from '../utils/image.js';
+
+// Debug-only escape hatch to preview the nudge without a fresh signup --
+// run `localStorage.setItem('fb_debug_avatar_nudge', '1')` in devtools, then
+// sign in normally. Remove once the nudge itself has been checked over.
+function forceAvatarNudge() {
+  return typeof window !== 'undefined' && window.localStorage.getItem('fb_debug_avatar_nudge') === '1';
+}
+
+// Shown exactly once, right after a brand-new account's first confirmed
+// sign-in (see useMyProfile()'s justSignedUp) -- an encouragement, not a
+// gate, so it's dismissible and never reappears once dismissed or once a
+// photo's actually uploaded. Ported from the old app's avatarNudgeHtml().
+function AvatarNudge({ profile, onDismiss }) {
+  const showToast = useToast();
+  const uploadAvatar = useUploadAvatar();
+  const fileRef = useRef(null);
+
+  const onFileChosen = async (e) => {
+    const file = e.target.files[0];
+    e.target.value = '';
+    if (!file) return;
+    const url = await downscaleImageSquare(file, 240);
+    if (!url) return showToast('That image could not be read');
+    showToast('Uploading…');
+    try {
+      await uploadAvatar.mutateAsync(url);
+      showToast('Profile picture updated');
+    } catch {
+      showToast("Couldn't upload that — try again");
+    }
+  };
+
+  return (
+    <div className="notice notice--nudge">
+      <Avatar displayName={profile?.displayName} url={profile?.avatarUrl} size={36} />
+      <div className="notice--nudge__body">
+        <div className="notice--nudge__title">Add a profile picture</div>
+        <div className="notice--nudge__desc">So people recognize you in comments and on shared recipes.</div>
+      </div>
+      <button type="button" className="btn btn-primary btn-sm" onClick={() => fileRef.current?.click()}>Add photo</button>
+      <button type="button" className="icon-btn" aria-label="Dismiss" onClick={onDismiss}><Icon name="check" size={16} /></button>
+      <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={onFileChosen} />
+    </div>
+  );
+}
 
 // Same tunables as the old app's buildFeedItems() -- a 7-day activity
 // window, 48h popularity half-life, and a comment counting for 3x a like
@@ -248,16 +296,16 @@ function SuggestedPaintersRail() {
   );
 }
 
-// Ported from the old app's viewHome()/buildFeedItems(). Deferred: the
-// once-only new-account avatar nudge (needs "did I just confirm a signup"
-// detection, a smaller feature not worth blocking the rest of this batch
-// on) and global cross-content search (already deferred from the Recipes
-// search page in batch 4).
+// Ported from the old app's viewHome()/buildFeedItems(). Deferred: global
+// cross-content search (already deferred from the Recipes search page in
+// batch 4).
 export default function Home() {
   const { userId } = useAuth();
   const [sort, setSort] = useState('following');
+  const [nudgeDismissed, setNudgeDismissed] = useState(false);
   const activeHobbyId = useActiveHobbyId();
 
+  const { data: profile } = useMyProfile();
   const { data: myRecipes = [] } = useMyRecipes();
   const { data: sharedRecipes = [] } = useSharedRecipes();
   const { data: feed, isLoading: feedLoading } = useActivityFeed();
@@ -276,6 +324,9 @@ export default function Home() {
         <div className="home-layout__main">
           <div className="page-title">Community Feed</div>
           <div style={{ fontSize: 13, opacity: 0.75, margin: '0 2px 10px' }}>What's happening across Forgebook right now.</div>
+          {!nudgeDismissed && !profile?.avatarUrl && (profile?.justSignedUp || forceAvatarNudge()) && (
+            <AvatarNudge profile={profile} onDismiss={() => setNudgeDismissed(true)} />
+          )}
           <div className="lib-filter-seg" style={{ marginBottom: 14 }}>
             <button className={sort === 'following' ? 'is-active' : ''} onClick={() => setSort('following')}>Following</button>
             <button className={sort === 'popular' ? 'is-active' : ''} onClick={() => setSort('popular')}>Popular</button>

@@ -22,7 +22,7 @@ function avatarUrl(path) {
 async function fetchOrCreateMyProfile(userId, email, metadataDisplayName) {
   const { data, error } = await supabase.from('profiles').select('*').eq('user_id', userId).maybeSingle();
   if (error) throw error;
-  if (data) return data;
+  if (data) return { row: data, justCreated: false };
 
   const baseName = metadataDisplayName || defaultDisplayName(email);
   // display_name is unique (case-insensitive). The signup form checks this
@@ -33,7 +33,7 @@ async function fetchOrCreateMyProfile(userId, email, metadataDisplayName) {
   for (let attempt = 1; attempt <= 3; attempt++) {
     const name = attempt === 1 ? baseName : `${baseName} ${attempt}`;
     const { data: inserted, error: insErr } = await supabase.from('profiles').insert({ user_id: userId, display_name: name }).select().single();
-    if (!insErr) return inserted;
+    if (!insErr) return { row: inserted, justCreated: true };
     lastError = insErr;
     if (insErr.code !== '23505') break; // not a name collision -- don't keep retrying blindly
   }
@@ -45,13 +45,20 @@ export function useMyProfile() {
   return useQuery({
     queryKey: ['profile', userId],
     queryFn: async () => {
-      const row = await fetchOrCreateMyProfile(userId, email, signupDisplayNameHint);
+      const { row, justCreated } = await fetchOrCreateMyProfile(userId, email, signupDisplayNameHint);
       return {
         userId,
         displayName: row.display_name,
         isAdmin: !!row.is_admin,
         avatarUrl: avatarUrl(row.avatar_path),
         defaultHobbyId: row.default_hobby_id || null,
+        // True only on the query that actually inserted this profiles row --
+        // i.e. this user's very first sign-in. Home reads it once to decide
+        // whether to show the one-time "add a profile picture" nudge; a
+        // later refetch (window refocus, etc.) finds the row already there
+        // and correctly reports false, same as the old app's
+        // consumeJustSignedUp() only ever firing true once.
+        justSignedUp: justCreated,
       };
     },
     enabled: !!userId,
