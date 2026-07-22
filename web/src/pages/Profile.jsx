@@ -123,7 +123,7 @@ function PersonalWorkspace({ recipes }) {
         <>
           <div className="section-label">Continue Painting</div>
           <div className="continue-card" style={{ '--faction-color': faction(cont.faction).color }} onClick={() => navigate(`/recipe/${cont.id}`)}>
-            <div className={`continue-card__hero ${cont.photo ? 'has-photo' : ''}`} style={cont.photo ? { backgroundImage: `url('${cont.photo}')` } : {}}>
+            <div className={`continue-card__hero ${cont.photo ? 'has-photo' : ''}`} style={cont.photo ? { backgroundImage: `url('${cont.photo}')`, backgroundPosition: `${(cont.photoFocalX ?? 0.5) * 100}% ${(cont.photoFocalY ?? 0.5) * 100}%` } : {}}>
               {!cont.photo && <span className="emblem-badge emblem-badge--md"><EmblemSvg emblemKey={faction(cont.faction).emblem} size={24} /></span>}
             </div>
             <div className="continue-card__body">

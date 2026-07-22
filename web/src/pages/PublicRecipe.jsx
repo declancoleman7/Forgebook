@@ -104,7 +104,7 @@ export default function PublicRecipe() {
           <a href="./">Get the app</a>
         </div>
 
-        <div className={`detail-hero ${r.photo ? 'has-photo' : ''}`} style={{ '--faction-color': f.color, ...(r.photo ? { backgroundImage: `url('${r.photo}')` } : {}) }}>
+        <div className={`detail-hero ${r.photo ? 'has-photo' : ''}`} style={{ '--faction-color': f.color, ...(r.photo ? { backgroundImage: `url('${r.photo}')`, backgroundPosition: `${(r.photoFocalX ?? 0.5) * 100}% ${(r.photoFocalY ?? 0.5) * 100}%` } : {}) }}>
           {!r.photo && <span className="emblem-badge emblem-badge--xl"><EmblemSvg emblemKey={f.emblem} size={40} /></span>}
         </div>
 

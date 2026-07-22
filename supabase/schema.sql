@@ -37,6 +37,20 @@ create table if not exists public.recipes (
 alter table public.recipes add column if not exists hobby_id text not null default 'warhammer';
 create index if not exists recipes_hobby_idx on public.recipes (user_id, hobby_id);
 
+-- Where in the uploaded photo the "important" part is, normalized 0-1 (0.5,
+-- 0.5 is dead center, the CSS default every existing photo already renders
+-- at). Lets a user recenter a photo whose subject isn't centered instead of
+-- letting each display context's own background-position: center crop it
+-- out -- one focal point works across every context (card thumbnail, full
+-- detail hero, feed card) since each just crops around the same point at
+-- its own aspect ratio, same idea as Instagram/most CMS "focal point" tools.
+alter table public.recipes add column if not exists photo_focal_x real not null default 0.5;
+alter table public.recipes add column if not exists photo_focal_y real not null default 0.5;
+alter table public.recipes drop constraint if exists recipes_photo_focal_x_check;
+alter table public.recipes add constraint recipes_photo_focal_x_check check (photo_focal_x between 0 and 1);
+alter table public.recipes drop constraint if exists recipes_photo_focal_y_check;
+alter table public.recipes add constraint recipes_photo_focal_y_check check (photo_focal_y between 0 and 1);
+
 -- ------------------------------------------------------------
 -- Paint rack
 -- ------------------------------------------------------------

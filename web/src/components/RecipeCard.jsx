@@ -46,7 +46,7 @@ export default function RecipeCard({ r }) {
 
   return (
     <div className="recipe-card" style={{ '--faction-color': fac.color }} onClick={() => navigate(dest)}>
-      <div className={`recipe-card__hero ${r.photo ? 'has-photo' : ''}`} style={r.photo ? { backgroundImage: `url('${r.photo}')` } : {}}>
+      <div className={`recipe-card__hero ${r.photo ? 'has-photo' : ''}`} style={r.photo ? { backgroundImage: `url('${r.photo}')`, backgroundPosition: `${(r.photoFocalX ?? 0.5) * 100}% ${(r.photoFocalY ?? 0.5) * 100}%` } : {}}>
         {!r.photo && <span className="recipe-card__emblem emblem-badge emblem-badge--lg"><EmblemSvg emblemKey={fac.emblem} size={26} /></span>}
         <div className="recipe-card__stack">{stack.map((c, i) => <span key={i} style={{ background: c }} />)}</div>
       </div>

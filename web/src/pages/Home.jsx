@@ -132,7 +132,7 @@ function FeedRecipeCard({ item, kind, myId, commentCounts }) {
   return (
     <div className="feed-card">
       <div className="feed-card__link" style={{ cursor: 'pointer' }} onClick={openRecipe}>
-        <div className={`feed-card__hero ${r.photo ? 'has-photo' : ''}`} style={{ '--faction-color': fac.color, ...(r.photo ? { backgroundImage: `url('${r.photo}')` } : {}) }}>
+        <div className={`feed-card__hero ${r.photo ? 'has-photo' : ''}`} style={{ '--faction-color': fac.color, ...(r.photo ? { backgroundImage: `url('${r.photo}')`, backgroundPosition: `${(r.photoFocalX ?? 0.5) * 100}% ${(r.photoFocalY ?? 0.5) * 100}%` } : {}) }}>
           {!r.photo && <span className="emblem-badge emblem-badge--xl"><EmblemSvg emblemKey={fac.emblem} size={46} /></span>}
           <span className="feed-card__tag">{tag}</span>
         </div>

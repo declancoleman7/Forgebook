@@ -3,6 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import Icon from '../icons.jsx';
 import EmptyState from '../components/EmptyState.jsx';
 import PaintPicker from '../components/PaintPicker.jsx';
+import PhotoPositionPicker from '../components/PhotoPositionPicker.jsx';
 import { useActiveHobby } from '../hooks/useActiveHobby.js';
 import { faction, HOBBIES } from '../data/factions.js';
 import { TECHNIQUES, paintKey } from '../data/paints.js';
@@ -73,12 +74,14 @@ function RecipeFormInner({ existing, myRecipes }) {
     return {
       id: null, name: '', faction: activeHobby.factions[0].id, unit: '',
       hobbyId: activeHobby.id, difficulty: 2, photo: null, photoPath: null, originalPhoto: null,
+      photoFocalX: 0.5, photoFocalY: 0.5,
       steps: [newStep()], notes: '', published: false,
     };
   });
   const snapshotRef = useRef(JSON.stringify(recipe));
   const photoInputRef = useRef(null);
   const [picker, setPicker] = useState(null); // { stepId, field } | null
+  const [positionPickerOpen, setPositionPickerOpen] = useState(false);
 
   const hobby = HOBBIES.find((h) => h.id === recipe.hobbyId) || activeHobby;
   const unitSuggestions = [...new Set(visibleRecipes.map((r) => r.unit).filter(Boolean))].sort();
@@ -137,7 +140,9 @@ function RecipeFormInner({ existing, myRecipes }) {
     if (!file) return;
     const url = await downscaleImage(file, 900);
     if (!url) { showToast('That image could not be read'); return; }
-    patch({ photo: url });
+    // A new photo makes the old focal point meaningless -- reset to center
+    // rather than carrying over a position that applied to a different image.
+    patch({ photo: url, photoFocalX: 0.5, photoFocalY: 0.5 });
   };
 
   const togglePublished = () => {
@@ -175,6 +180,7 @@ function RecipeFormInner({ existing, myRecipes }) {
     const payload = {
       id, name: recipe.name.trim(), faction: recipe.faction, unit: recipe.unit.trim() || null,
       hobbyId: recipe.hobbyId || 'warhammer', difficulty: recipe.difficulty, photoPath,
+      photoFocalX: recipe.photoFocalX ?? 0.5, photoFocalY: recipe.photoFocalY ?? 0.5,
       steps, notes: recipe.notes, published: !!recipe.published, updatedAt: new Date().toISOString(),
     };
 
@@ -246,7 +252,8 @@ function RecipeFormInner({ existing, myRecipes }) {
         <div className="photo-field">
           {recipe.photo ? (
             <>
-              <div className="photo-field__preview" style={{ backgroundImage: `url('${recipe.photo}')` }} />
+              <div className="photo-field__preview" style={{ backgroundImage: `url('${recipe.photo}')`, backgroundPosition: `${(recipe.photoFocalX ?? 0.5) * 100}% ${(recipe.photoFocalY ?? 0.5) * 100}%` }} />
+              <button type="button" className="btn btn-ghost btn-sm" onClick={() => setPositionPickerOpen(true)}>Reposition</button>
               <button type="button" className="btn btn-ghost btn-sm" onClick={() => photoInputRef.current?.click()}>Replace</button>
               <button type="button" className="btn btn-danger btn-sm" onClick={() => patch({ photo: null })}>Remove</button>
             </>
@@ -256,6 +263,16 @@ function RecipeFormInner({ existing, myRecipes }) {
           <input ref={photoInputRef} type="file" accept="image/*" className="hidden" onChange={onPhotoChosen} />
         </div>
       </div>
+
+      {positionPickerOpen && recipe.photo && (
+        <PhotoPositionPicker
+          photo={recipe.photo}
+          focalX={recipe.photoFocalX ?? 0.5}
+          focalY={recipe.photoFocalY ?? 0.5}
+          onChange={(x, y) => patch({ photoFocalX: x, photoFocalY: y })}
+          onClose={() => setPositionPickerOpen(false)}
+        />
+      )}
 
       <div className="section-label">Method steps</div>
       {rackEmpty && <div className="notice">Your paint rack is empty — pick a paint from the full library below and it'll go on your buy list, or add one to your rack first.</div>}

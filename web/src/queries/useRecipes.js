@@ -15,6 +15,7 @@ function toRemoteRecipe(r, userId) {
   return {
     id: r.id, user_id: userId, name: r.name, faction: r.faction, unit: r.unit,
     hobby_id: r.hobbyId || 'warhammer', difficulty: r.difficulty, photo_path: r.photoPath || null,
+    photo_focal_x: r.photoFocalX ?? 0.5, photo_focal_y: r.photoFocalY ?? 0.5,
     steps: r.steps || [], notes: r.notes || '', published: !!r.published,
     updated_at: new Date().toISOString(), deleted: false,
   };
@@ -23,7 +24,8 @@ export function fromRemoteRecipe(row) {
   return {
     id: row.id, name: row.name, faction: row.faction, unit: row.unit,
     hobbyId: row.hobby_id || 'warhammer', difficulty: row.difficulty, photoPath: row.photo_path,
-    photo: photoUrl(row.photo_path), steps: row.steps || [], notes: row.notes || '',
+    photo: photoUrl(row.photo_path), photoFocalX: row.photo_focal_x ?? 0.5, photoFocalY: row.photo_focal_y ?? 0.5,
+    steps: row.steps || [], notes: row.notes || '',
     published: !!row.published, updatedAt: row.updated_at,
   };
 }
