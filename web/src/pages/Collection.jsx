@@ -29,9 +29,13 @@ function FactionTile({ f, count, art }) {
                 </linearGradient>
               </defs>
             </svg>
-            <span className="faction-tile__watermark">
-              <svg width={66} height={66} viewBox="0 0 24 24" fill={`url(#${gradId})`} stroke="none" style={{ color: f.color }} dangerouslySetInnerHTML={{ __html: emblemPaths(f.emblem) }} />
-            </span>
+            {/* This used to also render a second, larger copy of the same
+                path as a rotated, low-opacity "watermark" echo behind this
+                one. Measured as roughly a third of Collection's mobile
+                scroll cost (each inline dangerouslySetInnerHTML SVG is real
+                rendering work, and this doubled it per tile for a subtle
+                background detail) -- dropped for a real, measured
+                mobile-scroll win. */}
             <span className="faction-tile__icon-badge">
               <svg width={38} height={38} viewBox="0 0 24 24" fill={`url(#${gradId})`} stroke="none" style={{ color: f.color }} dangerouslySetInnerHTML={{ __html: emblemPaths(f.emblem) }} />
             </span>

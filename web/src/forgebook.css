@@ -2776,16 +2776,31 @@ main {
      modifier below; a bare .faction-tile (no modifier) gets no pattern. */
   --tile-pattern: none;
   --tile-pattern-size: auto;
+  /* Collection can render several dozen of these at once, each with its own
+     ::before noise-filter + mix-blend-mode layer below -- both genuinely
+     expensive to paint/composite, and the main reported cause of scroll
+     jank on mobile. content-visibility skips layout/paint entirely for
+     tiles currently off-screen instead of trying to make the per-tile
+     texture itself cheaper; contain-intrinsic-size keeps the grid's
+     scrollbar/layout stable for tiles that haven't been measured yet.
+     aspect-ratio above already fixes each tile's height, so this estimate
+     only needs to be roughly right, not exact. */
+  content-visibility: auto;
+  contain-intrinsic-size: 0 140px;
 }
 
+/* This used to also carry a live feTurbulence SVG noise filter here --
+   procedural SVG filters are a well-documented paint cost, expensive to
+   rasterize and repeated across every tile scrolled past. Dropped it as
+   part of the Collection mobile-scroll-jank fix below; the per-alliance
+   gradient pattern is plain gradients (cheap to paint) and still reads as
+   a distinct texture per alliance on its own. */
 .faction-tile::before {
   content: "";
   position: absolute;
   inset: 0;
-  background-image:
-    var(--tile-pattern),
-    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='90' height='90'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
-  background-size: var(--tile-pattern-size), auto;
+  background-image: var(--tile-pattern);
+  background-size: var(--tile-pattern-size);
   mix-blend-mode: overlay;
   opacity: 0.5;
   pointer-events: none;
@@ -2835,16 +2850,6 @@ main {
   background-size: contain;
   background-repeat: no-repeat;
   background-position: center;
-}
-
-/* A larger, rotated, near-invisible echo of the same mark sat behind the
-   real one — the way an embossed or watermarked seal reads, not a sticker
-   flat on the surface. */
-.faction-tile__watermark {
-  position: absolute;
-  opacity: 0.16;
-  transform: rotate(-10deg) scale(1.15);
-  pointer-events: none;
 }
 
 /* A dark disc behind the default emblem so it reads against the tile's
