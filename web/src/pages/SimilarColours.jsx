@@ -81,6 +81,16 @@ function computeColourMatches(hex, excludeKey, resultFilter, sourceBrand, source
 function ColourWheel({ hex, onChange, onCommit }) {
   const canvasRef = useRef(null);
   const draggingRef = useRef(false);
+  // pointermove can fire far more often than the screen actually repaints
+  // (well past 60/s on some mice/tablets), and each call recomputes
+  // colour-matches over the full ~2000-entry paint library plus re-renders
+  // every result row -- unthrottled, a fast/sustained drag queues up far
+  // more of that work than any frame can use, and it compounds across
+  // repeated drags in one session. Capping to one update per animation
+  // frame keeps dragging visually identical while cutting out the calls
+  // that were never going to reach the screen anyway.
+  const rafRef = useRef(null);
+  const pendingRef = useRef(null);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -124,14 +134,33 @@ function ColourWheel({ hex, onChange, onCommit }) {
     const w = hexToHsv(hex);
     onChange(hsvToHex((a / (Math.PI * 2)) * 360, Math.min(1, dist / R), w.v));
   };
+  // Re-pointed every render so a callback that was scheduled a frame or two
+  // ago (and so closed over an older `hex`) still runs the current logic --
+  // only the "preserve brightness while dragging hue/sat" read of `hex`
+  // could ever be a frame stale, which isn't perceptible mid-drag.
+  const updateFromEventRef = useRef(updateFromEvent);
+  updateFromEventRef.current = updateFromEvent;
+
+  const scheduleUpdate = (e) => {
+    pendingRef.current = { clientX: e.clientX, clientY: e.clientY };
+    if (rafRef.current != null) return;
+    rafRef.current = requestAnimationFrame(() => {
+      rafRef.current = null;
+      if (pendingRef.current) updateFromEventRef.current(pendingRef.current);
+    });
+  };
+  const flushPending = () => {
+    if (rafRef.current != null) { cancelAnimationFrame(rafRef.current); rafRef.current = null; }
+    if (pendingRef.current) { updateFromEventRef.current(pendingRef.current); pendingRef.current = null; }
+  };
 
   return (
     <div className="wheel-wrap">
       <canvas ref={canvasRef} id="wheel-canvas" width={180} height={180}
         onPointerDown={(e) => { draggingRef.current = true; e.target.setPointerCapture(e.pointerId); updateFromEvent(e); }}
-        onPointerMove={(e) => { if (draggingRef.current) updateFromEvent(e); }}
-        onPointerUp={(e) => { if (!draggingRef.current) return; draggingRef.current = false; try { e.target.releasePointerCapture(e.pointerId); } catch { /* ignore */ } onCommit?.(); }}
-        onPointerCancel={() => { draggingRef.current = false; }}
+        onPointerMove={(e) => { if (draggingRef.current) scheduleUpdate(e); }}
+        onPointerUp={(e) => { if (!draggingRef.current) return; draggingRef.current = false; try { e.target.releasePointerCapture(e.pointerId); } catch { /* ignore */ } flushPending(); onCommit?.(); }}
+        onPointerCancel={() => { draggingRef.current = false; if (rafRef.current != null) { cancelAnimationFrame(rafRef.current); rafRef.current = null; } pendingRef.current = null; }}
       />
       <div className="wheel-indicator" style={{ left: `${indicatorLeft}%`, top: `${indicatorTop}%`, background: hex }} />
     </div>
