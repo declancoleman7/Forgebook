@@ -8,6 +8,7 @@ import EmblemSvg from '../components/EmblemSvg.jsx';
 import HobbyStageStack from '../components/HobbyStageStack.jsx';
 import { HOBBIES, faction as findFaction } from '../data/factions.js';
 import { HOBBY_STAGES } from '../data/hobbyStages.js';
+import { MODEL_CATEGORIES, DEFAULT_MODEL_CATEGORY, categoryLabel, categoryWeight } from '../data/modelCategories.js';
 import { downscaleImage } from '../utils/image.js';
 import { useMyHobbyLog, useCreateHobbyLogEntry, useUpdateHobbyLogEntry, useDeleteHobbyLogEntry, useUploadHobbyLogPhoto } from '../queries/useHobbyLog.js';
 import { useMyHobbyProjects, useCreateHobbyProject, useUpdateHobbyProject, useDeleteHobbyProject } from '../queries/useHobbyProjects.js';
@@ -48,8 +49,15 @@ function dominantStage(entry) {
 function StagePipelineChart({ entries }) {
   const totalMinis = entries.reduce((sum, e) => sum + (e.quantity || 0), 0);
   if (!totalMinis) return null;
+  // Weighted by category (a Titan or Vehicle is vastly more work than a
+  // trooper) -- only shown when it actually differs from the raw count, so
+  // an all-Infantry pile isn't cluttered with a redundant second number.
+  const weightedTotal = Math.round(entries.reduce((sum, e) => sum + (e.quantity || 0) * categoryWeight(e.category), 0));
   return (
     <div className="hoblog-chart">
+      {weightedTotal !== totalMinis && (
+        <div className="label-hint" style={{ marginBottom: 6 }}>{totalMinis} miniatures · ~{weightedTotal} weighted by category</div>
+      )}
       {HOBBY_STAGES.map((s) => {
         const n = entries.reduce((sum, e) => sum + (e.stageCounts?.[s.id] || 0), 0);
         const pct = Math.round((n / totalMinis) * 100);
@@ -116,6 +124,7 @@ function EntryCard({ entry, onEdit }) {
         <HobbyStageStack stageCounts={entry.stageCounts} quantity={entry.quantity} />
         <div className="hobbylog-card__meta">
           {f && <span className="hobbylog-card__tag" style={{ color: f.color }}>{f.label}</span>}
+          {entry.category && entry.category !== DEFAULT_MODEL_CATEGORY && <span className="hobbylog-card__tag">{categoryLabel(entry.category)}</span>}
           {entry.isPublic && <span className="hobbylog-card__public" title="Visible on your public profile"><Icon name="user" size={11} /> Public</span>}
           {entry.recipeLinks.length > 0 && <span className="hobbylog-card__recipes">{entry.recipeLinks.length} recipe{entry.recipeLinks.length === 1 ? '' : 's'}</span>}
         </div>
@@ -137,7 +146,7 @@ function EntryForm({ existing, myRecipes, prefill, onClose }) {
 
   const [entry, setEntry] = useState(() => existing
     ? { ...existing, originalPhoto: existing.photo || null }
-    : { id: null, title: '', notes: '', quantity: 1, stageCounts: { unassembled: 1 }, hobbyId: prefill?.hobbyId || '', factionId: prefill?.factionId || '', photo: null, photoPath: null, originalPhoto: null, isPublic: false, recipeLinks: [] });
+    : { id: null, title: '', notes: '', quantity: 1, stageCounts: { unassembled: 1 }, category: DEFAULT_MODEL_CATEGORY, hobbyId: prefill?.hobbyId || '', factionId: prefill?.factionId || '', photo: null, photoPath: null, originalPhoto: null, isPublic: false, recipeLinks: [] });
 
   const patch = (fields) => setEntry((e) => ({ ...e, ...fields }));
   const hobby = HOBBIES.find((h) => h.id === entry.hobbyId);
@@ -255,7 +264,7 @@ function EntryForm({ existing, myRecipes, prefill, onClose }) {
     }
     const payload = {
       id: entry.id, title: entry.title.trim(), notes: entry.notes, quantity: entry.quantity, stageCounts: entry.stageCounts,
-      hobbyId: entry.hobbyId || null, factionId: entry.factionId || null,
+      category: entry.category || DEFAULT_MODEL_CATEGORY, hobbyId: entry.hobbyId || null, factionId: entry.factionId || null,
       photoPath, isPublic: entry.isPublic, recipeLinks: entry.recipeLinks,
     };
     try {
@@ -291,6 +300,15 @@ function EntryForm({ existing, myRecipes, prefill, onClose }) {
       <div className="field">
         <label>How many miniatures</label>
         <input type="number" min="0" value={entry.quantity} onChange={(e) => setQuantity(e.target.value)} />
+      </div>
+
+      <div className="field">
+        <label>Category <span className="label-hint">how much work one of these takes, roughly</span></label>
+        <div className="tech-picker">
+          {MODEL_CATEGORIES.map((c) => (
+            <button type="button" key={c.id} className={entry.category === c.id ? 'is-selected' : ''} onClick={() => patch({ category: c.id })}>{c.label}</button>
+          ))}
+        </div>
       </div>
 
       <div className="field">

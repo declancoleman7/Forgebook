@@ -465,6 +465,11 @@ alter table public.hobby_log_entries alter column status set default 'owned';
 alter table public.hobby_log_entries add column if not exists quantity integer not null default 1;
 alter table public.hobby_log_entries add column if not exists stage_counts jsonb not null default '{}'::jsonb;
 
+-- Free-form like hobby_id/faction_id above (validated client-side against
+-- data/modelCategories.js, no DB check) -- lets a model's category (and the
+-- weighting it drives) grow without a migration for each new category.
+alter table public.hobby_log_entries add column if not exists category text not null default 'infantry';
+
 -- One-time backfill for rows created before quantity/stage_counts existed --
 -- guarded by "stage_counts = '{}'" so re-pasting this file never re-runs it
 -- against an already-migrated row.

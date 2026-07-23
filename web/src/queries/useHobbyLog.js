@@ -18,6 +18,7 @@ function fromRemote(row) {
     notes: row.notes || '',
     quantity: row.quantity || 1,
     stageCounts,
+    category: row.category || 'infantry',
     hobbyId: row.hobby_id || '',
     factionId: row.faction_id || '',
     photoPath: row.photo_path,
@@ -68,10 +69,10 @@ export function useCreateHobbyLogEntry() {
   const { userId } = useAuth();
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async ({ title, notes, quantity, stageCounts, hobbyId, factionId, photoPath, isPublic, recipeLinks }) => {
+    mutationFn: async ({ title, notes, quantity, stageCounts, category, hobbyId, factionId, photoPath, isPublic, recipeLinks }) => {
       const { data, error } = await supabase.from('hobby_log_entries').insert({
         user_id: userId, title, notes: notes || '', quantity, stage_counts: stageCounts,
-        hobby_id: hobbyId || null, faction_id: factionId || null,
+        category: category || 'infantry', hobby_id: hobbyId || null, faction_id: factionId || null,
         photo_path: photoPath || null, is_public: !!isPublic,
       }).select().single();
       if (error) throw new Error("Couldn't save that entry — try again.");
@@ -92,16 +93,16 @@ export function useUpdateHobbyLogEntry() {
     // the rest of the app's edit mutations (e.g. useEditComment): the
     // caller already knows exactly what it just wrote, so the cache patch
     // is built from the mutation's own input rather than a round trip.
-    mutationFn: async ({ id, title, notes, quantity, stageCounts, hobbyId, factionId, photoPath, isPublic, recipeLinks }) => {
+    mutationFn: async ({ id, title, notes, quantity, stageCounts, category, hobbyId, factionId, photoPath, isPublic, recipeLinks }) => {
       const { error } = await supabase.from('hobby_log_entries').update({
         title, notes: notes || '', quantity, stage_counts: stageCounts,
-        hobby_id: hobbyId || null, faction_id: factionId || null,
+        category: category || 'infantry', hobby_id: hobbyId || null, faction_id: factionId || null,
         photo_path: photoPath || null, is_public: !!isPublic,
         updated_at: new Date().toISOString(),
       }).eq('id', id).eq('user_id', userId);
       if (error) throw new Error("Couldn't save that entry — try again.");
       await replaceRecipeLinks(id, recipeLinks);
-      return { id, title, notes: notes || '', quantity, stageCounts, hobbyId, factionId, photoPath, isPublic, recipeLinks: recipeLinks || [] };
+      return { id, title, notes: notes || '', quantity, stageCounts, category: category || 'infantry', hobbyId, factionId, photoPath, isPublic, recipeLinks: recipeLinks || [] };
     },
     onSuccess: (updated) => {
       qc.setQueryData(['hobbyLog', userId], (prev = []) => {
