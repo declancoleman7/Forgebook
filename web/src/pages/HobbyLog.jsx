@@ -5,6 +5,7 @@ import EmptyState from '../components/EmptyState.jsx';
 import RecipePicker from '../components/RecipePicker.jsx';
 import EntryPicker from '../components/EntryPicker.jsx';
 import FactionPicker from '../components/FactionPicker.jsx';
+import Lightbox from '../components/Lightbox.jsx';
 import EmblemSvg from '../components/EmblemSvg.jsx';
 import HobbyStageStack from '../components/HobbyStageStack.jsx';
 import { HOBBIES, faction as findFaction } from '../data/factions.js';
@@ -255,11 +256,19 @@ function PipelineTimelineChart({ stageEvents }) {
 
 function EntryCard({ entry, onEdit }) {
   const f = entry.factionId ? findFaction(entry.factionId) : null;
+  const [lightboxOpen, setLightboxOpen] = useState(false);
+  const openLightbox = (e) => { e.stopPropagation(); setLightboxOpen(true); };
   return (
     <div className="hobbylog-card" onClick={() => onEdit(entry.id)}>
-      <div className={`hobbylog-card__photo ${entry.photo ? 'has-photo' : ''}`} style={entry.photo ? { backgroundImage: `url('${entry.photo}')` } : undefined}>
+      <div className={`hobbylog-card__photo ${entry.photo ? 'has-photo' : ''}`} style={entry.photo ? { backgroundImage: `url('${entry.photo}')`, cursor: 'pointer' } : undefined}
+        onClick={entry.photo ? openLightbox : undefined}>
         {!entry.photo && <Icon name="paintdrop" size={22} />}
       </div>
+      {lightboxOpen && entry.photo && (
+        <div onClick={(e) => e.stopPropagation()}>
+          <Lightbox url={entry.photo} onClose={() => setLightboxOpen(false)} />
+        </div>
+      )}
       <div className="hobbylog-card__body">
         <div className="hobbylog-card__title">{entry.title} <span className="hobbylog-card__qty">×{entry.quantity}</span></div>
         <HobbyStageStack stageCounts={entry.stageCounts} quantity={entry.quantity} />
@@ -285,8 +294,10 @@ function EntryForm({ existing, myRecipes, prefill, onClose }) {
   const uploadPhoto = useUploadHobbyLogPhoto();
   const logStageEvents = useLogHobbyStageEvents();
   const photoInputRef = useRef(null);
+  const cameraInputRef = useRef(null);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [factionPickerOpen, setFactionPickerOpen] = useState(false);
+  const [lightboxOpen, setLightboxOpen] = useState(false);
 
   const [entry, setEntry] = useState(() => existing
     ? { ...existing, originalPhoto: existing.photo || null }
@@ -571,15 +582,21 @@ function EntryForm({ existing, myRecipes, prefill, onClose }) {
         <div className="photo-field">
           {entry.photo ? (
             <>
-              <div className="photo-field__preview" style={{ backgroundImage: `url('${entry.photo}')` }} />
+              <div className="photo-field__preview" style={{ backgroundImage: `url('${entry.photo}')`, cursor: 'pointer' }} onClick={() => setLightboxOpen(true)} />
               <button type="button" className="btn btn-ghost btn-sm" onClick={() => photoInputRef.current?.click()}>Replace</button>
+              <button type="button" className="btn btn-ghost btn-sm" onClick={() => cameraInputRef.current?.click()}>Retake</button>
               <button type="button" className="btn btn-danger btn-sm" onClick={() => patch({ photo: null, photoPath: null })}>Remove</button>
             </>
           ) : (
-            <button type="button" className="repeater-add" style={{ margin: 0 }} onClick={() => photoInputRef.current?.click()}>+ Add photo</button>
+            <div style={{ display: 'flex', gap: 8, width: '100%' }}>
+              <button type="button" className="repeater-add" style={{ margin: 0, flex: 1 }} onClick={() => photoInputRef.current?.click()}>+ Choose photo</button>
+              <button type="button" className="repeater-add" style={{ margin: 0, flex: 1 }} onClick={() => cameraInputRef.current?.click()}>+ Take photo</button>
+            </div>
           )}
         </div>
         <input ref={photoInputRef} type="file" accept="image/*" className="hidden" onChange={onPhotoChosen} />
+        <input ref={cameraInputRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={onPhotoChosen} />
+        {lightboxOpen && entry.photo && <Lightbox url={entry.photo} onClose={() => setLightboxOpen(false)} />}
       </div>
 
       {myRecipes.length > 0 && (

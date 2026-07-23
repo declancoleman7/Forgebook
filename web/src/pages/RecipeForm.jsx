@@ -82,6 +82,7 @@ function RecipeFormInner({ existing, myRecipes }) {
   });
   const snapshotRef = useRef(JSON.stringify(recipe));
   const photoInputRef = useRef(null);
+  const cameraInputRef = useRef(null);
   const [picker, setPicker] = useState(null); // { stepId, field } | null
   const [positionPickerOpen, setPositionPickerOpen] = useState(false);
   const [factionPickerOpen, setFactionPickerOpen] = useState(false);
@@ -267,12 +268,17 @@ function RecipeFormInner({ existing, myRecipes }) {
               <div className="photo-field__preview" style={{ backgroundImage: `url('${recipe.photo}')`, backgroundPosition: `${(recipe.photoFocalX ?? 0.5) * 100}% ${(recipe.photoFocalY ?? 0.5) * 100}%` }} />
               <button type="button" className="btn btn-ghost btn-sm" onClick={() => setPositionPickerOpen(true)}>Reposition</button>
               <button type="button" className="btn btn-ghost btn-sm" onClick={() => photoInputRef.current?.click()}>Replace</button>
+              <button type="button" className="btn btn-ghost btn-sm" onClick={() => cameraInputRef.current?.click()}>Retake</button>
               <button type="button" className="btn btn-danger btn-sm" onClick={() => patch({ photo: null })}>Remove</button>
             </>
           ) : (
-            <button type="button" className="repeater-add" style={{ margin: 0 }} onClick={() => photoInputRef.current?.click()}>+ Add photo</button>
+            <div style={{ display: 'flex', gap: 8, width: '100%' }}>
+              <button type="button" className="repeater-add" style={{ margin: 0, flex: 1 }} onClick={() => photoInputRef.current?.click()}>+ Choose photo</button>
+              <button type="button" className="repeater-add" style={{ margin: 0, flex: 1 }} onClick={() => cameraInputRef.current?.click()}>+ Take photo</button>
+            </div>
           )}
           <input ref={photoInputRef} type="file" accept="image/*" className="hidden" onChange={onPhotoChosen} />
+          <input ref={cameraInputRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={onPhotoChosen} />
         </div>
       </div>
 

@@ -625,6 +625,21 @@ create policy "own paints" on public.paints
   using      (auth.uid() = user_id)
   with check (auth.uid() = user_id);
 
+-- Was missing entirely -- RLS is enabled on this table (whether toggled on
+-- via the Supabase dashboard's security advisor or lost from an earlier
+-- pass of this file, its live state has RLS on regardless of what this file
+-- says), but with zero policies that blocks every read/write outright,
+-- surfacing to the client as 42501 "new row violates row-level security
+-- policy" on every want-to-buy toggle. Same own-user shape as "own paints"
+-- above.
+alter table public.paint_wants enable row level security;
+
+drop policy if exists "own paint wants" on public.paint_wants;
+create policy "own paint wants" on public.paint_wants
+  for all
+  using      (auth.uid() = user_id)
+  with check (auth.uid() = user_id);
+
 -- Shared recipes. Published recipes are public — readable by anyone,
 -- signed in or not — so a share link works for someone with no Forgebook
 -- account at all. Only the published/deleted flags gate this; nothing about
