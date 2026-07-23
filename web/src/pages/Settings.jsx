@@ -190,6 +190,21 @@ export default function Settings() {
         </div>
       </div>
 
+      {profile?.isAdmin && (
+        <>
+          <div className="section-label">Admin</div>
+          <div className="settings-group">
+            <div className="settings-row" style={{ cursor: 'pointer' }} onClick={() => navigate('/admin')}>
+              <div>
+                <div className="settings-row__label">Moderation</div>
+                <div className="settings-row__desc">Review reported content and manage accounts.</div>
+              </div>
+              <Icon name="chevron" size={18} />
+            </div>
+          </div>
+        </>
+      )}
+
       <div className="fine-print">
         Faction names are used to organise your own recipes. Forgebook is an unofficial hobby
         tool, not affiliated with or endorsed by Games Workshop. All emblems shipped with the

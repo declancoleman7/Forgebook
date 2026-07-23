@@ -151,9 +151,9 @@ export function useSearchProfiles(query) {
   return useQuery({
     queryKey: ['profileSearch', q],
     queryFn: async () => {
-      const { data, error } = await supabase.from('profiles').select('user_id, display_name, avatar_path, is_admin').ilike('display_name', `%${q}%`).limit(20);
+      const { data, error } = await supabase.from('profiles').select('user_id, display_name, avatar_path, is_admin, is_banned').ilike('display_name', `%${q}%`).limit(20);
       if (error) return [];
-      return (data || []).map((row) => ({ userId: row.user_id, displayName: row.display_name, avatarUrl: avatarUrl(row.avatar_path), isAdmin: !!row.is_admin }));
+      return (data || []).map((row) => ({ userId: row.user_id, displayName: row.display_name, avatarUrl: avatarUrl(row.avatar_path), isAdmin: !!row.is_admin, isBanned: !!row.is_banned }));
     },
     enabled: q.length > 0,
   });

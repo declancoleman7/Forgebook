@@ -38,6 +38,19 @@ export function AuthProvider({ children }) {
     // password" -- distinguishing them would let someone probe which
     // invited addresses exist.
     if (error) return { ok: false, message: 'Incorrect email or password.' };
+
+    // A ban is enforced here, at sign-in, not as a live mid-session kill --
+    // a banned account's existing session (if any) keeps working until it
+    // naturally expires. A brand new account has no profiles row yet
+    // (ensureProfile() creates it lazily on first load, not here), so a
+    // missing row fails open as "not banned" -- same reasoning as
+    // isDisplayNameAvailable's own fail-open below.
+    const { data: profileRow } = await supabase.from('profiles').select('is_banned').eq('user_id', data.session.user.id).maybeSingle();
+    if (profileRow?.is_banned) {
+      await supabase.auth.signOut();
+      return { ok: false, message: 'This account has been suspended.' };
+    }
+
     setSession(data.session);
     return { ok: true };
   }, []);

@@ -122,6 +122,13 @@ alter table public.profiles add column if not exists avatar_path text;
 -- a chosen default follow the account across devices.
 alter table public.profiles add column if not exists default_hobby_id text;
 
+-- Account-level moderation action, distinct from hiding a single piece of
+-- content: a banned account is refused at sign-in (see AuthContext.jsx),
+-- not revoked mid-session -- this column is only ever read/written by an
+-- admin (see the RLS policy + column grant below), never the account
+-- owner themselves.
+alter table public.profiles add column if not exists is_banned boolean not null default false;
+
 -- ------------------------------------------------------------
 -- Faction emblems — an admin-uploaded image for an army that replaces the
 -- built-in mark for EVERYONE, not just the uploader's own device (unlike the
@@ -191,6 +198,18 @@ create table if not exists public.reports (
   primary key (id),
   unique (content_type, content_id, reporter_id)
 );
+
+-- Lets the admin area track "still needs a look" vs "already handled"
+-- instead of every report sitting in one undifferentiated pile forever --
+-- the auto-hide-at-3-reports behaviour below is separate and unaffected by
+-- this (it counts ALL reports regardless of status, matching how it always
+-- has); this is purely for the admin queue's own view.
+alter table public.reports add column if not exists status text not null default 'open';
+alter table public.reports drop constraint if exists reports_status_check;
+alter table public.reports add constraint reports_status_check check (status in ('open', 'resolved', 'dismissed'));
+alter table public.reports add column if not exists resolved_by uuid references auth.users (id) on delete set null;
+alter table public.reports add column if not exists resolved_at timestamptz;
+create index if not exists reports_status_idx on public.reports (status, created_at);
 
 -- ------------------------------------------------------------
 -- Community notes on library paints — freeform tips ("this is similar to a
@@ -582,6 +601,34 @@ create policy "manage own profile" on public.profiles
 -- by re-running the bootstrap block below directly in the SQL editor.
 revoke update on public.profiles from authenticated;
 grant update (display_name, avatar_path, default_hobby_id, updated_at) on public.profiles to authenticated;
+grant update (is_banned) on public.profiles to authenticated;
+
+-- A policy defined ON profiles that needs to check profiles' OWN is_admin
+-- column can't just subquery profiles directly the way every other admin
+-- check in this file does (those all live on a DIFFERENT table checking
+-- profiles) -- that would subject the subquery to profiles' own RLS,
+-- including this very policy, tripping "infinite recursion detected in
+-- policy for relation" (42P17). Same gotcha comment_parent_in_same_recipe()
+-- above works around, same fix: a security-definer function bypasses RLS
+-- on its own internal lookup.
+create or replace function public.is_admin(p_user_id uuid)
+returns boolean
+language sql
+security definer
+set search_path = public, pg_temp
+stable
+as $$
+  select coalesce((select is_admin from public.profiles where user_id = p_user_id), false);
+$$;
+
+-- Lets an admin ban/unban ANY account, scoped to just the is_banned column
+-- by the grant above -- an admin still can't touch anyone else's display
+-- name, avatar, etc. through this policy.
+drop policy if exists "admin manage bans" on public.profiles;
+create policy "admin manage bans" on public.profiles
+  for update
+  using      (public.is_admin(auth.uid()))
+  with check (public.is_admin(auth.uid()));
 
 -- Faction emblems: readable by anyone signed in, writable only by an admin.
 alter table public.faction_emblems enable row level security;
@@ -632,7 +679,14 @@ create policy "read comments on visible recipes" on public.recipe_comments
       (
         deleted = false
         and (
-          (status = 'visible' and flagged = false)
+          (
+            status = 'visible'
+            and flagged = false
+            and (
+              select count(*) from public.reports rep
+              where rep.content_type = 'recipe_comment' and rep.content_id = recipe_comments.id
+            ) < 3
+          )
           or user_id = auth.uid()
           or exists (select 1 from public.profiles p where p.user_id = auth.uid() and p.is_admin)
         )
