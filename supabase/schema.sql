@@ -470,6 +470,33 @@ alter table public.hobby_log_entries add column if not exists stage_counts jsonb
 -- weighting it drives) grow without a migration for each new category.
 alter table public.hobby_log_entries add column if not exists category text not null default 'infantry';
 
+-- When this unit first became fully Finished (every model in stage_counts.
+-- finished) -- app-managed, not a trigger: EntryForm computes it at save
+-- time from the stage_counts it's already writing, same as everything else
+-- on this table. Cleared back to null if a later correction drops the unit
+-- back below fully finished.
+alter table public.hobby_log_entries add column if not exists completed_at timestamptz;
+
+-- A per-stage transition ledger, separate from stage_counts (which is only
+-- ever a live snapshot of where models currently sit). Lets the dashboard
+-- answer "how many models did I actually prime/paint/finish THIS month"
+-- without that answer drifting every time a model advances further along
+-- the pipeline -- reaching Primed is a permanent milestone even after the
+-- same model is later Painted, so advancing a LATER stage never implies a
+-- negative event for an EARLIER one. Only an explicit correction (the "-"
+-- stepper, or shrinking the miniature count) records a negative delta,
+-- and only for the exact stage being corrected.
+create table if not exists public.hobby_log_stage_events (
+  id           uuid        not null default gen_random_uuid(),
+  entry_id     uuid        not null references public.hobby_log_entries (id) on delete cascade,
+  user_id      uuid        not null references auth.users (id) on delete cascade,
+  stage_id     text        not null,
+  delta        integer     not null,
+  occurred_at  timestamptz not null default now(),
+  primary key (id)
+);
+create index if not exists hobby_log_stage_events_user_month_idx on public.hobby_log_stage_events (user_id, occurred_at);
+
 -- One-time backfill for rows created before quantity/stage_counts existed --
 -- guarded by "stage_counts = '{}'" so re-pasting this file never re-runs it
 -- against an already-migrated row.
@@ -1400,6 +1427,7 @@ alter table public.hobby_log_entries enable row level security;
 alter table public.hobby_log_recipes enable row level security;
 alter table public.hobby_log_projects enable row level security;
 alter table public.hobby_log_project_entries enable row level security;
+alter table public.hobby_log_stage_events enable row level security;
 
 drop policy if exists "own hobby log entries" on public.hobby_log_entries;
 create policy "own hobby log entries" on public.hobby_log_entries
@@ -1450,6 +1478,14 @@ create policy "read hobby log project entries on visible projects" on public.hob
     select 1 from public.hobby_log_projects p
     where p.id = project_id and (p.user_id = auth.uid() or (p.is_public = true and p.deleted = false))
   ));
+
+-- Own-eyes-only -- unlike entries/projects, these are never shown on a
+-- public profile, just a private "this month" stat for the owner.
+drop policy if exists "own hobby log stage events" on public.hobby_log_stage_events;
+create policy "own hobby log stage events" on public.hobby_log_stage_events
+  for all
+  using      (auth.uid() = user_id)
+  with check (auth.uid() = user_id);
 
 -- ------------------------------------------------------------
 -- Admin bootstrap — run this block (just this block) whenever you want to

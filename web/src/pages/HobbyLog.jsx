@@ -10,7 +10,8 @@ import { HOBBIES, faction as findFaction } from '../data/factions.js';
 import { HOBBY_STAGES } from '../data/hobbyStages.js';
 import { MODEL_CATEGORIES, DEFAULT_MODEL_CATEGORY, categoryLabel, categoryWeight } from '../data/modelCategories.js';
 import { downscaleImage } from '../utils/image.js';
-import { useMyHobbyLog, useCreateHobbyLogEntry, useUpdateHobbyLogEntry, useDeleteHobbyLogEntry, useUploadHobbyLogPhoto } from '../queries/useHobbyLog.js';
+import { relativeTime } from '../utils/format.js';
+import { useMyHobbyLog, useCreateHobbyLogEntry, useUpdateHobbyLogEntry, useDeleteHobbyLogEntry, useUploadHobbyLogPhoto, useHobbyLogStageEvents, useLogHobbyStageEvents } from '../queries/useHobbyLog.js';
 import { useMyHobbyProjects, useCreateHobbyProject, useUpdateHobbyProject, useDeleteHobbyProject } from '../queries/useHobbyProjects.js';
 import { useMyRecipes } from '../queries/useRecipes.js';
 import { useConfirm } from '../confirm/ConfirmContext.jsx';
@@ -75,23 +76,30 @@ function StagePipelineChart({ entries }) {
   );
 }
 
-// Buckets FINISHED miniatures (not entries) by the month their entry was
-// last updated -- there's no dedicated "finished at" timestamp, so this is
-// a reasonable proxy, not an exact audit trail (editing a finished entry
-// later nudges its month).
-function FinishedTrendChart({ entries }) {
+// Buckets real FINISHED-stage transition events by the month they happened
+// -- unlike the old status/updatedAt-based proxy this replaced, a later
+// correction (editing the entry again without changing stage_counts) can't
+// nudge a month it didn't actually happen in, since the event itself is
+// timestamped at the moment the stage count changed, not at whatever save
+// happens to touch the entry next.
+function FinishedTrendChart({ stageEvents }) {
   const months = [];
   const today = new Date();
   for (let i = 5; i >= 0; i--) {
     const d = new Date(today.getFullYear(), today.getMonth() - i, 1);
     months.push({ key: `${d.getFullYear()}-${d.getMonth()}`, label: d.toLocaleDateString(undefined, { month: 'short' }) });
   }
-  const counts = months.map(({ key }) => entries.reduce((sum, e) => {
-    const finished = e.stageCounts?.finished || 0;
-    if (!finished || !e.updatedAt) return sum;
-    const d = new Date(e.updatedAt);
-    return `${d.getFullYear()}-${d.getMonth()}` === key ? sum + finished : sum;
-  }, 0));
+  const counts = months.map(({ key }) => {
+    const net = stageEvents.reduce((sum, ev) => {
+      if (ev.stageId !== 'finished' || !ev.occurredAt) return sum;
+      const d = new Date(ev.occurredAt);
+      return `${d.getFullYear()}-${d.getMonth()}` === key ? sum + ev.delta : sum;
+    }, 0);
+    // Clamped at 0 only on the final net -- a month with nothing left to
+    // show positive (a "finished" correction cancelling that month's own
+    // earlier progress) reads as 0, not a negative bar.
+    return Math.max(0, net);
+  });
   const max = Math.max(1, ...counts);
   if (!counts.some((n) => n > 0)) return null;
 
@@ -112,6 +120,36 @@ function FinishedTrendChart({ entries }) {
   );
 }
 
+// "This month you painted 20" / "built 40" -- net progress THIS calendar
+// month, per stage, straight from the real transition log. A stage only
+// shows up once it has actually moved this month; reaching Primed stays
+// true forever once logged (see schema.sql's hobby_log_stage_events
+// comment), so this never has to "undo" an earlier month's number just
+// because those same models have since moved further along.
+function ThisMonthStats({ stageEvents }) {
+  const now = new Date();
+  const monthKey = `${now.getFullYear()}-${now.getMonth()}`;
+  const totals = {};
+  stageEvents.forEach((ev) => {
+    if (!ev.occurredAt) return;
+    const d = new Date(ev.occurredAt);
+    if (`${d.getFullYear()}-${d.getMonth()}` !== monthKey) return;
+    totals[ev.stageId] = (totals[ev.stageId] || 0) + ev.delta;
+  });
+  const rows = HOBBY_STAGES.filter((s) => totals[s.id]);
+  if (!rows.length) return null;
+
+  return (
+    <div className="hoblog-month-stats">
+      {rows.map((s) => (
+        <div key={s.id} className="hoblog-month-stat" style={{ '--chip-color': s.color }}>
+          <span className="hoblog-month-stat__n">{totals[s.id] > 0 ? '+' : ''}{totals[s.id]}</span> {s.label}
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function EntryCard({ entry, onEdit }) {
   const f = entry.factionId ? findFaction(entry.factionId) : null;
   return (
@@ -125,6 +163,7 @@ function EntryCard({ entry, onEdit }) {
         <div className="hobbylog-card__meta">
           {f && <span className="hobbylog-card__tag" style={{ color: f.color }}>{f.label}</span>}
           {entry.category && entry.category !== DEFAULT_MODEL_CATEGORY && <span className="hobbylog-card__tag">{categoryLabel(entry.category)}</span>}
+          {entry.completedAt && <span className="hobbylog-card__public">Finished {relativeTime(entry.completedAt)}</span>}
           {entry.isPublic && <span className="hobbylog-card__public" title="Visible on your public profile"><Icon name="user" size={11} /> Public</span>}
           {entry.recipeLinks.length > 0 && <span className="hobbylog-card__recipes">{entry.recipeLinks.length} recipe{entry.recipeLinks.length === 1 ? '' : 's'}</span>}
         </div>
@@ -141,12 +180,20 @@ function EntryForm({ existing, myRecipes, prefill, onClose }) {
   const update = useUpdateHobbyLogEntry();
   const del = useDeleteHobbyLogEntry();
   const uploadPhoto = useUploadHobbyLogPhoto();
+  const logStageEvents = useLogHobbyStageEvents();
   const photoInputRef = useRef(null);
   const [pickerOpen, setPickerOpen] = useState(false);
 
   const [entry, setEntry] = useState(() => existing
     ? { ...existing, originalPhoto: existing.photo || null }
-    : { id: null, title: '', notes: '', quantity: 1, stageCounts: { unassembled: 1 }, category: DEFAULT_MODEL_CATEGORY, hobbyId: prefill?.hobbyId || '', factionId: prefill?.factionId || '', photo: null, photoPath: null, originalPhoto: null, isPublic: false, recipeLinks: [] });
+    : { id: null, title: '', notes: '', quantity: 1, stageCounts: { unassembled: 1 }, category: DEFAULT_MODEL_CATEGORY, hobbyId: prefill?.hobbyId || '', factionId: prefill?.factionId || '', photo: null, photoPath: null, originalPhoto: null, isPublic: false, recipeLinks: [], completedAt: null });
+  // Snapshotted once, at whatever stage_counts this form opened with (an
+  // existing unit's last-saved counts, or a brand-new one's starting point)
+  // -- diffed against the final counts at save time to log only the NET
+  // change per stage. Stage-count edits only ever live in local state until
+  // Save is clicked, so this is the only point that can ever reach the
+  // network anyway; no need to instrument every individual +/- click.
+  const openingStageCountsRef = useRef(entry.stageCounts);
 
   const patch = (fields) => setEntry((e) => ({ ...e, ...fields }));
   const hobby = HOBBIES.find((h) => h.id === entry.hobbyId);
@@ -262,14 +309,37 @@ function EntryForm({ existing, myRecipes, prefill, onClose }) {
         return;
       }
     }
+    // Set the first time this unit reaches fully Finished; cleared if a
+    // later correction drops it back below full again. Once set, it doesn't
+    // move just because the unit is saved again while still fully finished.
+    const isFullyFinished = entry.quantity > 0 && (entry.stageCounts.finished || 0) === entry.quantity;
+    const completedAt = isFullyFinished ? (entry.completedAt || new Date().toISOString()) : null;
     const payload = {
       id: entry.id, title: entry.title.trim(), notes: entry.notes, quantity: entry.quantity, stageCounts: entry.stageCounts,
       category: entry.category || DEFAULT_MODEL_CATEGORY, hobbyId: entry.hobbyId || null, factionId: entry.factionId || null,
-      photoPath, isPublic: entry.isPublic, recipeLinks: entry.recipeLinks,
+      photoPath, isPublic: entry.isPublic, recipeLinks: entry.recipeLinks, completedAt,
     };
     try {
-      if (entry.id) await update.mutateAsync(payload);
-      else await create.mutateAsync(payload);
+      const saved = entry.id ? await update.mutateAsync(payload) : await create.mutateAsync(payload);
+      // Diffing each stage's OWN bucket directly would be wrong: advancing a
+      // model from Primed to Painted empties Primed's bucket, which would
+      // read as "-8 Primed" even though nothing was undone. What should
+      // never regress from ordinary forward progress is "how many models
+      // have reached this stage or any stage further along" -- a model
+      // that's now Finished has necessarily passed through Primed too, so
+      // that cumulative count only drops when a stage is genuinely
+      // corrected backward (the "-" stepper, "move all to" an earlier
+      // stage, or shrinking the miniature count), which is exactly the
+      // model deltas should reflect. Unassembled (index 0) is skipped --
+      // "reached unassembled" is just pipeline size, not a real milestone.
+      const reachedOrBeyond = (counts, idx) => HOBBY_STAGES.slice(idx).reduce((sum, s) => sum + (counts[s.id] || 0), 0);
+      const deltas = {};
+      HOBBY_STAGES.forEach((s, idx) => {
+        if (idx === 0) return;
+        const delta = reachedOrBeyond(entry.stageCounts, idx) - reachedOrBeyond(openingStageCountsRef.current, idx);
+        if (delta) deltas[s.id] = delta;
+      });
+      if (Object.keys(deltas).length) await logStageEvents.mutateAsync({ entryId: saved.id, deltas });
       showToast('Saved');
       onClose();
     } catch (err) {
@@ -597,6 +667,7 @@ export default function HobbyLog() {
   const { data: entries = [], isLoading } = useMyHobbyLog();
   const { data: projects = [] } = useMyHobbyProjects();
   const { data: myRecipes = [] } = useMyRecipes();
+  const { data: stageEvents = [] } = useHobbyLogStageEvents();
   const [filter, setFilter] = useState('all');
   const [editingId, setEditingId] = useState(null); // null | 'new' | entry id
   const [editingProjectId, setEditingProjectId] = useState(null); // null | 'new' | project id
@@ -650,7 +721,8 @@ export default function HobbyLog() {
           <>
             <div className="section-label">Your pipeline</div>
             <StagePipelineChart entries={entries} />
-            <FinishedTrendChart entries={entries} />
+            <ThisMonthStats stageEvents={stageEvents} />
+            <FinishedTrendChart stageEvents={stageEvents} />
           </>
         )}
 

@@ -26,6 +26,7 @@ function fromRemote(row) {
     isPublic: !!row.is_public,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
+    completedAt: row.completed_at || null,
     recipeLinks: (row.hobby_log_recipes || []).map((l) => ({ recipeOwnerId: l.recipe_owner_id, recipeId: l.recipe_id })),
   };
 }
@@ -69,11 +70,11 @@ export function useCreateHobbyLogEntry() {
   const { userId } = useAuth();
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async ({ title, notes, quantity, stageCounts, category, hobbyId, factionId, photoPath, isPublic, recipeLinks }) => {
+    mutationFn: async ({ title, notes, quantity, stageCounts, category, hobbyId, factionId, photoPath, isPublic, recipeLinks, completedAt }) => {
       const { data, error } = await supabase.from('hobby_log_entries').insert({
         user_id: userId, title, notes: notes || '', quantity, stage_counts: stageCounts,
         category: category || 'infantry', hobby_id: hobbyId || null, faction_id: factionId || null,
-        photo_path: photoPath || null, is_public: !!isPublic,
+        photo_path: photoPath || null, is_public: !!isPublic, completed_at: completedAt || null,
       }).select().single();
       if (error) throw new Error("Couldn't save that entry — try again.");
       await replaceRecipeLinks(data.id, recipeLinks);
@@ -93,16 +94,16 @@ export function useUpdateHobbyLogEntry() {
     // the rest of the app's edit mutations (e.g. useEditComment): the
     // caller already knows exactly what it just wrote, so the cache patch
     // is built from the mutation's own input rather than a round trip.
-    mutationFn: async ({ id, title, notes, quantity, stageCounts, category, hobbyId, factionId, photoPath, isPublic, recipeLinks }) => {
+    mutationFn: async ({ id, title, notes, quantity, stageCounts, category, hobbyId, factionId, photoPath, isPublic, recipeLinks, completedAt }) => {
       const { error } = await supabase.from('hobby_log_entries').update({
         title, notes: notes || '', quantity, stage_counts: stageCounts,
         category: category || 'infantry', hobby_id: hobbyId || null, faction_id: factionId || null,
-        photo_path: photoPath || null, is_public: !!isPublic,
+        photo_path: photoPath || null, is_public: !!isPublic, completed_at: completedAt || null,
         updated_at: new Date().toISOString(),
       }).eq('id', id).eq('user_id', userId);
       if (error) throw new Error("Couldn't save that entry — try again.");
       await replaceRecipeLinks(id, recipeLinks);
-      return { id, title, notes: notes || '', quantity, stageCounts, category: category || 'infantry', hobbyId, factionId, photoPath, isPublic, recipeLinks: recipeLinks || [] };
+      return { id, title, notes: notes || '', quantity, stageCounts, category: category || 'infantry', hobbyId, factionId, photoPath, isPublic, recipeLinks: recipeLinks || [], completedAt: completedAt || null };
     },
     onSuccess: (updated) => {
       qc.setQueryData(['hobbyLog', userId], (prev = []) => {
@@ -142,6 +143,48 @@ export function useUploadHobbyLogPhoto() {
       const { error } = await supabase.storage.from(CONFIG.photoBucket).upload(path, blob, { contentType: 'image/jpeg', upsert: true });
       if (error) throw error;
       return path;
+    },
+  });
+}
+
+// Every stage-transition event across all of the user's units -- small,
+// append-only rows (see schema.sql's hobby_log_stage_events), fetched whole
+// and bucketed by month client-side, same "derive from raw rows" approach
+// FinishedTrendChart already uses for its own monthly buckets.
+export function useHobbyLogStageEvents() {
+  const { userId } = useAuth();
+  return useQuery({
+    queryKey: ['hobbyLogStageEvents', userId],
+    queryFn: async () => {
+      const { data, error } = await supabase.from('hobby_log_stage_events').select('stage_id, delta, occurred_at').eq('user_id', userId);
+      if (error) throw error;
+      return (data || []).map((row) => ({ stageId: row.stage_id, delta: row.delta, occurredAt: row.occurred_at }));
+    },
+    enabled: !!userId,
+  });
+}
+
+// Called once per save, with the net delta (final stage_counts minus
+// whatever they were when the form opened) for every stage that actually
+// changed -- see HobbyLog.jsx's EntryForm.save() for why a diff-at-save-time
+// is the right granularity rather than trying to log every intermediate
+// +/- click, which never reaches the network until Save anyway.
+export function useLogHobbyStageEvents() {
+  const { userId } = useAuth();
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ entryId, deltas }) => {
+      const rows = Object.entries(deltas)
+        .filter(([, delta]) => delta)
+        .map(([stageId, delta]) => ({ entry_id: entryId, user_id: userId, stage_id: stageId, delta }));
+      if (!rows.length) return [];
+      const { data, error } = await supabase.from('hobby_log_stage_events').insert(rows).select();
+      if (error) throw error;
+      return (data || []).map((row) => ({ stageId: row.stage_id, delta: row.delta, occurredAt: row.occurred_at }));
+    },
+    onSuccess: (rows) => {
+      if (!rows.length) return;
+      qc.setQueryData(['hobbyLogStageEvents', userId], (prev = []) => [...prev, ...rows]);
     },
   });
 }

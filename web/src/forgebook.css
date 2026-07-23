@@ -4863,6 +4863,31 @@ button.hoblog-chart__row-label--action:disabled {
   color: var(--ink-dim);
 }
 
+/* "This month you painted 20" -- a row of small, non-interactive stat
+   chips, one per stage that actually moved this calendar month. */
+.hoblog-month-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 20px;
+}
+.hoblog-month-stat {
+  display: flex;
+  align-items: baseline;
+  gap: 5px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  font-size: 12px;
+  color: var(--parchment-dim);
+  border: 1px solid color-mix(in srgb, var(--chip-color, var(--gold)) 45%, var(--line));
+  background: color-mix(in srgb, var(--chip-color, var(--gold)) 14%, transparent);
+}
+.hoblog-month-stat__n {
+  font-family: var(--font-mono);
+  font-weight: 600;
+  color: color-mix(in srgb, var(--chip-color, var(--gold)) 70%, var(--parchment));
+}
+
 /* A generic on/off switch -- Settings' own boolean choices have all been
    two-button segmented toggles so far; this is the first true switch,
    introduced for the hobby log's public/private setting. */
