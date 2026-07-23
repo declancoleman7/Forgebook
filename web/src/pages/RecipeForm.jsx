@@ -3,6 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import Icon from '../icons.jsx';
 import EmptyState from '../components/EmptyState.jsx';
 import PaintPicker from '../components/PaintPicker.jsx';
+import FactionPicker from '../components/FactionPicker.jsx';
 import PhotoPositionPicker from '../components/PhotoPositionPicker.jsx';
 import { useActiveHobby } from '../hooks/useActiveHobby.js';
 import { faction, HOBBIES } from '../data/factions.js';
@@ -83,6 +84,7 @@ function RecipeFormInner({ existing, myRecipes }) {
   const photoInputRef = useRef(null);
   const [picker, setPicker] = useState(null); // { stepId, field } | null
   const [positionPickerOpen, setPositionPickerOpen] = useState(false);
+  const [factionPickerOpen, setFactionPickerOpen] = useState(false);
 
   const hobby = HOBBIES.find((h) => h.id === recipe.hobbyId) || activeHobby;
   const unitSuggestions = [...new Set(visibleRecipes.map((r) => r.unit).filter(Boolean))].sort();
@@ -215,16 +217,21 @@ function RecipeFormInner({ existing, myRecipes }) {
 
       <div className="field">
         <label>{hobby.groupLabel}</label>
-        <select value={recipe.faction} onChange={(e) => patch({ faction: e.target.value })}>
-          {hobby.flatBrowse
-            ? hobby.factions.map((f) => <option key={f.id} value={f.id}>{f.label}</option>)
-            : hobby.systems.map((sys) => (
-                <optgroup key={sys.id} label={sys.label}>
-                  {hobby.factions.filter((f) => f.system === sys.id).map((f) => <option key={f.id} value={f.id}>{f.label}</option>)}
-                </optgroup>
-              ))}
-        </select>
+        <button type="button" className="paint-pick-trigger" onClick={() => setFactionPickerOpen(true)}>
+          <span className="paint-pick-row__swatch" style={{ background: faction(recipe.faction).color }} />
+          <span className="paint-pick-trigger__label">{faction(recipe.faction).label}</span>
+        </button>
       </div>
+
+      {factionPickerOpen && (
+        <FactionPicker
+          factions={hobby.factions}
+          systems={hobby.flatBrowse ? null : hobby.systems}
+          currentId={recipe.faction}
+          onPick={(id) => patch({ faction: id })}
+          onClose={() => setFactionPickerOpen(false)}
+        />
+      )}
 
       <div className="field">
         <label>Unit <span className="label-hint">leave blank for a General, {hobby.groupLabel.toLowerCase()}-wide recipe</span></label>

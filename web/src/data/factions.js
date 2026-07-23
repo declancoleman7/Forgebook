@@ -58,6 +58,7 @@ const FACTIONS = [
   { id: "adeptus-mechanicus",   label: "Adeptus Mechanicus",   system: "40k", alliance: "Imperium",    color: "#9B3B24", emblem: "cog" },
   { id: "imperial-knights",     label: "Imperial Knights",     system: "40k", alliance: "Imperium",    color: "#3F6D8E", emblem: "banner" },
   { id: "imperial-agents",      label: "Imperial Agents",      system: "40k", alliance: "Imperium",    color: "#5C5568", emblem: "eye" },
+  { id: "titan-legions",        label: "Titan Legions",        system: "40k", alliance: "Imperium",    color: "#9B7B4E", emblem: "tower" },
 
   // Warhammer 40,000 — Chaos
   { id: "chaos-space-marines",  label: "Chaos Space Marines",  system: "40k", alliance: "Chaos",       color: "#5B2E63", emblem: "sunburst" },
@@ -179,6 +180,7 @@ const FACTIONS = [
   { id: "hh-militia",       label: "Imperialis Militia",        system: "horus-heresy", alliance: "Imperial Auxilia", color: "#6B6560", emblem: "banner" },
   { id: "hh-mechanicum",    label: "Mechanicum",                system: "horus-heresy", alliance: "Mechanicum & Custodes", color: "#9B3B24", emblem: "cog" },
   { id: "hh-talons",        label: "Talons of the Emperor",     system: "horus-heresy", alliance: "Mechanicum & Custodes", color: "#B08A2E", emblem: "crown" },
+  { id: "hh-titan-legions", label: "Titan Legions",             system: "horus-heresy", alliance: "Mechanicum & Custodes", color: "#5A6350", emblem: "tower" },
 
   // Blood Bowl -- teams, not armies, but expressed in the identical shape
   // so the browse grid/recipe form need no special-casing. Ids namespaced

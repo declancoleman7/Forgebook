@@ -4888,6 +4888,76 @@ button.hoblog-chart__row-label--action:disabled {
   color: color-mix(in srgb, var(--chip-color, var(--gold)) 70%, var(--parchment));
 }
 
+/* "Models by army" / "Models by category" -- a plain horizontal bar list,
+   biggest first. */
+.hoblog-bars {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 20px;
+}
+.hoblog-bars__row {
+  display: grid;
+  grid-template-columns: 100px 1fr 32px;
+  align-items: center;
+  gap: 10px;
+}
+.hoblog-bars__label {
+  font-size: 12px;
+  color: var(--parchment-dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.hoblog-bars__track {
+  height: 8px;
+  border-radius: 4px;
+  background: var(--bg-raised);
+  overflow: hidden;
+}
+.hoblog-bars__track i {
+  display: block;
+  height: 100%;
+  border-radius: 4px;
+  min-width: 4px;
+}
+.hoblog-bars__n {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--ink);
+  text-align: right;
+}
+
+/* The Pipeline Timeline's stacked column -- each segment is one stage's own
+   net share of that month's total, proportioned by flex-grow rather than an
+   absolute size so it reads correctly at any scale. */
+.hoblog-timeline__stack {
+  width: 100%;
+  display: flex;
+  flex-direction: column-reverse;
+  border-radius: 3px 3px 0 0;
+  overflow: hidden;
+}
+.hoblog-timeline__legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 10px;
+}
+.hoblog-timeline__legend-item {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 10px;
+  color: var(--ink-dim);
+}
+.hoblog-timeline__legend-item i {
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+  display: inline-block;
+}
+
 /* A generic on/off switch -- Settings' own boolean choices have all been
    two-button segmented toggles so far; this is the first true switch,
    introduced for the hobby log's public/private setting. */

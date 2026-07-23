@@ -4,6 +4,7 @@ import Icon from '../icons.jsx';
 import EmptyState from '../components/EmptyState.jsx';
 import RecipePicker from '../components/RecipePicker.jsx';
 import EntryPicker from '../components/EntryPicker.jsx';
+import FactionPicker from '../components/FactionPicker.jsx';
 import EmblemSvg from '../components/EmblemSvg.jsx';
 import HobbyStageStack from '../components/HobbyStageStack.jsx';
 import { HOBBIES, faction as findFaction } from '../data/factions.js';
@@ -150,6 +151,108 @@ function ThisMonthStats({ stageEvents }) {
   );
 }
 
+// A simple horizontal bar list, shared shape for "models by army" and
+// "models by category" -- both are just "total quantity grouped by one
+// field, sorted biggest first," differing only in what groups them and
+// what colour/label each group gets.
+function BarBreakdown({ rows }) {
+  if (!rows.length) return null;
+  const max = Math.max(1, ...rows.map((r) => r.n));
+  return (
+    <div className="hoblog-bars">
+      {rows.map((r) => (
+        <div key={r.key} className="hoblog-bars__row">
+          <span className="hoblog-bars__label">{r.label}</span>
+          <div className="hoblog-bars__track"><i style={{ width: `${(r.n / max) * 100}%`, background: r.color }} /></div>
+          <span className="hoblog-bars__n">{r.n}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function ModelsByArmyChart({ entries }) {
+  const totals = new Map();
+  entries.forEach((e) => {
+    const key = e.factionId || '__none__';
+    totals.set(key, (totals.get(key) || 0) + (e.quantity || 0));
+  });
+  const rows = [...totals.entries()]
+    .map(([key, n]) => {
+      const f = key !== '__none__' ? findFaction(key) : null;
+      return { key, n, label: f ? f.label : 'No army set', color: f?.color || 'var(--ink-dim)' };
+    })
+    .sort((a, b) => b.n - a.n);
+  return <BarBreakdown rows={rows} />;
+}
+
+function ModelsByCategoryChart({ entries }) {
+  const totals = new Map();
+  entries.forEach((e) => {
+    const key = e.category || DEFAULT_MODEL_CATEGORY;
+    totals.set(key, (totals.get(key) || 0) + (e.quantity || 0));
+  });
+  const rows = MODEL_CATEGORIES
+    .filter((c) => totals.get(c.id))
+    .map((c) => ({ key: c.id, n: totals.get(c.id), label: c.label, color: c.color }))
+    .sort((a, b) => b.n - a.n);
+  return <BarBreakdown rows={rows} />;
+}
+
+// A stacked column per month -- each segment is one stage's net "reached
+// this stage or beyond" delta that month (see HobbyLog's save() for why
+// that's the right quantity, not the raw stage_counts bucket). Segment
+// height within a column is proportional via flex-grow, not an absolute
+// size, so this stays readable whether one month had 3 models move or 300.
+function PipelineTimelineChart({ stageEvents }) {
+  const months = [];
+  const today = new Date();
+  for (let i = 5; i >= 0; i--) {
+    const d = new Date(today.getFullYear(), today.getMonth() - i, 1);
+    months.push({ key: `${d.getFullYear()}-${d.getMonth()}`, label: d.toLocaleDateString(undefined, { month: 'short' }) });
+  }
+  const perMonth = months.map(({ key }) => {
+    const totals = {};
+    stageEvents.forEach((ev) => {
+      if (!ev.occurredAt) return;
+      const d = new Date(ev.occurredAt);
+      if (`${d.getFullYear()}-${d.getMonth()}` !== key) return;
+      totals[ev.stageId] = (totals[ev.stageId] || 0) + ev.delta;
+    });
+    return totals;
+  });
+  const monthTotals = perMonth.map((t) => HOBBY_STAGES.reduce((sum, s) => sum + Math.max(0, t[s.id] || 0), 0));
+  const max = Math.max(1, ...monthTotals);
+  if (!monthTotals.some((n) => n > 0)) return null;
+
+  return (
+    <div className="hoblog-trend">
+      <div className="hoblog-trend__bars">
+        {months.map((m, i) => {
+          const totals = perMonth[i];
+          const segments = HOBBY_STAGES.filter((s) => (totals[s.id] || 0) > 0);
+          return (
+            <div key={m.key} className="hoblog-trend__col">
+              <span className="hoblog-trend__count">{monthTotals[i] || ''}</span>
+              <div className="hoblog-trend__track">
+                <div className="hoblog-timeline__stack" style={{ height: `${Math.max(4, (monthTotals[i] / max) * 100)}%` }}>
+                  {segments.map((s) => <div key={s.id} title={`${s.label}: ${totals[s.id]}`} style={{ flex: totals[s.id], background: s.color }} />)}
+                </div>
+              </div>
+              <span className="hoblog-trend__label">{m.label}</span>
+            </div>
+          );
+        })}
+      </div>
+      <div className="hoblog-timeline__legend">
+        {HOBBY_STAGES.map((s) => (
+          <span key={s.id} className="hoblog-timeline__legend-item"><i style={{ background: s.color }} />{s.label}</span>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function EntryCard({ entry, onEdit }) {
   const f = entry.factionId ? findFaction(entry.factionId) : null;
   return (
@@ -183,6 +286,7 @@ function EntryForm({ existing, myRecipes, prefill, onClose }) {
   const logStageEvents = useLogHobbyStageEvents();
   const photoInputRef = useRef(null);
   const [pickerOpen, setPickerOpen] = useState(false);
+  const [factionPickerOpen, setFactionPickerOpen] = useState(false);
 
   const [entry, setEntry] = useState(() => existing
     ? { ...existing, originalPhoto: existing.photo || null }
@@ -432,11 +536,29 @@ function EntryForm({ existing, myRecipes, prefill, onClose }) {
       {hobby && (
         <div className="field">
           <label>{hobby.groupLabel} <span className="label-hint">optional</span></label>
-          <select value={entry.factionId} onChange={(e) => patch({ factionId: e.target.value })}>
-            <option value="">None</option>
-            {factionsForHobby.map((f) => <option key={f.id} value={f.id}>{f.label}</option>)}
-          </select>
+          <button type="button" className="paint-pick-trigger" onClick={() => setFactionPickerOpen(true)}>
+            {entry.factionId ? (
+              <>
+                <span className="paint-pick-row__swatch" style={{ background: findFaction(entry.factionId).color }} />
+                <span className="paint-pick-trigger__label">{findFaction(entry.factionId).label}</span>
+              </>
+            ) : (
+              <span className="paint-pick-trigger__placeholder">None</span>
+            )}
+          </button>
         </div>
+      )}
+
+      {factionPickerOpen && (
+        <FactionPicker
+          factions={factionsForHobby}
+          systems={hobby.flatBrowse ? null : hobby.systems}
+          allowNone
+          groupLabel={hobby.groupLabel}
+          currentId={entry.factionId}
+          onPick={(id) => patch({ factionId: id })}
+          onClose={() => setFactionPickerOpen(false)}
+        />
       )}
 
       <div className="field">
@@ -669,6 +791,10 @@ export default function HobbyLog() {
   const { data: myRecipes = [] } = useMyRecipes();
   const { data: stageEvents = [] } = useHobbyLogStageEvents();
   const [filter, setFilter] = useState('all');
+  // Which dashboard metric view is showing -- kept separate from the browse
+  // state below (hobby/system/faction drill-down), since it's scoped to the
+  // Level 0 dashboard only.
+  const [dashView, setDashView] = useState('overview'); // overview | army | category | timeline
   const [editingId, setEditingId] = useState(null); // null | 'new' | entry id
   const [editingProjectId, setEditingProjectId] = useState(null); // null | 'new' | project id
   // null = hobby-picker dashboard; 'all' = flat list of everything (the
@@ -719,10 +845,39 @@ export default function HobbyLog() {
         </div>
         {entries.length > 0 && (
           <>
-            <div className="section-label">Your pipeline</div>
-            <StagePipelineChart entries={entries} />
-            <ThisMonthStats stageEvents={stageEvents} />
-            <FinishedTrendChart stageEvents={stageEvents} />
+            <div className="lib-filter-seg" style={{ marginBottom: 10 }}>
+              <button className={dashView === 'overview' ? 'is-active' : ''} onClick={() => setDashView('overview')}>Overview</button>
+              <button className={dashView === 'army' ? 'is-active' : ''} onClick={() => setDashView('army')}>By Army</button>
+              <button className={dashView === 'category' ? 'is-active' : ''} onClick={() => setDashView('category')}>By Category</button>
+              <button className={dashView === 'timeline' ? 'is-active' : ''} onClick={() => setDashView('timeline')}>Timeline</button>
+            </div>
+            {dashView === 'overview' && (
+              <>
+                <div className="section-label">Your pipeline</div>
+                <StagePipelineChart entries={entries} />
+                <ThisMonthStats stageEvents={stageEvents} />
+                <FinishedTrendChart stageEvents={stageEvents} />
+              </>
+            )}
+            {dashView === 'army' && (
+              <>
+                <div className="section-label">Models by army</div>
+                <ModelsByArmyChart entries={entries} />
+              </>
+            )}
+            {dashView === 'category' && (
+              <>
+                <div className="section-label">Models by category</div>
+                <ModelsByCategoryChart entries={entries} />
+              </>
+            )}
+            {dashView === 'timeline' && (
+              <>
+                <div className="section-label">Pipeline over time</div>
+                <div className="detail-sub" style={{ margin: '2px 2px 12px' }}>How many models reached each stage, month by month.</div>
+                <PipelineTimelineChart stageEvents={stageEvents} />
+              </>
+            )}
           </>
         )}
 
