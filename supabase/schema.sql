@@ -209,6 +209,18 @@ create table if not exists public.reports (
 -- constraint -- comments/notes have no owner id, so they'd all read NULL
 -- there and stop colliding on repeat reports of the same item. Safe to
 -- re-run: casting text to text is a no-op once already migrated.
+--
+-- Postgres refuses to ALTER COLUMN TYPE on a column any RLS policy
+-- (anywhere, not just on this table) depends on -- both
+-- "read comments on visible recipes" and "read visible paint notes" (below,
+-- in the RLS section) subquery reports.content_id, so re-running this
+-- against a database that already has those policies from a prior paste
+-- fails with "cannot alter type of a column used in a policy definition"
+-- unless they're dropped first. Both get recreated fresh in their normal
+-- place later in this file -- this is just so the drop happens BEFORE the
+-- type change, not after.
+drop policy if exists "read comments on visible recipes" on public.recipe_comments;
+drop policy if exists "read visible paint notes" on public.paint_notes;
 alter table public.reports alter column content_id type text using content_id::text;
 
 -- Lets the admin area track "still needs a look" vs "already handled"
@@ -715,7 +727,7 @@ create policy "read comments on visible recipes" on public.recipe_comments
             and flagged = false
             and (
               select count(*) from public.reports rep
-              where rep.content_type = 'recipe_comment' and rep.content_id = recipe_comments.id
+              where rep.content_type = 'recipe_comment' and rep.content_id = recipe_comments.id::text
             ) < 3
           )
           or user_id = auth.uid()
@@ -839,7 +851,7 @@ create policy "read visible paint notes" on public.paint_notes
           and flagged = false
           and (
             select count(*) from public.reports rep
-            where rep.content_type = 'paint_note' and rep.content_id = paint_notes.id
+            where rep.content_type = 'paint_note' and rep.content_id = paint_notes.id::text
           ) < 3
         )
         or user_id = auth.uid()

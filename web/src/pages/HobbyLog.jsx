@@ -215,6 +215,19 @@ function EntryForm({ existing, myRecipes, prefill, onClose }) {
     shiftStage(stageId, n - (entry.stageCounts[stageId] || 0));
   };
 
+  // Collapses every model into one stage, regardless of where they
+  // currently sit -- unlike shiftStage (which only ever pulls FORWARD from
+  // earlier stages), this also has to handle pulling back from a LATER
+  // one: e.g. everything's already in Finished and you tap Primed meaning
+  // to walk it back down. There's no "earlier stage" to pull from in that
+  // case, so shiftStage's own cascade can't do it -- this just sets the
+  // target stage to the full quantity and zeroes every other stage.
+  const moveAllToStage = (stageId) => {
+    const counts = {};
+    HOBBY_STAGES.forEach((s) => { counts[s.id] = s.id === stageId ? entry.quantity : 0; });
+    patch({ stageCounts: counts });
+  };
+
   const onPhotoChosen = async (e) => {
     const file = e.target.files?.[0];
     e.target.value = '';
@@ -277,24 +290,25 @@ function EntryForm({ existing, myRecipes, prefill, onClose }) {
 
       <div className="field">
         <label>Build &amp; paint progress</label>
-        <div className="label-hint" style={{ marginBottom: 8 }}>Tap − / + to move models to or from the stage before it, or tap a stage's name to send everything that's ready straight there. Unassembled only changes via the miniature count above.</div>
+        <div className="label-hint" style={{ marginBottom: 8 }}>Tap − / + to move models to or from the stage before it, or tap a stage's name to put every model there, from wherever they currently sit. Unassembled only changes via the miniature count above.</div>
         <div className="hoblog-chart">
           {HOBBY_STAGES.map((s, idx) => {
             const n = entry.stageCounts[s.id] || 0;
             const pct = entry.quantity ? Math.round((n / entry.quantity) * 100) : 0;
             // Total available to pull forward from ANY earlier stage, not
             // just the immediate predecessor -- matches shiftStage's own
-            // cascading behaviour, so the button isn't disabled just
-            // because the one stage right before this happens to read 0.
+            // cascading behaviour, so the +/- stepper's + button isn't
+            // disabled just because the one stage right before this
+            // happens to read 0.
             const availableBefore = HOBBY_STAGES.slice(0, idx).reduce((sum, st) => sum + (entry.stageCounts[st.id] || 0), 0);
             return (
               <div key={s.id} className="hoblog-chart__row hoblog-chart__row--edit">
                 {idx === 0 ? (
                   <span className="hoblog-chart__row-label">{s.label}</span>
                 ) : (
-                  <button type="button" className="hoblog-chart__row-label hoblog-chart__row-label--action" disabled={availableBefore === 0}
-                    title={`Move all ${availableBefore} available model${availableBefore === 1 ? '' : 's'} to ${s.label}`}
-                    onClick={() => shiftStage(s.id, availableBefore)}>
+                  <button type="button" className="hoblog-chart__row-label hoblog-chart__row-label--action" disabled={n === entry.quantity}
+                    title={`Move every model to ${s.label}`}
+                    onClick={() => moveAllToStage(s.id)}>
                     {s.label}
                   </button>
                 )}
