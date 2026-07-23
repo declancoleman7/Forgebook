@@ -2149,6 +2149,26 @@ main {
   letter-spacing: 0.03em;
 }
 
+/* A plain .section-label reads fine as a one-off divider, but scrolling
+   through ~2000 virtualized paint rows made the transition between one
+   type/range and the next too quiet to notice mid-scroll -- a filled
+   panel band with its own bottom border gives each new section a real,
+   unmissable "shelf label" moment instead of a thin line of text. */
+.lib-list-header {
+  display: flex;
+  align-items: center;
+  padding: 0 10px;
+  background: var(--bg-panel);
+  border-bottom: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+}
+.lib-list-header .section-label {
+  margin: 0;
+}
+.lib-list-header .section-label::after {
+  display: none;
+}
+
 .lib-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));

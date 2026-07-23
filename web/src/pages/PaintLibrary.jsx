@@ -1,6 +1,6 @@
 import { useMemo, useState, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useVirtualizer } from '@tanstack/react-virtual';
+import { useWindowVirtualizer } from '@tanstack/react-virtual';
 import Icon from '../icons.jsx';
 import { PAINT_LIBRARY, paintKey, paintCategory, paintMatchesQuery } from '../data/paints.js';
 import { useMyPaints, useWantToBuy, useAddPaintToRack, useToggleWanted, useToggleRestock, useUpdateQuantity, useDeletePaint } from '../queries/usePaints.js';
@@ -66,7 +66,7 @@ function PaintRow({ p, owned, wanted, onAddToRack, onToggleWanted, onToggleResto
   );
 }
 
-const HEADER_HEIGHT = 34;
+const HEADER_HEIGHT = 44;
 const ROW_HEIGHT = 62;
 
 export default function PaintLibrary() {
@@ -77,7 +77,11 @@ export default function PaintLibrary() {
   const [brands, setBrands] = useState([]);
   const [categories, setCategories] = useState([]);
   const [view, setView] = useState('list'); // list | ranges
-  const scrollRef = useRef(null);
+  // The list container's offset from the top of the page -- feeds
+  // scrollMargin below, since the list sits partway down a naturally-
+  // scrolling page (search bar, progress bar, filter segment all render
+  // above it), not at the very top of the document.
+  const listRef = useRef(null);
   const confirm = useConfirm();
   const showToast = useToast();
 
@@ -147,11 +151,17 @@ export default function PaintLibrary() {
     return out;
   }, [entries, isOwnedEntry]);
 
-  const virtualizer = useVirtualizer({
+  // Virtualizes against the WHOLE PAGE's own scroll, not a separate boxed-
+  // in container -- a nested overflow:auto div here previously trapped the
+  // list in a cramped, independently-scrolling box (bad on mobile: easy to
+  // start a scroll gesture that the wrong scroll container captures, and
+  // it visually reads as a small window rather than part of the page).
+  // Matches every other list in the app, which just scrolls with the page.
+  const virtualizer = useWindowVirtualizer({
     count: flatRows.length,
-    getScrollElement: () => scrollRef.current,
     estimateSize: (i) => (flatRows[i]?.kind === 'header' ? HEADER_HEIGHT : ROW_HEIGHT),
     overscan: 10,
+    scrollMargin: listRef.current?.offsetTop ?? 0,
   });
 
   const doAddToRack = (p) => addToRack.mutate({ name: p.name, brand: p.brand, hex: p.hex, type: p.type, quantity: 1 });
@@ -236,30 +246,33 @@ export default function PaintLibrary() {
       ) : !entries.length ? (
         <div className="empty-state"><div className="empty-state__title">No matches</div><div className="empty-state__sub">Try a different filter.</div></div>
       ) : (
-        <div ref={scrollRef} style={{ height: 'calc(100vh - 420px)', minHeight: 400, overflowY: 'auto', border: '1px solid var(--line)', borderRadius: 'var(--radius-md)', padding: '0 4px' }}>
-          <div style={{ height: virtualizer.getTotalSize(), position: 'relative' }}>
-            {virtualizer.getVirtualItems().map((vRow) => {
-              const row = flatRows[vRow.index];
-              const style = { position: 'absolute', top: 0, left: 0, right: 0, transform: `translateY(${vRow.start}px)`, height: vRow.size };
-              if (row.kind === 'header') {
-                return (
-                  <div key={vRow.key} style={{ ...style, display: 'flex', alignItems: 'flex-end', padding: '0 4px' }}>
-                    <div className="section-label" style={{ margin: 0, width: '100%' }}>{row.type} <span className="lib-section-count">{row.ownedInType}/{row.total} owned</span></div>
-                  </div>
-                );
-              }
-              const owned = ownedByKey.get(paintKey(row.p.name, row.p.brand));
-              const wanted = wantedKeys.has(paintKey(row.p.name, row.p.brand));
+        <div ref={listRef} style={{ height: virtualizer.getTotalSize(), position: 'relative' }}>
+          {virtualizer.getVirtualItems().map((vRow) => {
+            const row = flatRows[vRow.index];
+            // vRow.start is in the WINDOW's coordinate space (it already
+            // includes scrollMargin, the list's own offset down the page);
+            // subtracting scrollMargin back out converts to a position
+            // relative to this container's own top, which is what the
+            // transform below needs.
+            const style = { position: 'absolute', top: 0, left: 0, right: 0, transform: `translateY(${vRow.start - virtualizer.options.scrollMargin}px)`, height: vRow.size };
+            if (row.kind === 'header') {
               return (
-                <div key={vRow.key} style={{ ...style, padding: '0 4px 8px' }}>
-                  <PaintRow p={row.p} owned={owned} wanted={wanted}
-                    onAddToRack={doAddToRack} onToggleWanted={doToggleWanted}
-                    onToggleRestock={(id, current) => toggleRestock(id, current)}
-                    onInc={inc} onDec={doDec} />
+                <div key={vRow.key} className="lib-list-header" style={style}>
+                  <div className="section-label" style={{ margin: 0, width: '100%' }}>{row.type} <span className="lib-section-count">{row.ownedInType}/{row.total} owned</span></div>
                 </div>
               );
-            })}
-          </div>
+            }
+            const owned = ownedByKey.get(paintKey(row.p.name, row.p.brand));
+            const wanted = wantedKeys.has(paintKey(row.p.name, row.p.brand));
+            return (
+              <div key={vRow.key} style={{ ...style, padding: '0 4px 8px' }}>
+                <PaintRow p={row.p} owned={owned} wanted={wanted}
+                  onAddToRack={doAddToRack} onToggleWanted={doToggleWanted}
+                  onToggleRestock={(id, current) => toggleRestock(id, current)}
+                  onInc={inc} onDec={doDec} />
+              </div>
+            );
+          })}
         </div>
       )}
 
