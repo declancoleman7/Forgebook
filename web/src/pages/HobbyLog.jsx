@@ -277,7 +277,7 @@ function EntryForm({ existing, myRecipes, prefill, onClose }) {
 
       <div className="field">
         <label>Build &amp; paint progress</label>
-        <div className="label-hint" style={{ marginBottom: 8 }}>Tap − / + to move models to or from the stage before it. Unassembled only changes via the miniature count above.</div>
+        <div className="label-hint" style={{ marginBottom: 8 }}>Tap − / + to move models to or from the stage before it, or tap a stage's name to send everything that's ready straight there. Unassembled only changes via the miniature count above.</div>
         <div className="hoblog-chart">
           {HOBBY_STAGES.map((s, idx) => {
             const n = entry.stageCounts[s.id] || 0;
@@ -289,7 +289,15 @@ function EntryForm({ existing, myRecipes, prefill, onClose }) {
             const availableBefore = HOBBY_STAGES.slice(0, idx).reduce((sum, st) => sum + (entry.stageCounts[st.id] || 0), 0);
             return (
               <div key={s.id} className="hoblog-chart__row hoblog-chart__row--edit">
-                <span className="hoblog-chart__row-label">{s.label}</span>
+                {idx === 0 ? (
+                  <span className="hoblog-chart__row-label">{s.label}</span>
+                ) : (
+                  <button type="button" className="hoblog-chart__row-label hoblog-chart__row-label--action" disabled={availableBefore === 0}
+                    title={`Move all ${availableBefore} available model${availableBefore === 1 ? '' : 's'} to ${s.label}`}
+                    onClick={() => shiftStage(s.id, availableBefore)}>
+                    {s.label}
+                  </button>
+                )}
                 <div className="hoblog-chart__row-bar"><i style={{ width: `${pct}%`, background: s.color }} /></div>
                 {idx === 0 ? (
                   <span className="hoblog-chart__row-count">{n}</span>

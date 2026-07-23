@@ -4725,6 +4725,25 @@ main {
   overflow: hidden;
   text-overflow: ellipsis;
 }
+/* The editable chart's stage names double as a "move everything available
+   here" button (see HobbyLog.jsx's shiftStage) -- a dotted underline marks
+   it as actionable without adding a whole extra control to an already-tight
+   row, and it goes fully inert (no underline, dimmed) once there's nothing
+   earlier to pull forward. */
+button.hoblog-chart__row-label--action {
+  background: none;
+  border: 0;
+  padding: 0;
+  text-align: left;
+  cursor: pointer;
+  text-decoration: underline dotted;
+  text-underline-offset: 2px;
+}
+button.hoblog-chart__row-label--action:disabled {
+  cursor: default;
+  text-decoration: none;
+  opacity: 0.5;
+}
 .hoblog-chart__row-bar {
   height: 8px;
   border-radius: 4px;
