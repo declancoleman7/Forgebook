@@ -5,6 +5,7 @@ import { PAINT_BRANDS, PAINT_TYPES, paintKey } from '../data/paints.js';
 import { useMyPaints, useSavePaint } from '../queries/usePaints.js';
 import { useToast } from '../toast/ToastContext.jsx';
 import { getRecipeDraft, setRecipeDraft } from '../state/recipeDraft.js';
+import { containsBlockedContent } from '../utils/moderation.js';
 
 // Ported from the old app's viewPaintForm()/bindPaintForm() -- add a
 // brand-new custom paint to the rack, or edit an existing one's name/brand/
@@ -46,6 +47,7 @@ export default function PaintForm() {
 
   const save = async () => {
     if (!name.trim()) { showToast('Give the paint a name first'); return; }
+    if (containsBlockedContent(name)) { showToast("That name isn't allowed — please rephrase it"); return; }
     const dupe = myPaints?.find((p) => p.id !== editId && paintKey(p.name, p.brand) === paintKey(name, brand));
     if (dupe) { showToast('That paint is already on your rack'); return; }
 

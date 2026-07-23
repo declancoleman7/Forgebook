@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import Icon from '../icons.jsx';
 import { useAuth } from '../auth/AuthContext.jsx';
 import { useToast } from '../toast/ToastContext.jsx';
+import { containsBlockedContent } from '../utils/moderation.js';
 
 // Debounced live "is this name taken" check, shared by the sign-up form and
 // (later, Stage 3) the invite/password-setup screen -- same #auth-display-name
@@ -64,6 +65,7 @@ export function AuthForm() {
   const doSignUp = async () => {
     const name = displayName.trim();
     if (!name) return showToast('Enter a display name first');
+    if (containsBlockedContent(name)) return showToast("That name isn't allowed — please choose another");
     if (!email.trim() || !email.includes('@')) return showToast('Enter your email');
     if (newPassword.length < 8) return showToast('Use at least 8 characters');
     if (newPassword !== newPasswordConfirm) return showToast("Passwords don't match");

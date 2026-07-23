@@ -12,6 +12,7 @@ import { useMyHobbies, useAddHobby } from '../queries/useHobbies.js';
 import { HOBBIES } from '../data/factions.js';
 import { downscaleImage, downscaleImageSquare } from '../utils/image.js';
 import { promptInstall } from '../installPrompt.js';
+import { containsBlockedContent } from '../utils/moderation.js';
 
 // Ported from the old app's viewSettings(). Export/import and the
 // recipe/paint counts near the bottom are deferred until Stage 3 builds
@@ -41,6 +42,7 @@ export default function Settings() {
   const displayName = nameDraft ?? profile?.displayName ?? '';
 
   const saveDisplayName = async () => {
+    if (containsBlockedContent(displayName)) { showToast("That name isn't allowed — please choose another"); return; }
     try {
       await updateDisplayName.mutateAsync(displayName);
       showToast('Display name updated');

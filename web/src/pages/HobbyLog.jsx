@@ -15,6 +15,7 @@ import { useMyRecipes } from '../queries/useRecipes.js';
 import { useConfirm } from '../confirm/ConfirmContext.jsx';
 import { useToast } from '../toast/ToastContext.jsx';
 import { useAuth } from '../auth/AuthContext.jsx';
+import { containsBlockedContent } from '../utils/moderation.js';
 
 // A Project's own progress is always derived by summing whichever units are
 // linked to it -- weighted by miniature count, not a per-unit average, so a
@@ -238,6 +239,10 @@ function EntryForm({ existing, myRecipes, prefill, onClose }) {
 
   const save = async () => {
     if (!entry.title.trim()) { showToast('Give the unit a name first'); return; }
+    if (containsBlockedContent(entry.title) || containsBlockedContent(entry.notes)) {
+      showToast("That name or notes text isn't allowed — please rephrase it");
+      return;
+    }
     let photoPath = entry.photo !== (entry.originalPhoto || null) ? null : (entry.photoPath || null);
     if (entry.photo && String(entry.photo).startsWith('data:')) {
       showToast('Uploading photo…');
@@ -456,6 +461,10 @@ function ProjectForm({ existing, entries, onClose, onOpenEntry }) {
 
   const save = async () => {
     if (!project.title.trim()) { showToast('Give the project a name first'); return; }
+    if (containsBlockedContent(project.title) || containsBlockedContent(project.notes)) {
+      showToast("That name or notes text isn't allowed — please rephrase it");
+      return;
+    }
     const payload = { id: project.id, title: project.title.trim(), notes: project.notes, hobbyId: project.hobbyId || null, isPublic: project.isPublic, entryIds: project.entryIds };
     try {
       if (project.id) await update.mutateAsync(payload);

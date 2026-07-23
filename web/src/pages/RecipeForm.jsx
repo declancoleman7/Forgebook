@@ -13,6 +13,7 @@ import { useMyPaints, useWantToBuy, useToggleWanted } from '../queries/usePaints
 import { useConfirm } from '../confirm/ConfirmContext.jsx';
 import { useToast } from '../toast/ToastContext.jsx';
 import { getRecipeDraft, setRecipeDraft, clearRecipeDraft } from '../state/recipeDraft.js';
+import { containsBlockedContent } from '../utils/moderation.js';
 
 function newStep() {
   // mixPaintId is undefined (not "") when there's no mix at all -- that's
@@ -159,6 +160,10 @@ function RecipeFormInner({ existing, myRecipes }) {
 
   const save = async () => {
     if (!recipe.name.trim()) { showToast('Give the recipe a name first'); return; }
+    if (containsBlockedContent(recipe.name) || containsBlockedContent(recipe.unit) || containsBlockedContent(recipe.notes)) {
+      showToast("That name or notes text isn't allowed — please rephrase it");
+      return;
+    }
     const steps = recipe.steps.filter((s) => s.paintId || s.wantPaint);
     if (!steps.length) { showToast('Add at least one step with a paint'); return; }
     if (recipe.published && !recipe.photo) { showToast('Add a photo before publishing, or turn off sharing'); return; }
