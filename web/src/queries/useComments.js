@@ -49,6 +49,11 @@ export function useSubmitComment(ownerId, recipeId) {
         updated_at: new Date().toISOString(),
       };
       const { error } = await supabase.from('recipe_comments').insert(comment);
+      // 42501 (insufficient_privilege) is what an RLS with-check rejection
+      // surfaces as -- the only realistic way to hit that on an otherwise-
+      // valid comment insert is the rate-limit check in schema.sql's own
+      // "post comments on published recipes" policy.
+      if (error?.code === '42501') throw new Error("You're posting a bit fast — wait a few minutes and try again.");
       if (error) throw new Error("Couldn't post that comment — try again.");
       return fromRemoteComment(comment);
     },

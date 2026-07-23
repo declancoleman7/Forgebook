@@ -768,6 +768,25 @@ as $$
   );
 $$;
 
+-- Rate limiting: nothing else stops a signed-in account from posting
+-- comments back-to-back with no limit -- the lowest-effort spam vector in
+-- the app (unlike a recipe, which takes real effort to fill out, or a
+-- vote, already capped to one-per-item by its own unique constraint).
+-- Counting a user's own recent rows in the SAME table an insert policy is
+-- being evaluated for hits the identical infinite-recursion gotcha
+-- comment_parent_in_same_recipe() above already works around -- same fix,
+-- a security-definer function runs the count without RLS.
+create or replace function public.recent_recipe_comment_count(p_user_id uuid, p_minutes int)
+returns int
+language sql
+security definer
+set search_path = public, pg_temp
+stable
+as $$
+  select count(*)::int from public.recipe_comments
+  where user_id = p_user_id and created_at > now() - (p_minutes || ' minutes')::interval;
+$$;
+
 drop policy if exists "post comments on published recipes" on public.recipe_comments;
 create policy "post comments on published recipes" on public.recipe_comments
   for insert
@@ -787,6 +806,10 @@ create policy "post comments on published recipes" on public.recipe_comments
       parent_comment_id is null
       or public.comment_parent_in_same_recipe(parent_comment_id, recipe_owner_id, recipe_id)
     )
+    -- Generous enough for genuine back-and-forth conversation, tight
+    -- enough to stop a flood. A rejection here surfaces client-side as
+    -- Postgres error code 42501 -- see useComments.js's useAddComment.
+    and public.recent_recipe_comment_count(auth.uid(), 5) < 10
   );
 
 -- Covers both a text edit (edited=true) and the author's own soft-delete
@@ -861,10 +884,26 @@ create policy "read visible paint notes" on public.paint_notes
     or (deleted = true and user_id = auth.uid())
   );
 
+-- Same rate-limiting reasoning and security-definer-function-to-avoid-
+-- recursion fix as recent_recipe_comment_count() above.
+create or replace function public.recent_paint_note_count(p_user_id uuid, p_minutes int)
+returns int
+language sql
+security definer
+set search_path = public, pg_temp
+stable
+as $$
+  select count(*)::int from public.paint_notes
+  where user_id = p_user_id and created_at > now() - (p_minutes || ' minutes')::interval;
+$$;
+
 drop policy if exists "post paint notes" on public.paint_notes;
 create policy "post paint notes" on public.paint_notes
   for insert
-  with check (auth.uid() = user_id);
+  with check (
+    auth.uid() = user_id
+    and public.recent_paint_note_count(auth.uid(), 5) < 10
+  );
 
 -- Same soft-delete-via-update convention as recipe_comments.
 drop policy if exists "manage own paint notes" on public.paint_notes;

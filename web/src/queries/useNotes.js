@@ -43,6 +43,9 @@ export function useSubmitNote(paintKey) {
     mutationFn: async (body) => {
       const note = { id: crypto.randomUUID(), paint_key: paintKey, user_id: userId, body, flagged: containsBlockedContent(body), updated_at: new Date().toISOString() };
       const { error } = await supabase.from('paint_notes').insert(note);
+      // Same 42501-means-rate-limited reasoning as useComments.js's
+      // useAddComment -- see schema.sql's "post paint notes" policy.
+      if (error?.code === '42501') throw new Error("You're posting a bit fast — wait a few minutes and try again.");
       if (error) throw new Error("Couldn't post that note — try again.");
       return fromRemoteNote(note);
     },
