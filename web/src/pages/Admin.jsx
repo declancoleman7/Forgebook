@@ -3,11 +3,35 @@ import { useNavigate } from 'react-router-dom';
 import Icon from '../icons.jsx';
 import Avatar from '../components/Avatar.jsx';
 import EmptyState from '../components/EmptyState.jsx';
-import { useOpenReports, useHideContent, useDismissReports, useSetUserBanned } from '../queries/useAdmin.js';
+import { useOpenReports, useTopOffenders, useHideContent, useDismissReports, useSetUserBanned } from '../queries/useAdmin.js';
 import { useSearchProfiles } from '../queries/useSocial.js';
 import { useAuth } from '../auth/AuthContext.jsx';
 import { useConfirm } from '../confirm/ConfirmContext.jsx';
 import { useToast } from '../toast/ToastContext.jsx';
+
+const KIND_LABELS = {
+  recipe_comment: 'Comment',
+  paint_note: 'Paint note',
+  recipe_photo: 'Recipe photo',
+  avatar_photo: 'Profile photo',
+};
+
+// Shared by the reports queue and an offender's own drill-down (see
+// OffenderItemRow below) -- both show either an image or a text body for
+// whatever got flagged, just with different actions available underneath.
+function ReportedContentPreview({ report }) {
+  return report.kind === 'image' ? (
+    <div style={{ marginBottom: 6 }}>
+      {report.imageUrl ? (
+        <img src={report.imageUrl} alt={report.caption} style={{ maxWidth: 160, maxHeight: 160, borderRadius: 'var(--radius-md)', display: 'block' }} />
+      ) : (
+        <div className="empty-state__sub" style={{ padding: 0 }}>Photo already removed</div>
+      )}
+    </div>
+  ) : (
+    <div className="settings-row__label" style={{ marginBottom: 6, whiteSpace: 'pre-wrap' }}>{report.body}</div>
+  );
+}
 
 function ReportRow({ report }) {
   const showToast = useToast();
@@ -15,13 +39,20 @@ function ReportRow({ report }) {
   const hide = useHideContent();
   const dismiss = useDismissReports();
 
-  const kindLabel = report.contentType === 'recipe_comment' ? 'Comment' : 'Paint note';
+  const kindLabel = KIND_LABELS[report.contentType] || 'Content';
+  // A photo's "hide" clears the photo reference entirely (see
+  // useHideContent) rather than flipping a status flag like comments/notes
+  // -- there's no "only its author and admins can still see it" middle
+  // ground for an image, so the confirm copy is worded differently.
+  const hideMessage = report.kind === 'image'
+    ? `Remove this ${kindLabel.toLowerCase()}? This can't be undone from here.`
+    : `Hide this ${kindLabel.toLowerCase()}? Only its author and admins will still be able to see it.`;
 
   const doHide = async () => {
-    if (!(await confirm(`Hide this ${kindLabel.toLowerCase()}? Only its author and admins will still be able to see it.`, { okLabel: 'Hide' }))) return;
+    if (!(await confirm(hideMessage, { okLabel: report.kind === 'image' ? 'Remove' : 'Hide' }))) return;
     try {
       await hide.mutateAsync({ contentType: report.contentType, contentId: report.contentId, reportIds: report.reportIds });
-      showToast('Hidden');
+      showToast(report.kind === 'image' ? 'Removed' : 'Hidden');
     } catch (err) {
       showToast(err.message || "Couldn't hide that — try again");
     }
@@ -41,15 +72,15 @@ function ReportRow({ report }) {
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
         <span className="pill-status pill-status--draft">{kindLabel}</span>
         <span className="settings-row__desc" style={{ margin: 0 }}>
-          {report.reportCount} report{report.reportCount === 1 ? '' : 's'} · by {report.author.displayName}
+          {report.reportCount} report{report.reportCount === 1 ? '' : 's'} · Posted by {report.author.displayName}
         </span>
       </div>
-      <div className="settings-row__label" style={{ marginBottom: 6, whiteSpace: 'pre-wrap' }}>{report.body}</div>
+      <ReportedContentPreview report={report} />
       {report.reasons.length > 0 && (
         <div className="fine-print" style={{ marginBottom: 8 }}>Reasons given: {report.reasons.join(' · ')}</div>
       )}
       <div style={{ display: 'flex', gap: 8 }}>
-        <button type="button" className="btn btn-danger btn-sm" onClick={doHide}>Hide</button>
+        <button type="button" className="btn btn-danger btn-sm" onClick={doHide}>{report.kind === 'image' ? 'Remove' : 'Hide'}</button>
         <button type="button" className="btn btn-ghost btn-sm" onClick={doDismiss}>Dismiss</button>
       </div>
     </div>
@@ -105,25 +136,117 @@ function UserRow({ profile }) {
   );
 }
 
+// Read-only -- an offender's own flagged history includes already-resolved
+// items (see useTopOffenders), so Hide/Dismiss (which only make sense for
+// something still open) don't belong here; Ban, on the offender as a
+// whole, is the one action this view offers (see OffenderDetail).
+function OffenderItemRow({ item }) {
+  const kindLabel = KIND_LABELS[item.contentType] || 'Content';
+  return (
+    <div className="settings-row" style={{ display: 'block' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+        <span className="pill-status pill-status--draft">{kindLabel}</span>
+        <span className="settings-row__desc" style={{ margin: 0 }}>{item.reportCount} report{item.reportCount === 1 ? '' : 's'}</span>
+      </div>
+      <ReportedContentPreview report={item} />
+      {item.reasons.length > 0 && <div className="fine-print">Reasons given: {item.reasons.join(' · ')}</div>}
+    </div>
+  );
+}
+
+function OffenderRow({ offender, onSelect }) {
+  return (
+    <div className="settings-row" style={{ cursor: 'pointer' }} onClick={() => onSelect(offender.ownerId)}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+        <Avatar displayName={offender.displayName} url={offender.avatarUrl} size={28} />
+        <div>
+          <div className="settings-row__label">
+            {offender.displayName}{offender.isBanned && <span className="pill-status pill-status--draft" style={{ marginLeft: 6 }}>Banned</span>}
+          </div>
+          <div className="settings-row__desc">{offender.totalReports} report{offender.totalReports === 1 ? '' : 's'} across {offender.items.length} item{offender.items.length === 1 ? '' : 's'}</div>
+        </div>
+      </div>
+      <Icon name="chevron" size={18} />
+    </div>
+  );
+}
+
+function OffenderDetail({ offender, onBack }) {
+  const showToast = useToast();
+  const confirm = useConfirm();
+  const setBanned = useSetUserBanned();
+
+  const toggleBan = async () => {
+    const next = !offender.isBanned;
+    if (next && !(await confirm(`Ban ${offender.displayName}? They won't be able to sign in again until unbanned.`, { okLabel: 'Ban' }))) return;
+    try {
+      await setBanned.mutateAsync({ targetUserId: offender.ownerId, banned: next });
+      showToast(next ? 'Banned' : 'Unbanned');
+    } catch (err) {
+      showToast(err.message || "Couldn't update that account — try again");
+    }
+  };
+
+  return (
+    <div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+        <button type="button" className="icon-btn" onClick={onBack}><Icon name="back" size={16} /></button>
+        <Avatar displayName={offender.displayName} url={offender.avatarUrl} size={28} />
+        <div style={{ flex: 1 }}>
+          <div className="settings-row__label" style={{ margin: 0 }}>{offender.displayName}</div>
+          <div className="settings-row__desc">{offender.totalReports} report{offender.totalReports === 1 ? '' : 's'} total</div>
+        </div>
+        <button type="button" className={`btn btn-sm ${offender.isBanned ? 'btn-ghost' : 'btn-danger'}`} onClick={toggleBan}>
+          {offender.isBanned ? 'Unban' : 'Ban'}
+        </button>
+      </div>
+      <div className="settings-group">
+        {offender.items.map((item) => <OffenderItemRow key={`${item.contentType}:${item.contentId}`} item={item} />)}
+      </div>
+    </div>
+  );
+}
+
 function UsersTab() {
   const [query, setQuery] = useState('');
+  const [selectedOffenderId, setSelectedOffenderId] = useState(null);
   const { data: results = [], isLoading } = useSearchProfiles(query);
+  const { data: offenders = [], isLoading: offendersLoading } = useTopOffenders();
+
+  const selectedOffender = offenders.find((o) => o.ownerId === selectedOffenderId);
+  if (selectedOffender) {
+    return <OffenderDetail offender={selectedOffender} onBack={() => setSelectedOffenderId(null)} />;
+  }
+
   return (
     <div>
       <div className="mini-search" style={{ marginBottom: 12 }}>
         <Icon name="search" size={14} />
         <input type="text" placeholder="Search painters by name" value={query} onChange={(e) => setQuery(e.target.value)} />
       </div>
-      {!query.trim() ? (
-        <div className="empty-state__sub">Search for an account to ban or unban.</div>
-      ) : isLoading ? (
-        <div className="empty-state__sub">Searching…</div>
-      ) : results.length ? (
-        <div className="settings-group">
-          {results.map((p) => <UserRow key={p.userId} profile={p} />)}
-        </div>
+      {query.trim() ? (
+        isLoading ? (
+          <div className="empty-state__sub">Searching…</div>
+        ) : results.length ? (
+          <div className="settings-group">
+            {results.map((p) => <UserRow key={p.userId} profile={p} />)}
+          </div>
+        ) : (
+          <div className="empty-state__sub">No painters match.</div>
+        )
       ) : (
-        <div className="empty-state__sub">No painters match.</div>
+        <>
+          <div className="section-label">Top offenders</div>
+          {offendersLoading ? (
+            <div className="empty-state__sub">Loading…</div>
+          ) : offenders.length ? (
+            <div className="settings-group">
+              {offenders.map((o) => <OffenderRow key={o.ownerId} offender={o} onSelect={setSelectedOffenderId} />)}
+            </div>
+          ) : (
+            <div className="empty-state__sub">No repeat reports yet. Search above to look up a specific account.</div>
+          )}
+        </>
       )}
     </div>
   );

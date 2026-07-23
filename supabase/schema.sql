@@ -190,7 +190,7 @@ create index if not exists recipe_comments_parent_idx on public.recipe_comments 
 -- ------------------------------------------------------------
 create table if not exists public.reports (
   id           uuid        not null default gen_random_uuid(),
-  content_type text        not null, -- 'recipe_comment' | 'paint_note'
+  content_type text        not null, -- 'recipe_comment' | 'paint_note' | 'recipe_photo' | 'avatar_photo'
   content_id   uuid        not null,
   reporter_id  uuid        not null references auth.users (id) on delete cascade,
   reason       text,
@@ -198,6 +198,18 @@ create table if not exists public.reports (
   primary key (id),
   unique (content_type, content_id, reporter_id)
 );
+
+-- Widened from uuid: a recipe's own id is text (e.g. "ORK-001", unique only
+-- per-owner, not globally), so a 'recipe_photo' report needs content_id to
+-- hold the composite string "{ownerId}:{recipeId}" instead of a bare uuid
+-- (neither half ever contains ":", so this is unambiguous to split back
+-- apart client-side). Deliberately NOT a separate nullable owner-id column:
+-- that would make the unique constraint above silently uncheckable for
+-- every OTHER content type, since NULL never equals NULL in a unique
+-- constraint -- comments/notes have no owner id, so they'd all read NULL
+-- there and stop colliding on repeat reports of the same item. Safe to
+-- re-run: casting text to text is a no-op once already migrated.
+alter table public.reports alter column content_id type text using content_id::text;
 
 -- Lets the admin area track "still needs a look" vs "already handled"
 -- instead of every report sitting in one undifferentiated pile forever --
@@ -538,6 +550,19 @@ create policy "own recipes" on public.recipes
   using      (auth.uid() = user_id)
   with check (auth.uid() = user_id);
 
+-- Lets an admin clear a reported photo off someone else's recipe (see the
+-- admin queue's useHideContent) -- same broad for-update shape as "admin
+-- moderate comments"/"admin moderate paint notes" below, no column-grant
+-- restriction, matching how "admin manage faction emblems" is already an
+-- unrestricted for-all policy rather than the profiles-specific column-
+-- grant pattern. The only code path that ever exercises this sends
+-- {photo_path: null}, but the policy itself doesn't enforce that narrowly.
+drop policy if exists "admin hide recipe photos" on public.recipes;
+create policy "admin hide recipe photos" on public.recipes
+  for update
+  using      (exists (select 1 from public.profiles p where p.user_id = auth.uid() and p.is_admin))
+  with check (exists (select 1 from public.profiles p where p.user_id = auth.uid() and p.is_admin));
+
 drop policy if exists "own paints" on public.paints;
 create policy "own paints" on public.paints
   for all
@@ -621,9 +646,15 @@ as $$
   select coalesce((select is_admin from public.profiles where user_id = p_user_id), false);
 $$;
 
--- Lets an admin ban/unban ANY account, scoped to just the is_banned column
--- by the grant above -- an admin still can't touch anyone else's display
--- name, avatar, etc. through this policy.
+-- Lets an admin update ANY account's row for the columns already granted
+-- to `authenticated` above -- is_banned (for bans) and, since it's granted
+-- from the very first line too, avatar_path (for the admin queue's hide-
+-- reported-avatar action). Column GRANTs in Postgres are role-wide, not
+-- scoped per-policy, so this policy's row-level admission (is_admin) is
+-- really what's doing the work here, not the grant -- display_name and
+-- default_hobby_id are technically reachable through this same policy too
+-- (both already granted above for the owner's own use), there's just no
+-- code path today that ever asks it to touch them.
 drop policy if exists "admin manage bans" on public.profiles;
 create policy "admin manage bans" on public.profiles
   for update

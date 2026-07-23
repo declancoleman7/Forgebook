@@ -16,6 +16,8 @@ import { useMyPaints, useSharedPaints, useWantToBuy, useToggleWanted, useAddPain
 import { useMyHobbyLog } from '../queries/useHobbyLog.js';
 import { useConfirm } from '../confirm/ConfirmContext.jsx';
 import { useToast } from '../toast/ToastContext.jsx';
+import { useReport } from '../report/ReportContext.jsx';
+import { useReportContent } from '../queries/useReports.js';
 
 const CATEGORY_GLYPH = {
   wash: '<path d="M12 3C12 3 6 10 6 14.5C6 18.09 8.69 21 12 21C15.31 21 18 18.09 18 14.5C18 10 12 3 12 3Z"/>',
@@ -96,6 +98,8 @@ export default function RecipeDetail() {
   const navigate = useNavigate();
   const confirm = useConfirm();
   const showToast = useToast();
+  const report = useReport();
+  const reportContent = useReportContent();
   const { userId } = useAuth();
   const r = useFindRecipe(id, authorId);
   const deleteRecipe = useDeleteRecipe();
@@ -115,6 +119,22 @@ export default function RecipeDetail() {
   const isShared = !!r.authorId;
   const f = faction(r.faction);
   const ownerId = r.authorId || userId;
+
+  // "{ownerId}:{recipeId}" -- a recipe's own id is only unique per-owner,
+  // not globally, so the admin queue's report content_id needs both halves
+  // to identify one photo unambiguously (see schema.sql's reports.content_id
+  // widening comment for why this is a plain composite string, not a
+  // separate owner-id column).
+  const doReportPhoto = async () => {
+    const reason = await report('photo');
+    if (reason === null) return;
+    try {
+      const res = await reportContent.mutateAsync({ contentType: 'recipe_photo', contentId: `${ownerId}:${r.id}`, reason });
+      showToast(res.alreadyReported ? "You've already reported this" : 'Reported — thanks for flagging this');
+    } catch (err) {
+      showToast(err.message || "Couldn't send that report — try again.");
+    }
+  };
 
   const resolveStepPaint = (step, field) => {
     const pid = step[field];
@@ -167,6 +187,11 @@ export default function RecipeDetail() {
       <div className={`detail-hero ${r.photo ? 'has-photo' : ''}`} style={{ '--faction-color': f.color, cursor: r.photo ? 'pointer' : undefined, ...(r.photo ? { backgroundImage: `url('${r.photo}')`, backgroundPosition: `${(r.photoFocalX ?? 0.5) * 100}% ${(r.photoFocalY ?? 0.5) * 100}%` } : {}) }}
         onClick={r.photo ? () => setLightboxOpen(true) : undefined}>
         {!r.photo && <span className="emblem-badge emblem-badge--xl"><EmblemSvg emblemKey={f.emblem} size={40} /></span>}
+        {isShared && r.photo && (
+          <button type="button" className="report-photo-btn" aria-label="Report photo" title="Report photo" onClick={(e) => { e.stopPropagation(); doReportPhoto(); }}>
+            <Icon name="flag" size={13} />
+          </button>
+        )}
       </div>
 
       {lightboxOpen && r.photo && <Lightbox url={r.photo} onClose={() => setLightboxOpen(false)} />}

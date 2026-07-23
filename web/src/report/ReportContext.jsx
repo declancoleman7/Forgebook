@@ -32,7 +32,7 @@ export function ReportProvider({ children }) {
         <div className="confirm-overlay">
           <div className="confirm-overlay__backdrop" onClick={() => close(null)} />
           <div className="confirm-dialog" role="alertdialog" aria-modal="true">
-            <div className="confirm-dialog__message">Report this {dialog.kind === 'comment' ? 'comment' : 'note'}? Let us know what's wrong (optional).</div>
+            <div className="confirm-dialog__message">Report this {dialog.kind === 'comment' ? 'comment' : dialog.kind === 'photo' ? 'photo' : 'note'}? Let us know what's wrong (optional).</div>
             <textarea className="report-reason-input" maxLength={200} placeholder="Reason (optional)" value={reason} onChange={(e) => setReason(e.target.value)} />
             <div className="confirm-dialog__actions">
               <button type="button" className="btn btn-ghost" onClick={() => close(null)}>Cancel</button>

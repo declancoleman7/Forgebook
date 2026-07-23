@@ -14,6 +14,9 @@ import { useMyRecipes, useSharedRecipes, useSavedRecipes } from '../queries/useR
 import { useSavedPaintKeys } from '../queries/usePaints.js';
 import { useViewedProfile, useMyFollowingIds, useToggleFollow } from '../queries/useSocial.js';
 import { useMyHobbyLog } from '../queries/useHobbyLog.js';
+import { useReport } from '../report/ReportContext.jsx';
+import { useReportContent } from '../queries/useReports.js';
+import { useToast } from '../toast/ToastContext.jsx';
 
 const STAR_PATH = 'M12 2l2.9 6.6 7.1.6-5.4 4.7 1.6 7-6.2-3.7-6.2 3.7 1.6-7L2 9.2l7.1-.6L12 2z';
 function StarRow({ value, size = 14 }) {
@@ -160,6 +163,9 @@ export default function Profile() {
   const navigate = useNavigate();
   const { userId } = useAuth();
   const isMe = id === userId;
+  const showToast = useToast();
+  const report = useReport();
+  const reportContent = useReportContent();
 
   const { data: viewedProfile, isLoading } = useViewedProfile(id);
   const { data: myRecipes = [] } = useMyRecipes();
@@ -185,6 +191,17 @@ export default function Profile() {
   const recipes = isMe ? myRecipes : viewedProfile.recipes;
   const isFollowing = followingIds.includes(id);
 
+  const doReportPhoto = async () => {
+    const reason = await report('photo');
+    if (reason === null) return;
+    try {
+      const res = await reportContent.mutateAsync({ contentType: 'avatar_photo', contentId: id, reason });
+      showToast(res.alreadyReported ? "You've already reported this" : 'Reported — thanks for flagging this');
+    } catch (err) {
+      showToast(err.message || "Couldn't send that report — try again.");
+    }
+  };
+
   return (
     <div className="page-enter view-wide">
       <div className="detail-header">
@@ -200,7 +217,14 @@ export default function Profile() {
       <div className="profile-layout">
         <div className="profile-layout__side">
           <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-            <Avatar displayName={viewedProfile.displayName} url={viewedProfile.avatarUrl} size={56} />
+            <div style={{ position: 'relative' }}>
+              <Avatar displayName={viewedProfile.displayName} url={viewedProfile.avatarUrl} size={56} />
+              {!isMe && viewedProfile.avatarUrl && (
+                <button type="button" className="report-photo-btn" style={{ top: -4, right: -4, width: 22, height: 22 }} aria-label="Report photo" title="Report photo" onClick={doReportPhoto}>
+                  <Icon name="flag" size={11} />
+                </button>
+              )}
+            </div>
             <div style={{ flex: 1 }}>
               <div className="detail-title">{viewedProfile.displayName}{viewedProfile.isAdmin && <span className="admin-badge" title="Forgebook admin">GM</span>}</div>
               <div className="detail-sub">
