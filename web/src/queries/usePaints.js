@@ -51,17 +51,17 @@ export function useSharedPaints(authorIds) {
 }
 
 // Lives in its own paint_wants table rather than on a rack row -- a
-// wanted-but-unowned paint has no business in the rack itself. Returns the
-// plain array of paintKey() strings, same shape the old app's
-// getWantToBuy() did.
+// wanted-but-unowned paint has no business in the rack itself. Returns
+// { paintKey, type } objects (type='' for a pre-migration, any-type want)
+// -- see data/paints.js's isWanted() for how these get matched.
 export function useWantToBuy() {
   const { userId } = useAuth();
   return useQuery({
     queryKey: ['paintWants', userId],
     queryFn: async () => {
-      const { data, error } = await supabase.from('paint_wants').select('paint_key').eq('user_id', userId);
+      const { data, error } = await supabase.from('paint_wants').select('paint_key, type').eq('user_id', userId);
       if (error) throw error;
-      return (data || []).map((row) => row.paint_key);
+      return (data || []).map((row) => ({ paintKey: row.paint_key, type: row.type }));
     },
     enabled: !!userId,
   });
@@ -80,13 +80,16 @@ export function useAddPaintToRack() {
       const { error } = await supabase.from('paints').upsert(toRemotePaint(row, userId));
       if (error) throw new Error("Couldn't save that — try again.");
       const key = paintKey(name, brand);
-      const { error: wantErr } = await supabase.from('paint_wants').delete().eq('user_id', userId).eq('paint_key', key);
+      // Clears a generic pre-migration want ('') or one specific to this
+      // exact type -- a want for a DIFFERENT type-variant of the same
+      // name+brand is left alone, since owning this one doesn't fulfil that.
+      const { error: wantErr } = await supabase.from('paint_wants').delete().eq('user_id', userId).eq('paint_key', key).in('type', ['', type || '']);
       if (wantErr) { /* non-fatal -- the paint is on the rack either way */ }
-      return { row, key };
+      return { row, key, type: type || '' };
     },
-    onSuccess: ({ row, key }) => {
+    onSuccess: ({ row, key, type }) => {
       qc.setQueryData(['paints', userId], (prev) => (prev ? [...prev, row] : prev));
-      qc.setQueryData(['paintWants', userId], (prev) => prev?.filter((k) => k !== key));
+      qc.setQueryData(['paintWants', userId], (prev) => prev?.filter((w) => !(w.paintKey === key && (w.type === '' || w.type === type))));
     },
   });
 }
@@ -157,21 +160,24 @@ export function useToggleWanted() {
   const { userId } = useAuth();
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async ({ name, brand, wanted }) => {
+    mutationFn: async ({ name, brand, type, wanted }) => {
       const key = paintKey(name, brand);
+      const t = type || '';
       if (wanted) {
-        const { error } = await supabase.from('paint_wants').delete().eq('user_id', userId).eq('paint_key', key);
+        const { error } = await supabase.from('paint_wants').delete().eq('user_id', userId).eq('paint_key', key).eq('type', t);
         if (error) throw error;
       } else {
-        const { error } = await supabase.from('paint_wants').upsert({ paint_key: key, user_id: userId });
+        const { error } = await supabase.from('paint_wants').upsert({ paint_key: key, user_id: userId, type: t });
         if (error) throw error;
       }
-      return { key, wanted: !wanted };
+      return { key, type: t, wanted: !wanted };
     },
-    onSuccess: ({ key, wanted }) => {
+    onSuccess: ({ key, type, wanted }) => {
       qc.setQueryData(['paintWants', userId], (prev) => {
         if (!prev) return prev;
-        return wanted ? [...new Set([...prev, key])] : prev.filter((k) => k !== key);
+        return wanted
+          ? [...prev.filter((w) => !(w.paintKey === key && w.type === type)), { paintKey: key, type }]
+          : prev.filter((w) => !(w.paintKey === key && w.type === type));
       });
     },
   });

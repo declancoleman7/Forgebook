@@ -2,7 +2,7 @@ import { useMemo, useState, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useWindowVirtualizer } from '@tanstack/react-virtual';
 import Icon from '../icons.jsx';
-import { PAINT_LIBRARY, paintKey, paintCategory, paintMatchesQuery } from '../data/paints.js';
+import { PAINT_LIBRARY, paintTypeKey, isWanted, paintCategory, paintMatchesQuery } from '../data/paints.js';
 import { useMyPaints, useWantToBuy, useAddPaintToRack, useToggleWanted, useToggleRestock, useUpdateQuantity, useDeletePaint } from '../queries/usePaints.js';
 import { useConfirm } from '../confirm/ConfirmContext.jsx';
 import { useToast } from '../toast/ToastContext.jsx';
@@ -93,13 +93,13 @@ export default function PaintLibrary() {
   const { inc, dec } = useUpdateQuantity();
   const deletePaint = useDeletePaint();
 
-  const ownedByKey = useMemo(() => new Map((paintsQuery.data || []).map((p) => [paintKey(p.name, p.brand), p])), [paintsQuery.data]);
-  const wantedKeys = useMemo(() => new Set(wantsQuery.data || []), [wantsQuery.data]);
-  const isOwnedEntry = useCallback((p) => ownedByKey.has(paintKey(p.name, p.brand)), [ownedByKey]);
+  const ownedByKey = useMemo(() => new Map((paintsQuery.data || []).map((p) => [paintTypeKey(p.name, p.brand, p.type), p])), [paintsQuery.data]);
+  const wants = wantsQuery.data;
+  const isOwnedEntry = useCallback((p) => ownedByKey.has(paintTypeKey(p.name, p.brand, p.type)), [ownedByKey]);
   const needsPurchaseEntry = useCallback((p) => {
-    if (!isOwnedEntry(p)) return wantedKeys.has(paintKey(p.name, p.brand));
-    return !!ownedByKey.get(paintKey(p.name, p.brand))?.needsRestock;
-  }, [ownedByKey, wantedKeys, isOwnedEntry]);
+    if (!isOwnedEntry(p)) return isWanted(wants, p.name, p.brand, p.type);
+    return !!ownedByKey.get(paintTypeKey(p.name, p.brand, p.type))?.needsRestock;
+  }, [ownedByKey, wants, isOwnedEntry]);
 
   const allBrands = useMemo(() => [...new Set(PAINT_LIBRARY.map((p) => p.brand).filter(Boolean))].sort(), []);
 
@@ -165,7 +165,7 @@ export default function PaintLibrary() {
   });
 
   const doAddToRack = (p) => addToRack.mutate({ name: p.name, brand: p.brand, hex: p.hex, type: p.type, quantity: 1 });
-  const doToggleWanted = (p, wanted) => toggleWanted.mutate({ name: p.name, brand: p.brand, wanted });
+  const doToggleWanted = (p, wanted) => toggleWanted.mutate({ name: p.name, brand: p.brand, type: p.type, wanted });
   // Decreasing to 0 removes the paint from the rack entirely -- same rule
   // as the old app, confirmed first. "Used in N recipes" is folded back in
   // once the recipes data layer exists (Stage 3 batch 4).
@@ -262,8 +262,8 @@ export default function PaintLibrary() {
                 </div>
               );
             }
-            const owned = ownedByKey.get(paintKey(row.p.name, row.p.brand));
-            const wanted = wantedKeys.has(paintKey(row.p.name, row.p.brand));
+            const owned = ownedByKey.get(paintTypeKey(row.p.name, row.p.brand, row.p.type));
+            const wanted = isWanted(wants, row.p.name, row.p.brand, row.p.type);
             return (
               <div key={vRow.key} style={{ ...style, padding: '0 4px 8px' }}>
                 <PaintRow p={row.p} owned={owned} wanted={wanted}

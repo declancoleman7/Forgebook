@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import Icon from '../icons.jsx';
-import { PAINT_LIBRARY, PAINT_CATEGORY_LABEL, paintCategory, paintKey } from '../data/paints.js';
+import { PAINT_LIBRARY, PAINT_CATEGORY_LABEL, paintCategory, paintKey, paintTypeKey } from '../data/paints.js';
 
 function PickRow({ entry, owned, isSelected, onPick }) {
   return (
@@ -38,7 +38,7 @@ export default function PaintPicker({ myPaints, currentId, currentWant, onPick, 
   const brandOptions = useMemo(() => [...new Set(pool.map((p) => p.brand).filter(Boolean))].sort(), [pool]);
 
   const q = query.trim().toLowerCase();
-  const ownedByKey = useMemo(() => new Map(myPaints.map((p) => [paintKey(p.name, p.brand), p])), [myPaints]);
+  const ownedByKey = useMemo(() => new Map(myPaints.map((p) => [paintTypeKey(p.name, p.brand, p.type), p])), [myPaints]);
 
   let rackList = useMemo(() => [...myPaints].sort((a, b) => a.name.localeCompare(b.name)), [myPaints]);
   let libList = PAINT_LIBRARY;
@@ -93,8 +93,8 @@ export default function PaintPicker({ myPaints, currentId, currentWant, onPick, 
             )) : <div className="empty-state__sub" style={{ padding: '20px 0' }}>{q ? 'No matches on your rack.' : "Nothing on your rack yet — try Full library."}</div>
           ) : (
             libList.length ? libList.map((p, i) => {
-              const owned = ownedByKey.get(paintKey(p.name, p.brand)) || null;
-              const isSelected = owned ? currentId === owned.id : !!(currentWant && paintKey(currentWant.name, currentWant.brand) === paintKey(p.name, p.brand));
+              const owned = ownedByKey.get(paintTypeKey(p.name, p.brand, p.type)) || null;
+              const isSelected = owned ? currentId === owned.id : !!(currentWant && paintTypeKey(currentWant.name, currentWant.brand, currentWant.type) === paintTypeKey(p.name, p.brand, p.type));
               // PAINT_LIBRARY legitimately has a few duplicate name+brand
               // entries (distinct product-line variants) -- paintKey() alone
               // isn't a unique React key here, unlike everywhere else it's

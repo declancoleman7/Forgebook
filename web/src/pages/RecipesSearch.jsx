@@ -7,7 +7,7 @@ import EmptyState from '../components/EmptyState.jsx';
 import RecipeCard from '../components/RecipeCard.jsx';
 import RecipeFilterOverlay from '../components/RecipeFilterOverlay.jsx';
 import { faction } from '../data/factions.js';
-import { PAINT_LIBRARY, paintKey, paintMatchesQuery } from '../data/paints.js';
+import { PAINT_LIBRARY, paintKey, paintTypeKey, paintMatchesQuery } from '../data/paints.js';
 import { useActiveHobby } from '../hooks/useActiveHobby.js';
 import { useIncludeShared, setIncludeShared } from '../hooks/useIncludeShared.js';
 import { useVisibleRecipes, useSharedRecipes, useRecipeVoteSummary } from '../queries/useRecipes.js';
@@ -121,7 +121,7 @@ function CompactRecipeRow({ r }) {
   const resolveStepPaint = (s) => {
     if (s.paintId) return pool.find((p) => p.id === s.paintId) || null;
     if (!s.wantPaint) return null;
-    return myPaints.find((p) => paintKey(p.name, p.brand) === paintKey(s.wantPaint.name, s.wantPaint.brand)) || s.wantPaint;
+    return myPaints.find((p) => paintTypeKey(p.name, p.brand, p.type) === paintTypeKey(s.wantPaint.name, s.wantPaint.brand, s.wantPaint.type)) || s.wantPaint;
   };
   const stack = (r.steps || []).slice(0, 5).map((s) => resolveStepPaint(s)?.hex || fac.color);
   const ownerId = r.authorId || null;

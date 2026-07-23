@@ -1,7 +1,7 @@
 import { useParams, useNavigate } from 'react-router-dom';
 import Icon from '../icons.jsx';
 import EmptyState from '../components/EmptyState.jsx';
-import { PAINT_LIBRARY, paintKey } from '../data/paints.js';
+import { PAINT_LIBRARY, paintKey, paintTypeKey } from '../data/paints.js';
 import { useMyPaints, useUpdateQuantity, useToggleRestock, useDeletePaint } from '../queries/usePaints.js';
 import { useMyRecipes } from '../queries/useRecipes.js';
 import { useConfirm } from '../confirm/ConfirmContext.jsx';
@@ -21,7 +21,7 @@ export default function PaintDetail() {
   const p = paints?.find((x) => x.id === id);
   if (!p) return <EmptyState icon="paintdrop" title="Paint not found" sub="It may have been removed from the rack." />;
 
-  const wantMatches = (want) => !!want && paintKey(want.name, want.brand) === paintKey(p.name, p.brand);
+  const wantMatches = (want) => !!want && paintTypeKey(want.name, want.brand, want.type) === paintTypeKey(p.name, p.brand, p.type);
   const usedIn = myRecipes.filter((r) => (r.steps || []).some((s) =>
     s.paintId === p.id || s.mixPaintId === p.id || wantMatches(s.wantPaint) || wantMatches(s.mixWantPaint)
   ));

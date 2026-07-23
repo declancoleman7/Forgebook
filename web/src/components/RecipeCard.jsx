@@ -3,7 +3,7 @@ import Icon from '../icons.jsx';
 import Avatar from './Avatar.jsx';
 import EmblemSvg from './EmblemSvg.jsx';
 import { faction } from '../data/factions.js';
-import { paintKey } from '../data/paints.js';
+import { paintTypeKey } from '../data/paints.js';
 import { useRecipeVoteSummary, useSavedRecipes } from '../queries/useRecipes.js';
 import { useMyPaints, useSharedPaints } from '../queries/usePaints.js';
 import { useAuth } from '../auth/AuthContext.jsx';
@@ -34,7 +34,7 @@ export default function RecipeCard({ r }) {
   const resolveStepPaint = (s) => {
     if (s.paintId) return pool.find((p) => p.id === s.paintId) || null;
     if (!s.wantPaint) return null;
-    return myPaints.find((p) => paintKey(p.name, p.brand) === paintKey(s.wantPaint.name, s.wantPaint.brand)) || s.wantPaint;
+    return myPaints.find((p) => paintTypeKey(p.name, p.brand, p.type) === paintTypeKey(s.wantPaint.name, s.wantPaint.brand, s.wantPaint.type)) || s.wantPaint;
   };
   const stack = (r.steps || []).slice(0, 6).map((s) => resolveStepPaint(s)?.hex || fac.color);
   const ownerId = r.authorId || userId;

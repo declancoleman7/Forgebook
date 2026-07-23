@@ -4,7 +4,7 @@ import Icon from '../icons.jsx';
 import Avatar from '../components/Avatar.jsx';
 import MentionTextarea from '../components/MentionTextarea.jsx';
 import MentionText from '../components/MentionText.jsx';
-import { PAINT_LIBRARY, PAINT_CATEGORY_LABEL, paintCategory, paintKey } from '../data/paints.js';
+import { PAINT_LIBRARY, PAINT_CATEGORY_LABEL, paintCategory, paintKey, paintTypeKey, isWanted } from '../data/paints.js';
 import { colourSimilarity, hexToHsv, hsvToHex } from '../utils/colour.js';
 import { relativeTime } from '../utils/format.js';
 import { useAuth } from '../auth/AuthContext.jsx';
@@ -71,7 +71,7 @@ function computeColourMatches(hex, excludeKey, resultFilter, sourceBrand, source
   if (resultFilter === 'other' && sourceBrand) {
     matches = matches.filter((m) => m.paint.brand !== sourceBrand);
   } else if (resultFilter === 'owned') {
-    matches = matches.filter((m) => myPaints.some((p) => paintKey(p.name, p.brand) === paintKey(m.paint.name, m.paint.brand)));
+    matches = matches.filter((m) => myPaints.some((p) => paintTypeKey(p.name, p.brand, p.type) === paintTypeKey(m.paint.name, m.paint.brand, m.paint.type)));
   }
   if (categories?.length) matches = matches.filter((m) => categories.includes(paintCategory(m.paint.type)));
   matches.sort((a, b) => (b.sameCategory - a.sameCategory) || (b.score - a.score));
@@ -365,8 +365,8 @@ export default function SimilarColours() {
         // re-renders as the colour/filter changes, which is what caused
         // rows to visibly "stick" on stale data after repeated dragging.
         const row = (m, i) => {
-          const owned = myPaints.find((p) => paintKey(p.name, p.brand) === paintKey(m.paint.name, m.paint.brand));
-          const wanted = wantedKeys.includes(paintKey(m.paint.name, m.paint.brand));
+          const owned = myPaints.find((p) => paintTypeKey(p.name, p.brand, p.type) === paintTypeKey(m.paint.name, m.paint.brand, m.paint.type));
+          const wanted = isWanted(wantedKeys, m.paint.name, m.paint.brand, m.paint.type);
           return (
             <div key={`${paintKey(m.paint.name, m.paint.brand)}-${i}`} className="colour-match-row">
               <div className="paint-row__swatch" title="Find similar colours" style={{ background: m.paint.hex, cursor: 'pointer' }} onClick={() => findSimilarTo(m.paint)}><TypeBadge type={m.paint.type} /></div>
@@ -380,7 +380,7 @@ export default function SimilarColours() {
               </div>
               {owned
                 ? <span className="lib-row__ring is-owned" title="On your rack"><Icon name="check" size={13} /></span>
-                : <button className={`lib-row__flag is-wanted ${wanted ? 'is-on' : ''}`} title={wanted ? 'On your buy list' : 'Add to buy list'} onClick={() => toggleWanted.mutate({ name: m.paint.name, brand: m.paint.brand, wanted })}><Icon name="cart" size={13} /></button>}
+                : <button className={`lib-row__flag is-wanted ${wanted ? 'is-on' : ''}`} title={wanted ? 'On your buy list' : 'Add to buy list'} onClick={() => toggleWanted.mutate({ name: m.paint.name, brand: m.paint.brand, type: m.paint.type, wanted })}><Icon name="cart" size={13} /></button>}
             </div>
           );
         };

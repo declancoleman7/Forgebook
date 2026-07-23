@@ -9,7 +9,7 @@ import CommentThread from '../components/CommentThread.jsx';
 import Lightbox from '../components/Lightbox.jsx';
 import HobbyStageStack from '../components/HobbyStageStack.jsx';
 import { faction } from '../data/factions.js';
-import { paintKey, paintCategory } from '../data/paints.js';
+import { paintTypeKey, isWanted, paintCategory } from '../data/paints.js';
 import { useAuth } from '../auth/AuthContext.jsx';
 import { useFindRecipe, useDeleteRecipe, useRecipeVoteSummary, useMyRecipeVotes, useVoteRecipe, useSavedRecipes, useToggleSaveRecipe } from '../queries/useRecipes.js';
 import { useMyPaints, useSharedPaints, useWantToBuy, useToggleWanted, useAddPaintToRack } from '../queries/usePaints.js';
@@ -144,7 +144,7 @@ export default function RecipeDetail() {
     }
     const want = step[field === 'paintId' ? 'wantPaint' : 'mixWantPaint'];
     if (!want) return null;
-    const owned = myPaints?.find((p) => paintKey(p.name, p.brand) === paintKey(want.name, want.brand));
+    const owned = myPaints?.find((p) => paintTypeKey(p.name, p.brand, p.type) === paintTypeKey(want.name, want.brand, want.type));
     if (owned) return owned;
     return { ...want, isWant: true };
   };
@@ -155,7 +155,7 @@ export default function RecipeDetail() {
     (r.steps || []).forEach((s) => {
       ['paintId', 'mixPaintId'].forEach((field) => {
         const want = s[field === 'paintId' ? 'wantPaint' : 'mixWantPaint'];
-        const key = s[field] || (want && 'want:' + paintKey(want.name, want.brand));
+        const key = s[field] || (want && 'want:' + paintTypeKey(want.name, want.brand, want.type));
         if (!key || seen.has(key)) return;
         const p = resolveStepPaint(s, field);
         if (p) { seen.add(key); out.push(p); }
@@ -230,8 +230,8 @@ export default function RecipeDetail() {
               </div>
             );
           }
-          const owned = p.isWant ? false : myPaints?.some((mp) => paintKey(mp.name, mp.brand) === paintKey(p.name, p.brand));
-          const wanted = !owned && wantedKeys?.includes(paintKey(p.name, p.brand));
+          const owned = p.isWant ? false : myPaints?.some((mp) => paintTypeKey(mp.name, mp.brand, mp.type) === paintTypeKey(p.name, p.brand, p.type));
+          const wanted = !owned && isWanted(wantedKeys, p.name, p.brand, p.type);
           return (
             <div key={i} className={`paint-row ${owned ? 'is-owned' : ''}`}>
               <div className="paint-row__swatch" style={{ background: p.hex }}><TypeBadge type={p.type} /></div>
@@ -244,7 +244,7 @@ export default function RecipeDetail() {
               ) : (
                 <div style={{ display: 'flex', gap: 6, marginLeft: 'auto' }}>
                   <button className={`lib-row__flag is-wanted ${wanted ? 'is-on' : ''}`} title={wanted ? 'On your buy list' : 'Add to buy list'}
-                    onClick={() => toggleWanted.mutate({ name: p.name, brand: p.brand, wanted })}>
+                    onClick={() => toggleWanted.mutate({ name: p.name, brand: p.brand, type: p.type, wanted })}>
                     <Icon name="cart" size={13} />
                   </button>
                   <button className="lib-row__flag" title="Add straight to rack"

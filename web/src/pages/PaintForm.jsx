@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useNavigate, useSearchParams, useLocation } from 'react-router-dom';
 import Icon from '../icons.jsx';
-import { PAINT_BRANDS, PAINT_TYPES, paintKey } from '../data/paints.js';
+import { PAINT_BRANDS, PAINT_TYPES, paintTypeKey } from '../data/paints.js';
 import { useMyPaints, useSavePaint } from '../queries/usePaints.js';
 import { useToast } from '../toast/ToastContext.jsx';
 import { getRecipeDraft, setRecipeDraft } from '../state/recipeDraft.js';
@@ -48,7 +48,7 @@ export default function PaintForm() {
   const save = async () => {
     if (!name.trim()) { showToast('Give the paint a name first'); return; }
     if (containsBlockedContent(name)) { showToast("That name isn't allowed — please rephrase it"); return; }
-    const dupe = myPaints?.find((p) => p.id !== editId && paintKey(p.name, p.brand) === paintKey(name, brand));
+    const dupe = myPaints?.find((p) => p.id !== editId && paintTypeKey(p.name, p.brand, p.type) === paintTypeKey(name, brand, type));
     if (dupe) { showToast('That paint is already on your rack'); return; }
 
     showToast('Saving…');

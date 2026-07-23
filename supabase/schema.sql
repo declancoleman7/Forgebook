@@ -91,10 +91,22 @@ create index if not exists paints_paint_key_idx on public.paints (paint_key);
 create table if not exists public.paint_wants (
   paint_key   text        not null,
   user_id     uuid        not null references auth.users (id) on delete cascade,
+  type        text        not null default '',
   updated_at  timestamptz not null default now(),
   deleted     boolean     not null default false,
-  primary key (user_id, paint_key)
+  primary key (user_id, paint_key, type)
 );
+
+-- Widens the primary key so Base/Spray-style type-variants of the same
+-- name+brand can be wanted independently -- PAINT_LIBRARY has ~30 pairs
+-- like this, and a shared (user_id, paint_key) key meant toggling one
+-- variant's "want to buy" silently flipped its sibling too. Existing rows
+-- default to type='' ("wants any type of this paint"), which still matches
+-- every variant until the user re-toggles a specific one. Unconditional
+-- drop-then-recreate so this is safe to paste again once already applied.
+alter table public.paint_wants add column if not exists type text not null default '';
+alter table public.paint_wants drop constraint if exists paint_wants_pkey;
+alter table public.paint_wants add primary key (user_id, paint_key, type);
 
 -- ------------------------------------------------------------
 -- Profiles — just enough to show "shared by X" on someone else's recipe.

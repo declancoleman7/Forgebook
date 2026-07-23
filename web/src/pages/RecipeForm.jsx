@@ -6,7 +6,7 @@ import PaintPicker from '../components/PaintPicker.jsx';
 import PhotoPositionPicker from '../components/PhotoPositionPicker.jsx';
 import { useActiveHobby } from '../hooks/useActiveHobby.js';
 import { faction, HOBBIES } from '../data/factions.js';
-import { TECHNIQUES, paintKey } from '../data/paints.js';
+import { TECHNIQUES, paintTypeKey, isWanted } from '../data/paints.js';
 import { downscaleImage } from '../utils/image.js';
 import { useMyRecipes, useVisibleRecipes, usePushRecipe, useUploadRecipePhoto } from '../queries/useRecipes.js';
 import { useMyPaints, useWantToBuy, useToggleWanted } from '../queries/usePaints.js';
@@ -97,7 +97,7 @@ function RecipeFormInner({ existing, myRecipes }) {
     if (pid) return myPaints.find((p) => p.id === pid) || null;
     const want = step[field === 'paintId' ? 'wantPaint' : 'mixWantPaint'];
     if (!want) return null;
-    const owned = myPaints.find((p) => paintKey(p.name, p.brand) === paintKey(want.name, want.brand));
+    const owned = myPaints.find((p) => paintTypeKey(p.name, p.brand, p.type) === paintTypeKey(want.name, want.brand, want.type));
     return owned || { ...want, isWant: true };
   };
 
@@ -127,7 +127,7 @@ function RecipeFormInner({ existing, myRecipes }) {
     const { stepId, field } = picker;
     const wantField = field === 'paintId' ? 'wantPaint' : 'mixWantPaint';
     updateStep(stepId, owned ? { [field]: owned.id, [wantField]: undefined } : { [field]: '', [wantField]: { name: entry.name, brand: entry.brand, hex: entry.hex, type: entry.type } });
-    if (!owned && !wantedKeys.includes(paintKey(entry.name, entry.brand))) toggleWanted.mutate({ name: entry.name, brand: entry.brand, wanted: false });
+    if (!owned && !isWanted(wantedKeys, entry.name, entry.brand, entry.type)) toggleWanted.mutate({ name: entry.name, brand: entry.brand, type: entry.type, wanted: false });
     setPicker(null);
   };
 
