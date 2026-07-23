@@ -1231,6 +1231,17 @@ main {
   line-height: 1.25;
 }
 
+/* Cinzel's lowercase glyphs are styled as reduced-height capitals (a
+   deliberate trait of the typeface, meant to evoke Roman monumental
+   inscriptions, which had no true lowercase) -- fine for a recipe/faction/
+   unit name, but it visually erases a real person's own chosen casing on
+   their display name, which is identity-bearing text, not decorative
+   content. Used only on Profile.jsx/PublicProfile.jsx's own name heading. */
+.detail-title--identity {
+  font-family: var(--font-body);
+  font-weight: 700;
+}
+
 .detail-id {
   font-family: var(--font-mono);
   font-size: 11px;

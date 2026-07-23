@@ -67,7 +67,7 @@ export default function PublicProfile({ id }) {
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
           <Avatar displayName={result.displayName} url={result.avatarUrl} size={56} />
           <div>
-            <div className="detail-title">{result.displayName}</div>
+            <div className="detail-title detail-title--identity">{result.displayName}</div>
             <div className="detail-sub">{recipes.length} recipe{recipes.length === 1 ? '' : 's'} shared</div>
           </div>
         </div>

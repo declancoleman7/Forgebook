@@ -226,7 +226,7 @@ export default function Profile() {
               )}
             </div>
             <div style={{ flex: 1 }}>
-              <div className="detail-title">{viewedProfile.displayName}{viewedProfile.isAdmin && <span className="admin-badge" title="Forgebook admin">GM</span>}</div>
+              <div className="detail-title detail-title--identity">{viewedProfile.displayName}{viewedProfile.isAdmin && <span className="admin-badge" title="Forgebook admin">GM</span>}</div>
               <div className="detail-sub">
                 {recipes.length} recipe{recipes.length === 1 ? '' : 's'}{isMe ? '' : ' shared'} ·{' '}
                 <span style={{ cursor: 'pointer', textDecoration: 'underline' }} onClick={() => navigate(`/u/${id}/section/followers`)}>{viewedProfile.followerIds.length} follower{viewedProfile.followerIds.length === 1 ? '' : 's'}</span> ·{' '}
