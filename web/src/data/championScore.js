@@ -16,11 +16,15 @@ export function championScore({ recipesPublished, commentCount, likesReceived })
 }
 
 // Purely cosmetic tiers so the number means something at a glance -- no
-// gameplay effect, just a label under the score.
+// gameplay effect, just a label under the score. Deliberately a steep
+// climb: at recipe=5/comment=1/like=2, one published recipe alone shouldn't
+// already read as "Contributor" -- Legend is meant as a rare, almost
+// aspirational bar for the single most active person in the app, not
+// something any regular user backs into after a few weeks.
 const TIERS = [
-  { min: 50, label: 'Legend' },
-  { min: 20, label: 'Champion' },
-  { min: 5, label: 'Contributor' },
+  { min: 250, label: 'Legend' },
+  { min: 100, label: 'Champion' },
+  { min: 25, label: 'Contributor' },
   { min: 0, label: 'Newcomer' },
 ];
 
