@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import Icon from '../icons.jsx';
 import EmptyState from '../components/EmptyState.jsx';
 import RecipePicker from '../components/RecipePicker.jsx';
@@ -831,34 +831,59 @@ export default function HobbyLog() {
   // state below (hobby/system/faction drill-down), since it's scoped to the
   // Level 0 dashboard only.
   const [dashView, setDashView] = useState('overview'); // overview | army | category | timeline
-  const [editingId, setEditingId] = useState(null); // null | 'new' | entry id
-  const [editingProjectId, setEditingProjectId] = useState(null); // null | 'new' | project id
+
+  // Every drill-down/edit level below lives in the URL's own query string,
+  // not local state -- this whole page is a single route, so plain useState
+  // here would never create a browser history entry, meaning Android's back
+  // button (or the browser's own) skipped past every level at once, straight
+  // out of the page. Reading these from useSearchParams and pushing new
+  // params via navigate() (its default behaviour, unless {replace:true} is
+  // passed) gives each "go deeper" tap its own history entry, so back steps
+  // through hobby -> system -> army -> list -> entry/project one level at a
+  // time, same as anywhere else in the app that uses real routes.
+  const [searchParams] = useSearchParams();
+  const editingId = searchParams.get('entry'); // null | 'new' | entry id
+  const editingProjectId = searchParams.get('project'); // null | 'new' | project id
   // null = hobby-picker dashboard; 'all' = flat list of everything (the
   // escape hatch, same view this page used to open straight to);
   // otherwise a hobby id, drilling into that hobby's systems/factions below.
-  const [browseHobbyId, setBrowseHobbyId] = useState(null);
+  const browseHobbyId = searchParams.get('hobby');
   // Only meaningful for a hobby with more than one system (Warhammer: 40k/
   // AoS/Horus Heresy/etc, per data/factions.js's HOBBIES[].systems, the
   // same grouping Collection.jsx's own browse grid already uses) -- null
   // means "still picking a system," '__general__' means entries logged
   // against this hobby with no faction at all (can't belong to a system
   // without one), otherwise a system id.
-  const [browseSystemId, setBrowseSystemId] = useState(null);
+  const browseSystemId = searchParams.get('system');
   // null = faction grid; '__general__' = this hobby's entries with no
   // faction set; otherwise a faction id, scoping the list to just that one.
-  const [browseFactionId, setBrowseFactionId] = useState(null);
+  const browseFactionId = searchParams.get('faction');
+
+  // Pushes one new history entry with the given params changed, preserving
+  // every other param already in the URL (e.g. opening a unit FROM WITHIN a
+  // project keeps ?project=X while adding &entry=Y, so one "back" pop drops
+  // just the entry and lands back on the project, not the list underneath
+  // it). A tap that logically jumps more than one level at once (e.g. the
+  // "General" tile below, which sets system AND faction together) passes
+  // both keys in one call, so back undoes that whole tap in a single step.
+  const pushParams = (updates) => {
+    const next = new URLSearchParams(searchParams);
+    Object.entries(updates).forEach(([k, v]) => (v == null ? next.delete(k) : next.set(k, v)));
+    navigate({ search: next.toString() });
+  };
+  const goBack = () => navigate(-1);
 
   if (editingId) {
     const existing = editingId === 'new' ? null : entries.find((e) => e.id === editingId);
     const prefill = editingId === 'new' && browseHobbyId && browseHobbyId !== 'all'
       ? { hobbyId: browseHobbyId, factionId: browseFactionId && browseFactionId !== '__general__' ? browseFactionId : '' }
       : null;
-    return <EntryForm key={editingId} existing={existing} myRecipes={myRecipes} prefill={prefill} onClose={() => setEditingId(null)} />;
+    return <EntryForm key={editingId} existing={existing} myRecipes={myRecipes} prefill={prefill} onClose={goBack} />;
   }
 
   if (editingProjectId) {
     const existing = editingProjectId === 'new' ? null : projects.find((p) => p.id === editingProjectId);
-    return <ProjectForm key={editingProjectId} existing={existing} entries={entries} onClose={() => setEditingProjectId(null)} onOpenEntry={setEditingId} />;
+    return <ProjectForm key={editingProjectId} existing={existing} entries={entries} onClose={goBack} onOpenEntry={(id) => pushParams({ entry: id })} />;
   }
 
   if (isLoading) return <div className="empty-state__sub">Loading…</div>;
@@ -874,7 +899,7 @@ export default function HobbyLog() {
         <div className="detail-header">
           <button className="icon-btn" onClick={() => navigate(-1)}><Icon name="back" size={18} /></button>
           <div className="page-title" style={{ margin: 0 }}>Pile of Potential</div>
-          <button className="icon-btn" onClick={() => setEditingId('new')}><Icon name="plus" size={18} /></button>
+          <button className="icon-btn" onClick={() => pushParams({ entry: 'new' })}><Icon name="plus" size={18} /></button>
         </div>
         <div className="detail-sub" style={{ marginBottom: 14 }}>
           Track every unit you're building and painting, miniature by miniature. Pick a hobby to see the armies or categories you've logged something for.
@@ -920,10 +945,10 @@ export default function HobbyLog() {
         <div className="section-label">Projects</div>
         {projects.length > 0 && (
           <div className="hobbylog-list" style={{ marginBottom: 10 }}>
-            {projects.map((project) => <ProjectCard key={project.id} project={project} entries={entries} onEdit={setEditingProjectId} />)}
+            {projects.map((project) => <ProjectCard key={project.id} project={project} entries={entries} onEdit={(id) => pushParams({ project: id })} />)}
           </div>
         )}
-        <button type="button" className="btn btn-ghost btn-block" onClick={() => setEditingProjectId('new')}>
+        <button type="button" className="btn btn-ghost btn-block" onClick={() => pushParams({ project: 'new' })}>
           <Icon name="plus" size={14} /> New project
         </button>
 
@@ -931,7 +956,7 @@ export default function HobbyLog() {
           {HOBBIES.map((h) => {
             const n = hobbyCounts.get(h.id) || 0;
             return (
-              <div key={h.id} className="settings-row" style={{ cursor: 'pointer' }} onClick={() => setBrowseHobbyId(h.id)}>
+              <div key={h.id} className="settings-row" style={{ cursor: 'pointer' }} onClick={() => pushParams({ hobby: h.id })}>
                 <div>
                   <div className="settings-row__label">{h.label}</div>
                   <div className="settings-row__desc">{n} unit{n === 1 ? '' : 's'} logged</div>
@@ -941,7 +966,7 @@ export default function HobbyLog() {
             );
           })}
           {unsorted > 0 && (
-            <div className="settings-row" style={{ cursor: 'pointer' }} onClick={() => { setBrowseHobbyId('all'); setBrowseFactionId(null); }}>
+            <div className="settings-row" style={{ cursor: 'pointer' }} onClick={() => pushParams({ hobby: 'all', faction: null })}>
               <div>
                 <div className="settings-row__label">Not linked to a hobby</div>
                 <div className="settings-row__desc">{unsorted} unit{unsorted === 1 ? '' : 's'}</div>
@@ -950,7 +975,7 @@ export default function HobbyLog() {
             </div>
           )}
         </div>
-        <button type="button" className="btn btn-ghost btn-block" style={{ marginTop: 14 }} onClick={() => setBrowseHobbyId('all')}>
+        <button type="button" className="btn btn-ghost btn-block" style={{ marginTop: 14 }} onClick={() => pushParams({ hobby: 'all' })}>
           Browse everything at once
         </button>
       </div>
@@ -976,17 +1001,17 @@ export default function HobbyLog() {
     return (
       <div className="page-enter">
         <div className="detail-header">
-          <button className="icon-btn" onClick={() => setBrowseHobbyId(null)}><Icon name="back" size={18} /></button>
+          <button className="icon-btn" onClick={goBack}><Icon name="back" size={18} /></button>
           <div className="page-title" style={{ margin: 0 }}>{hobby.label}</div>
-          <button className="icon-btn" onClick={() => setEditingId('new')}><Icon name="plus" size={18} /></button>
+          <button className="icon-btn" onClick={() => pushParams({ entry: 'new' })}><Icon name="plus" size={18} /></button>
         </div>
         {ownedSystems.length || generalCount ? (
           <div className="faction-tiles">
             {ownedSystems.map((sys) => (
-              <DashTile key={sys.id} color="var(--gold)" count={systemCounts.get(sys.id)} label={sys.label} icon={<Icon name="shield" size={26} />} onClick={() => setBrowseSystemId(sys.id)} />
+              <DashTile key={sys.id} color="var(--gold)" count={systemCounts.get(sys.id)} label={sys.label} icon={<Icon name="shield" size={26} />} onClick={() => pushParams({ system: sys.id })} />
             ))}
             {generalCount > 0 && (
-              <DashTile color="var(--ink-dim)" count={generalCount} label="General" icon={<Icon name="paintdrop" size={22} />} onClick={() => { setBrowseSystemId('__general__'); setBrowseFactionId('__general__'); }} />
+              <DashTile color="var(--ink-dim)" count={generalCount} label="General" icon={<Icon name="paintdrop" size={22} />} onClick={() => pushParams({ system: '__general__', faction: '__general__' })} />
             )}
           </div>
         ) : (
@@ -1006,7 +1031,6 @@ export default function HobbyLog() {
       ? [...factionCounts.keys()].filter((id) => findFaction(id)?.system === browseSystemId)
       : [...factionCounts.keys()];
     const ownedFactions = scopedFactionIds.map((id) => findFaction(id)).filter(Boolean);
-    const goBack = () => (hasSystemLevel ? setBrowseSystemId(null) : setBrowseHobbyId(null));
     const titleLabel = hasSystemLevel ? hobby.systems.find((s) => s.id === browseSystemId)?.label : hobby?.label;
 
     return (
@@ -1014,15 +1038,15 @@ export default function HobbyLog() {
         <div className="detail-header">
           <button className="icon-btn" onClick={goBack}><Icon name="back" size={18} /></button>
           <div className="page-title" style={{ margin: 0 }}>{titleLabel || 'Browse'}</div>
-          <button className="icon-btn" onClick={() => setEditingId('new')}><Icon name="plus" size={18} /></button>
+          <button className="icon-btn" onClick={() => pushParams({ entry: 'new' })}><Icon name="plus" size={18} /></button>
         </div>
         {ownedFactions.length || (!hasSystemLevel && generalCount) ? (
           <div className="faction-tiles">
             {ownedFactions.map((f) => (
-              <DashTile key={f.id} color={f.color} count={factionCounts.get(f.id)} label={f.label} icon={<EmblemSvg emblemKey={f.emblem} size={30} />} onClick={() => setBrowseFactionId(f.id)} />
+              <DashTile key={f.id} color={f.color} count={factionCounts.get(f.id)} label={f.label} icon={<EmblemSvg emblemKey={f.emblem} size={30} />} onClick={() => pushParams({ faction: f.id })} />
             ))}
             {!hasSystemLevel && generalCount > 0 && (
-              <DashTile color="var(--ink-dim)" count={generalCount} label="General" icon={<Icon name="paintdrop" size={22} />} onClick={() => setBrowseFactionId('__general__')} />
+              <DashTile color="var(--ink-dim)" count={generalCount} label="General" icon={<Icon name="paintdrop" size={22} />} onClick={() => pushParams({ faction: '__general__' })} />
             )}
           </div>
         ) : (
@@ -1039,21 +1063,13 @@ export default function HobbyLog() {
   const filtered = filter === 'all' ? scopedEntries : scopedEntries.filter((e) => dominantStage(e) === filter);
   const countFor = (s) => scopedEntries.filter((e) => dominantStage(e) === s).length;
   const titleLabel = isFlatAll ? 'All units' : browseFactionId === '__general__' ? 'General' : (findFaction(browseFactionId)?.label || 'Entries');
-  // The Level 0.5 "General" tile jumps straight here (no faction to pick),
-  // so going back has to retrace that same skip -- straight to the system
-  // picker, not the faction grid it never actually showed.
-  const goBack = () => {
-    if (isFlatAll) { setBrowseHobbyId(null); return; }
-    if (browseSystemId === '__general__') { setBrowseSystemId(null); setBrowseFactionId(null); return; }
-    setBrowseFactionId(null);
-  };
 
   return (
     <div className="page-enter">
       <div className="detail-header">
         <button className="icon-btn" onClick={goBack}><Icon name="back" size={18} /></button>
         <div className="page-title" style={{ margin: 0 }}>{titleLabel}</div>
-        <button className="icon-btn" onClick={() => setEditingId('new')}><Icon name="plus" size={18} /></button>
+        <button className="icon-btn" onClick={() => pushParams({ entry: 'new' })}><Icon name="plus" size={18} /></button>
       </div>
       {isFlatAll && (
         <div className="detail-sub" style={{ marginBottom: 14 }}>
@@ -1073,7 +1089,7 @@ export default function HobbyLog() {
         <EmptyState icon="paintdrop" title="Nothing here yet" sub="Tap + to log a unit you're working on." />
       ) : (
         <div className="hobbylog-list">
-          {filtered.map((entry) => <EntryCard key={entry.id} entry={entry} onEdit={setEditingId} />)}
+          {filtered.map((entry) => <EntryCard key={entry.id} entry={entry} onEdit={(id) => pushParams({ entry: id })} />)}
         </div>
       )}
     </div>
