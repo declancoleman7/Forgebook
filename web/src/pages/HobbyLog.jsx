@@ -78,50 +78,6 @@ function StagePipelineChart({ entries }) {
   );
 }
 
-// Buckets real FINISHED-stage transition events by the month they happened
-// -- unlike the old status/updatedAt-based proxy this replaced, a later
-// correction (editing the entry again without changing stage_counts) can't
-// nudge a month it didn't actually happen in, since the event itself is
-// timestamped at the moment the stage count changed, not at whatever save
-// happens to touch the entry next.
-function FinishedTrendChart({ stageEvents }) {
-  const months = [];
-  const today = new Date();
-  for (let i = 5; i >= 0; i--) {
-    const d = new Date(today.getFullYear(), today.getMonth() - i, 1);
-    months.push({ key: `${d.getFullYear()}-${d.getMonth()}`, label: d.toLocaleDateString(undefined, { month: 'short' }) });
-  }
-  const counts = months.map(({ key }) => {
-    const net = stageEvents.reduce((sum, ev) => {
-      if (ev.stageId !== 'finished' || !ev.occurredAt) return sum;
-      const d = new Date(ev.occurredAt);
-      return `${d.getFullYear()}-${d.getMonth()}` === key ? sum + ev.delta : sum;
-    }, 0);
-    // Clamped at 0 only on the final net -- a month with nothing left to
-    // show positive (a "finished" correction cancelling that month's own
-    // earlier progress) reads as 0, not a negative bar.
-    return Math.max(0, net);
-  });
-  const max = Math.max(1, ...counts);
-  if (!counts.some((n) => n > 0)) return null;
-
-  return (
-    <div className="hoblog-trend">
-      <div className="hoblog-trend__bars">
-        {months.map((m, i) => (
-          <div key={m.key} className="hoblog-trend__col">
-            <span className="hoblog-trend__count">{counts[i] || ''}</span>
-            <div className="hoblog-trend__track">
-              <div className="hoblog-trend__bar" style={{ height: `${Math.max(4, (counts[i] / max) * 100)}%` }} />
-            </div>
-            <span className="hoblog-trend__label">{m.label}</span>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
 // "This month you painted 20" / "built 40" -- net progress THIS calendar
 // month, per stage, straight from the real transition log. A stage only
 // shows up once it has actually moved this month; reaching Primed stays
@@ -939,7 +895,6 @@ export default function HobbyLog() {
                 <div className="section-label">Your pipeline</div>
                 <StagePipelineChart entries={entries} />
                 <ThisMonthStats stageEvents={stageEvents} />
-                <FinishedTrendChart stageEvents={stageEvents} />
               </>
             )}
             {dashView === 'army' && (
