@@ -13,7 +13,7 @@ import { HOBBY_STAGES, stageProgressPercent } from '../data/hobbyStages.js';
 import { MODEL_CATEGORIES, DEFAULT_MODEL_CATEGORY, categoryLabel, categoryWeight } from '../data/modelCategories.js';
 import { downscaleImage } from '../utils/image.js';
 import { relativeTime } from '../utils/format.js';
-import { useMyHobbyLog, useCreateHobbyLogEntry, useUpdateHobbyLogEntry, useDeleteHobbyLogEntry, useUploadHobbyLogPhoto, useHobbyLogStageEvents, useLogHobbyStageEvents } from '../queries/useHobbyLog.js';
+import { useMyHobbyLog, useCreateHobbyLogEntry, useUpdateHobbyLogEntry, useDeleteHobbyLogEntry, useUploadHobbyLogPhoto, useHobbyLogStageEvents, useLogHobbyStageEvents, useMakeHobbyLogEntriesPublic } from '../queries/useHobbyLog.js';
 import { useMyHobbyProjects, useCreateHobbyProject, useUpdateHobbyProject, useDeleteHobbyProject } from '../queries/useHobbyProjects.js';
 import { useMyRecipes } from '../queries/useRecipes.js';
 import { useConfirm } from '../confirm/ConfirmContext.jsx';
@@ -830,6 +830,9 @@ export default function HobbyLog() {
   const { data: projects = [] } = useMyHobbyProjects();
   const { data: myRecipes = [] } = useMyRecipes();
   const { data: stageEvents = [] } = useHobbyLogStageEvents();
+  const makeAllPublic = useMakeHobbyLogEntriesPublic();
+  const confirm = useConfirm();
+  const showToast = useToast();
   // Which dashboard metric view is showing -- kept separate from the browse
   // state below (hobby/system/faction drill-down), since it's scoped to the
   // Level 0 dashboard only.
@@ -1106,6 +1109,26 @@ export default function HobbyLog() {
   const countFor = (s) => scopedEntries.filter((e) => dominantStage(e) === s).length;
   const titleLabel = isFlatAll ? 'All units' : browseFactionId === '__general__' ? 'General' : (findFaction(browseFactionId)?.label || 'Entries');
   const activeCategory = catFilter !== 'all' ? MODEL_CATEGORIES.find((c) => c.id === catFilter) : null;
+  const privateIds = filtered.filter((e) => !e.isPublic).map((e) => e.id);
+
+  // One tap instead of opening each unit's edit form just to flip its
+  // toggle -- scoped to whatever's currently filtered/shown (not
+  // necessarily every unit you own), so "make public" always matches what's
+  // actually on screen.
+  const doMakeAllPublic = async () => {
+    if (!privateIds.length) return;
+    const ok = await confirm(
+      `Make ${privateIds.length} unit${privateIds.length === 1 ? '' : 's'} public? They'll show up on your profile's Pile of Potential.`,
+      { okLabel: 'Make public', danger: false }
+    );
+    if (!ok) return;
+    try {
+      await makeAllPublic.mutateAsync(privateIds);
+      showToast(`${privateIds.length} unit${privateIds.length === 1 ? '' : 's'} now public`);
+    } catch (e) {
+      showToast(e.message || "Couldn't update those — try again.");
+    }
+  };
 
   return (
     <div className="page-enter">
@@ -1135,6 +1158,12 @@ export default function HobbyLog() {
           <button key={s.id} className={stageFilter === s.id ? 'is-active' : ''} onClick={() => replaceParams({ stage: s.id })}>{s.label} <span className="b">{countFor(s.id)}</span></button>
         ))}
       </div>
+
+      {privateIds.length > 0 && (
+        <button type="button" className="btn btn-ghost btn-sm" style={{ marginBottom: 12 }} onClick={doMakeAllPublic}>
+          <Icon name="user" size={13} /> Make all public ({privateIds.length})
+        </button>
+      )}
 
       {!filtered.length ? (
         <EmptyState icon="paintdrop" title="Nothing here yet" sub="Tap + to log a unit you're working on." />

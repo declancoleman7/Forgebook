@@ -117,6 +117,26 @@ export function useUpdateHobbyLogEntry() {
   });
 }
 
+// A single-tap bulk action for "make everything currently shown public,"
+// instead of opening each unit's edit form just to flip one toggle --
+// one UPDATE covering every id passed in, not a round trip per unit.
+export function useMakeHobbyLogEntriesPublic() {
+  const { userId } = useAuth();
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (ids) => {
+      if (!ids.length) return ids;
+      const { error } = await supabase.from('hobby_log_entries').update({ is_public: true, updated_at: new Date().toISOString() }).eq('user_id', userId).in('id', ids);
+      if (error) throw new Error("Couldn't update those — try again.");
+      return ids;
+    },
+    onSuccess: (ids) => {
+      if (!ids.length) return;
+      qc.setQueryData(['hobbyLog', userId], (prev = []) => prev?.map((e) => (ids.includes(e.id) ? { ...e, isPublic: true } : e)));
+    },
+  });
+}
+
 export function useDeleteHobbyLogEntry() {
   const { userId } = useAuth();
   const qc = useQueryClient();
