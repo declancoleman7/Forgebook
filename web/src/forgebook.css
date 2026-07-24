@@ -156,6 +156,31 @@ body {
   height: 100%;
 }
 
+/* This is meant to feel like a native app, not a page of text -- almost
+   everything on screen (usernames, chips, nav, cards) is a tap target, not
+   prose to select. Without this, tapping one of those on Android trips
+   Chrome's own "tap to search" -- it highlights the word and pops up a
+   Google search bar before (or instead of) the app's own onClick ever
+   fires, since a plain clickable <span>/<div> is still ordinary selectable
+   text as far as the browser's concerned. Explicitly re-enabled below for
+   the few places actual freeform text is meant to be read/selected/typed. */
+* {
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+}
+
+input,
+textarea,
+[contenteditable="true"],
+.notes-block,
+.comment-row__body,
+.detail-sub {
+  -webkit-user-select: text;
+  user-select: text;
+  -webkit-touch-callout: default;
+}
+
 /* The backdrop lives on html, not body: body's own box is only ever one
    viewport tall (height: 100% above), while the page's actual scrollable
    content overflows well past that. A background-attachment: fixed image
