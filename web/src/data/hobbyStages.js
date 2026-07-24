@@ -25,3 +25,16 @@ export function stageCountsFromLegacyStatus(status) {
 export function stageTotal(stageCounts) {
   return Object.values(stageCounts || {}).reduce((sum, n) => sum + (n || 0), 0);
 }
+
+// A single 0-100 "how far along is this, overall" number -- each model
+// contributes its own stage's position in the pipeline (Unassembled=0%,
+// Finished=100%, everything else spread evenly between), averaged across
+// the whole quantity. Softer and more informative than "% finished" alone,
+// which would read a unit that's fully Painted but not yet Based/Finished
+// as 0% complete.
+export function stageProgressPercent(stageCounts, quantity) {
+  if (!quantity) return 0;
+  const maxIdx = HOBBY_STAGES.length - 1;
+  const weighted = HOBBY_STAGES.reduce((sum, s, idx) => sum + (stageCounts?.[s.id] || 0) * (idx / maxIdx), 0);
+  return Math.round((weighted / quantity) * 100);
+}

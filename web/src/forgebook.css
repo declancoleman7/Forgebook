@@ -4651,6 +4651,12 @@ main {
   font-family: var(--font-mono);
   font-size: 12px;
 }
+.hobbylog-card__pct {
+  font-weight: 600;
+  color: var(--gold-bright);
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
 
 /* One unit's whole miniature count, split across whichever build/paint
    stages it actually has models in right now -- replaces the old single-

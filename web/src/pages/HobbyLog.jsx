@@ -9,7 +9,7 @@ import Lightbox from '../components/Lightbox.jsx';
 import EmblemSvg from '../components/EmblemSvg.jsx';
 import HobbyStageStack from '../components/HobbyStageStack.jsx';
 import { HOBBIES, faction as findFaction } from '../data/factions.js';
-import { HOBBY_STAGES } from '../data/hobbyStages.js';
+import { HOBBY_STAGES, stageProgressPercent } from '../data/hobbyStages.js';
 import { MODEL_CATEGORIES, DEFAULT_MODEL_CATEGORY, categoryLabel, categoryWeight } from '../data/modelCategories.js';
 import { downscaleImage } from '../utils/image.js';
 import { relativeTime } from '../utils/format.js';
@@ -649,17 +649,44 @@ function EntryForm({ existing, myRecipes, prefill, onClose }) {
 
 function ProjectCard({ project, entries, onEdit }) {
   const { quantity, stageCounts } = sumStageCounts(entries, project.entryIds);
+  const pct = stageProgressPercent(stageCounts, quantity);
   return (
     <div className="hobbylog-card" onClick={() => onEdit(project.id)}>
       <div className="hobbylog-card__photo"><Icon name="clipboard-check" size={22} /></div>
       <div className="hobbylog-card__body">
-        <div className="hobbylog-card__title">{project.title}</div>
+        <div className="hobbylog-card__title">{project.title} <span className="hobbylog-card__pct">{pct}%</span></div>
         <HobbyStageStack stageCounts={stageCounts} quantity={quantity} />
         <div className="hobbylog-card__meta">
           <span>{project.entryIds.length} unit{project.entryIds.length === 1 ? '' : 's'}</span>
           {project.isPublic && <span className="hobbylog-card__public" title="Visible on your public profile"><Icon name="user" size={11} /> Public</span>}
         </div>
       </div>
+    </div>
+  );
+}
+
+// One linked unit within a Project's edit form -- a proper vertical row
+// (title, its own stage stack + %, faction tag) rather than the old
+// horizontal faction-chip strip, which squeezed everything down to a name
+// and had no room for per-unit progress at all.
+function ProjectEntryRow({ entry, onOpen, onRemove }) {
+  const f = entry.factionId ? findFaction(entry.factionId) : null;
+  const pct = stageProgressPercent(entry.stageCounts, entry.quantity);
+  return (
+    <div className="hobbylog-card" onClick={() => onOpen(entry.id)}>
+      <div className={`hobbylog-card__photo ${entry.photo ? 'has-photo' : ''}`} style={entry.photo ? { backgroundImage: `url('${entry.photo}')` } : undefined}>
+        {!entry.photo && <Icon name="paintdrop" size={22} />}
+      </div>
+      <div className="hobbylog-card__body">
+        <div className="hobbylog-card__title">{entry.title} <span className="hobbylog-card__qty">×{entry.quantity}</span> <span className="hobbylog-card__pct">{pct}%</span></div>
+        <HobbyStageStack stageCounts={entry.stageCounts} quantity={entry.quantity} />
+        <div className="hobbylog-card__meta">
+          {f && <span className="hobbylog-card__tag" style={{ color: f.color }}>{f.label}</span>}
+        </div>
+      </div>
+      <button type="button" className="icon-btn-sm" style={{ alignSelf: 'center' }} aria-label={`Remove ${entry.title} from this project`} onClick={(e) => { e.stopPropagation(); onRemove(entry); }}>
+        <Icon name="x" size={13} />
+      </button>
     </div>
   );
 }
@@ -737,22 +764,14 @@ function ProjectForm({ existing, entries, onClose, onOpenEntry }) {
       </div>
 
       <div className="field">
-        <label>Units in this project</label>
+        <label>Units in this project <span className="label-hint">{linkedEntries.length > 0 ? `${stageProgressPercent(stageCounts, quantity)}% complete overall` : ''}</span></label>
         {linkedEntries.length > 0 && (
           <>
             <HobbyStageStack stageCounts={stageCounts} quantity={quantity} />
-            <div className="faction-row" style={{ margin: '8px 0' }}>
-              {linkedEntries.map((entry) => {
-                const f = entry.factionId ? findFaction(entry.factionId) : null;
-                return (
-                  <div key={entry.id} className="faction-chip is-active" style={{ '--chip-color': f?.color || 'var(--ink-dim)', cursor: 'pointer' }} onClick={() => onOpenEntry(entry.id)} title={`Open ${entry.title}`}>
-                    {entry.title} ×{entry.quantity}
-                    <button type="button" aria-label={`Remove ${entry.title}`} onClick={(e) => { e.stopPropagation(); toggleEntry(entry); }} style={{ background: 'none', border: 0, color: 'inherit', cursor: 'pointer', padding: 0, marginLeft: 4, display: 'inline-flex' }}>
-                      <Icon name="x" size={11} />
-                    </button>
-                  </div>
-                );
-              })}
+            <div className="hobbylog-list" style={{ margin: '10px 0' }}>
+              {linkedEntries.map((entry) => (
+                <ProjectEntryRow key={entry.id} entry={entry} onOpen={onOpenEntry} onRemove={toggleEntry} />
+              ))}
             </div>
           </>
         )}
