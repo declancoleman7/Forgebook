@@ -284,6 +284,31 @@ function EntryCard({ entry, onEdit }) {
   );
 }
 
+// A recipe linked to this unit -- a proper row (its own photo, faction,
+// unit) rather than a bare name-only chip, and clickable through to the
+// recipe itself, same detail level as RecipePicker's own selection rows.
+function LinkedRecipeRow({ recipe, onRemove }) {
+  const navigate = useNavigate();
+  const f = findFaction(recipe.faction);
+  return (
+    <div className="hobbylog-card" onClick={() => navigate(`/recipe/${recipe.id}`)}>
+      <div className={`hobbylog-card__photo ${recipe.photo ? 'has-photo' : ''}`} style={recipe.photo ? { backgroundImage: `url('${recipe.photo}')` } : undefined}>
+        {!recipe.photo && <Icon name="book" size={22} />}
+      </div>
+      <div className="hobbylog-card__body">
+        <div className="hobbylog-card__title">{recipe.name}</div>
+        <div className="hobbylog-card__meta">
+          <span className="hobbylog-card__tag" style={{ color: f.color }}>{f.label}</span>
+          {recipe.unit && <span className="hobbylog-card__tag">{recipe.unit}</span>}
+        </div>
+      </div>
+      <button type="button" className="icon-btn-sm" style={{ alignSelf: 'center' }} aria-label={`Remove ${recipe.name}`} onClick={(e) => { e.stopPropagation(); onRemove(recipe); }}>
+        <Icon name="x" size={13} />
+      </button>
+    </div>
+  );
+}
+
 function EntryForm({ existing, myRecipes, prefill, onClose }) {
   const { userId } = useAuth();
   const showToast = useToast();
@@ -483,6 +508,32 @@ function EntryForm({ existing, myRecipes, prefill, onClose }) {
       </div>
 
       <div className="field">
+        <label>Photo</label>
+        <div className={`detail-hero ${entry.photo ? 'has-photo' : ''}`}
+          style={entry.photo ? { backgroundImage: `url('${entry.photo}')`, backgroundSize: 'cover', backgroundPosition: 'center', cursor: 'pointer' } : undefined}
+          onClick={entry.photo ? () => setLightboxOpen(true) : undefined}>
+          {!entry.photo && <Icon name="paintdrop" size={40} />}
+        </div>
+        <div className="photo-field" style={{ marginTop: 10 }}>
+          {entry.photo ? (
+            <>
+              <button type="button" className="btn btn-ghost btn-sm" onClick={() => photoInputRef.current?.click()}>Replace</button>
+              <button type="button" className="btn btn-ghost btn-sm" onClick={() => cameraInputRef.current?.click()}>Retake</button>
+              <button type="button" className="btn btn-danger btn-sm" onClick={() => patch({ photo: null, photoPath: null })}>Remove</button>
+            </>
+          ) : (
+            <div style={{ display: 'flex', gap: 8, width: '100%' }}>
+              <button type="button" className="repeater-add" style={{ margin: 0, flex: 1 }} onClick={() => photoInputRef.current?.click()}>+ Choose photo</button>
+              <button type="button" className="repeater-add" style={{ margin: 0, flex: 1 }} onClick={() => cameraInputRef.current?.click()}>+ Take photo</button>
+            </div>
+          )}
+        </div>
+        <input ref={photoInputRef} type="file" accept="image/*" className="hidden" onChange={onPhotoChosen} />
+        <input ref={cameraInputRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={onPhotoChosen} />
+        {lightboxOpen && entry.photo && <Lightbox url={entry.photo} onClose={() => setLightboxOpen(false)} />}
+      </div>
+
+      <div className="field">
         <label>How many miniatures</label>
         <input type="number" min="0" value={entry.quantity} onChange={(e) => setQuantity(e.target.value)} />
       </div>
@@ -577,41 +628,12 @@ function EntryForm({ existing, myRecipes, prefill, onClose }) {
         <textarea rows={4} value={entry.notes} onChange={(e) => patch({ notes: e.target.value })} placeholder="What's the plan, what's left to do..." />
       </div>
 
-      <div className="field">
-        <label>Photo</label>
-        <div className="photo-field">
-          {entry.photo ? (
-            <>
-              <div className="photo-field__preview" style={{ backgroundImage: `url('${entry.photo}')`, cursor: 'pointer' }} onClick={() => setLightboxOpen(true)} />
-              <button type="button" className="btn btn-ghost btn-sm" onClick={() => photoInputRef.current?.click()}>Replace</button>
-              <button type="button" className="btn btn-ghost btn-sm" onClick={() => cameraInputRef.current?.click()}>Retake</button>
-              <button type="button" className="btn btn-danger btn-sm" onClick={() => patch({ photo: null, photoPath: null })}>Remove</button>
-            </>
-          ) : (
-            <div style={{ display: 'flex', gap: 8, width: '100%' }}>
-              <button type="button" className="repeater-add" style={{ margin: 0, flex: 1 }} onClick={() => photoInputRef.current?.click()}>+ Choose photo</button>
-              <button type="button" className="repeater-add" style={{ margin: 0, flex: 1 }} onClick={() => cameraInputRef.current?.click()}>+ Take photo</button>
-            </div>
-          )}
-        </div>
-        <input ref={photoInputRef} type="file" accept="image/*" className="hidden" onChange={onPhotoChosen} />
-        <input ref={cameraInputRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={onPhotoChosen} />
-        {lightboxOpen && entry.photo && <Lightbox url={entry.photo} onClose={() => setLightboxOpen(false)} />}
-      </div>
-
       {myRecipes.length > 0 && (
         <div className="field">
           <label>Recipes used <span className="label-hint">optional — link how you actually painted this</span></label>
           {linkedRecipes.length > 0 && (
-            <div className="faction-row" style={{ marginBottom: 8 }}>
-              {linkedRecipes.map((r) => (
-                <div key={r.id} className="faction-chip is-active" style={{ '--chip-color': findFaction(r.faction).color }}>
-                  {r.name}
-                  <button type="button" aria-label={`Remove ${r.name}`} onClick={() => toggleRecipe(r)} style={{ background: 'none', border: 0, color: 'inherit', cursor: 'pointer', padding: 0, marginLeft: 4, display: 'inline-flex' }}>
-                    <Icon name="x" size={11} />
-                  </button>
-                </div>
-              ))}
+            <div className="hobbylog-list" style={{ marginBottom: 10 }}>
+              {linkedRecipes.map((r) => <LinkedRecipeRow key={r.id} recipe={r} onRemove={toggleRecipe} />)}
             </div>
           )}
           <button type="button" className="repeater-add" style={{ margin: 0 }} onClick={() => setPickerOpen(true)}>
