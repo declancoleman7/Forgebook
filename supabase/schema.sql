@@ -585,33 +585,6 @@ create table if not exists public.hobby_log_project_entries (
   primary key (project_id, entry_id)
 );
 
--- ------------------------------------------------------------
--- Barcode-scanned products -- a crowdsourced barcode -> product lookup so
--- scanning a box of minis can prefill a new Pile of Potential entry (name,
--- category, quantity, faction) instead of typing it all in by hand. There's
--- no free API that reliably covers tabletop-miniature SKUs specifically
--- (generic UPC lookups mostly miss or mislabel them), so this starts empty
--- and grows the same way paint_notes/paint_ratings do: whoever scans an
--- unrecognised barcode first and fills in what it is teaches it for
--- everyone after them. Same standalone identity as PAINT_LIBRARY entries
--- (keyed by its own value, not a user's id) -- barcode is the primary key,
--- not (user_id, barcode), since the whole point is one shared answer per
--- real-world product, not a personal note about it.
--- ------------------------------------------------------------
-create table if not exists public.barcode_products (
-  barcode        text        not null,
-  name           text        not null,
-  category       text,
-  quantity       int,
-  faction_id     text,
-  hobby_id       text,
-  contributed_by uuid        references auth.users (id) on delete set null,
-  created_at     timestamptz not null default now(),
-  updated_at     timestamptz not null default now(),
-  primary key (barcode),
-  check (char_length(name) between 1 and 120)
-);
-
 -- Sync pulls "everything changed since X", so index that.
 create index if not exists recipes_user_updated_idx     on public.recipes     (user_id, updated_at);
 create index if not exists paints_user_updated_idx      on public.paints      (user_id, updated_at);
@@ -1580,34 +1553,6 @@ create policy "own hobby log stage events" on public.hobby_log_stage_events
   for all
   using      (auth.uid() = user_id)
   with check (auth.uid() = user_id);
-
--- Barcode products -- fully public read (same "shared answer, not a
--- personal note" reasoning as the table comment above; the Paint Library
--- itself is bundled data, not RLS-gated, and this is the same kind of
--- catalogue fact). Any signed-in user can teach or correct an entry --
--- there's no per-row owner check on the update side, unlike almost every
--- other table in this file, because there's nothing to own: a barcode
--- either names one real product or it doesn't, and getting it right is
--- more valuable than gatekeeping who's allowed to fix it. contributed_by
--- is still recorded, for the same "who wrote this" accountability paint
--- notes/comments already have, not as an ownership check.
-alter table public.barcode_products enable row level security;
-
-drop policy if exists "read barcode products" on public.barcode_products;
-create policy "read barcode products" on public.barcode_products
-  for select
-  using (auth.role() = 'authenticated');
-
-drop policy if exists "teach or correct a barcode product" on public.barcode_products;
-create policy "teach or correct a barcode product" on public.barcode_products
-  for insert
-  with check (auth.uid() = contributed_by);
-
-drop policy if exists "update a barcode product" on public.barcode_products;
-create policy "update a barcode product" on public.barcode_products
-  for update
-  using      (auth.role() = 'authenticated')
-  with check (auth.uid() = contributed_by);
 
 -- ------------------------------------------------------------
 -- Admin bootstrap — run this block (just this block) whenever you want to

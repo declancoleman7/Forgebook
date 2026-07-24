@@ -8,14 +8,12 @@ import FactionPicker from '../components/FactionPicker.jsx';
 import Lightbox from '../components/Lightbox.jsx';
 import EmblemSvg from '../components/EmblemSvg.jsx';
 import HobbyStageStack from '../components/HobbyStageStack.jsx';
-import BarcodeScanner from '../components/BarcodeScanner.jsx';
 import { HOBBIES, faction as findFaction } from '../data/factions.js';
 import { HOBBY_STAGES, stageProgressPercent } from '../data/hobbyStages.js';
 import { MODEL_CATEGORIES, DEFAULT_MODEL_CATEGORY, categoryLabel, categoryWeight } from '../data/modelCategories.js';
 import { downscaleImage } from '../utils/image.js';
 import { relativeTime } from '../utils/format.js';
 import { useMyHobbyLog, useCreateHobbyLogEntry, useUpdateHobbyLogEntry, useDeleteHobbyLogEntry, useUploadHobbyLogPhoto, useHobbyLogStageEvents, useLogHobbyStageEvents, useMakeHobbyLogEntriesPublic } from '../queries/useHobbyLog.js';
-import { lookupBarcodeProduct, useContributeBarcodeProduct } from '../queries/useBarcodeProducts.js';
 import { useMyHobbyProjects, useCreateHobbyProject, useUpdateHobbyProject, useDeleteHobbyProject } from '../queries/useHobbyProjects.js';
 import { useMyRecipes } from '../queries/useRecipes.js';
 import { useConfirm } from '../confirm/ConfirmContext.jsx';
@@ -288,7 +286,7 @@ function LinkedRecipeRow({ recipe, onRemove }) {
   );
 }
 
-function EntryForm({ existing, myRecipes, prefill, scanBarcode, onClose }) {
+function EntryForm({ existing, myRecipes, prefill, onClose }) {
   const { userId } = useAuth();
   const showToast = useToast();
   const confirm = useConfirm();
@@ -297,7 +295,6 @@ function EntryForm({ existing, myRecipes, prefill, scanBarcode, onClose }) {
   const del = useDeleteHobbyLogEntry();
   const uploadPhoto = useUploadHobbyLogPhoto();
   const logStageEvents = useLogHobbyStageEvents();
-  const contributeBarcode = useContributeBarcodeProduct();
   const photoInputRef = useRef(null);
   const cameraInputRef = useRef(null);
   const [pickerOpen, setPickerOpen] = useState(false);
@@ -306,7 +303,7 @@ function EntryForm({ existing, myRecipes, prefill, scanBarcode, onClose }) {
 
   const [entry, setEntry] = useState(() => existing
     ? { ...existing, originalPhoto: existing.photo || null }
-    : { id: null, title: prefill?.title || '', notes: '', quantity: prefill?.quantity || 1, stageCounts: { unassembled: prefill?.quantity || 1 }, category: prefill?.category || DEFAULT_MODEL_CATEGORY, hobbyId: prefill?.hobbyId || '', factionId: prefill?.factionId || '', photo: null, photoPath: null, originalPhoto: null, isPublic: false, recipeLinks: [], completedAt: null });
+    : { id: null, title: '', notes: '', quantity: 1, stageCounts: { unassembled: 1 }, category: DEFAULT_MODEL_CATEGORY, hobbyId: prefill?.hobbyId || '', factionId: prefill?.factionId || '', photo: null, photoPath: null, originalPhoto: null, isPublic: false, recipeLinks: [], completedAt: null });
   // Snapshotted once, at whatever stage_counts this form opened with (an
   // existing unit's last-saved counts, or a brand-new one's starting point)
   // -- diffed against the final counts at save time to log only the NET
@@ -463,21 +460,6 @@ function EntryForm({ existing, myRecipes, prefill, scanBarcode, onClose }) {
         if (delta) deltas[s.id] = delta;
       });
       if (Object.keys(deltas).length) await logStageEvents.mutateAsync({ entryId: saved.id, deltas });
-      // Teaches an unrecognised scanned barcode what it turned out to be,
-      // using whatever the user actually entered -- only on the very first
-      // save of a fresh entry (scanBarcode is null on an edit, and null
-      // whenever the scan already matched something known; see HobbyLog's
-      // own onBarcodeDetected). A failure here shouldn't block the unit
-      // itself from having saved successfully, so it's swallowed rather
-      // than surfaced as the save's own error.
-      if (scanBarcode) {
-        try {
-          await contributeBarcode.mutateAsync({
-            barcode: scanBarcode, name: payload.title, category: payload.category,
-            quantity: payload.quantity, factionId: payload.factionId, hobbyId: payload.hobbyId,
-          });
-        } catch { /* the unit itself still saved fine -- not worth surfacing */ }
-      }
       showToast('Saved');
       onClose();
     } catch (err) {
@@ -854,26 +836,6 @@ export default function HobbyLog() {
   const makeAllPublic = useMakeHobbyLogEntriesPublic();
   const confirm = useConfirm();
   const showToast = useToast();
-  // The scanner and the resulting lookup live here (not inside EntryForm)
-  // since a scan can happen before the form even opens -- scanPrefill holds
-  // whatever the lookup found (or null, for an unrecognised barcode) until
-  // EntryForm mounts and reads it. Cleared on close so a later, unrelated
-  // "+ New Unit" tap never inherits a stale scan.
-  const [scannerOpen, setScannerOpen] = useState(false);
-  const [scanPrefill, setScanPrefill] = useState(null); // { barcode, product: {...} | null } | null
-
-  const onBarcodeDetected = async (barcode) => {
-    setScannerOpen(false);
-    try {
-      const product = await lookupBarcodeProduct(barcode);
-      setScanPrefill({ barcode, product });
-      showToast(product ? `Matched: ${product.name}` : "New barcode — tell us what it is");
-    } catch {
-      showToast("Couldn't look that up — try again");
-      return;
-    }
-    pushParams({ entry: 'new' });
-  };
   // Which dashboard metric view is showing -- kept separate from the browse
   // state below (hobby/system/faction drill-down), since it's scoped to the
   // Level 0 dashboard only.
@@ -956,22 +918,10 @@ export default function HobbyLog() {
 
   if (editingId) {
     const existing = editingId === 'new' ? null : entries.find((e) => e.id === editingId);
-    let prefill = editingId === 'new' && browseHobbyId && browseHobbyId !== 'all'
+    const prefill = editingId === 'new' && browseHobbyId && browseHobbyId !== 'all'
       ? { hobbyId: browseHobbyId, factionId: browseFactionId && browseFactionId !== '__general__' ? browseFactionId : '' }
       : null;
-    // A matched scan's product fields win over the browse-scope prefill
-    // above (a scanned box knows its own faction better than "whatever
-    // list you happened to be looking at" does).
-    if (editingId === 'new' && scanPrefill?.product) {
-      const p = scanPrefill.product;
-      prefill = { ...prefill, title: p.name, quantity: p.quantity || 1, category: p.category || undefined, hobbyId: p.hobbyId || prefill?.hobbyId || '', factionId: p.factionId || prefill?.factionId || '' };
-    }
-    const closeEntry = () => { setScanPrefill(null); goBack(); };
-    return (
-      <EntryForm key={editingId} existing={existing} myRecipes={myRecipes} prefill={prefill}
-        scanBarcode={editingId === 'new' && scanPrefill && !scanPrefill.product ? scanPrefill.barcode : null}
-        onClose={closeEntry} />
-    );
+    return <EntryForm key={editingId} existing={existing} myRecipes={myRecipes} prefill={prefill} onClose={goBack} />;
   }
 
   if (editingProjectId) {
@@ -1188,12 +1138,8 @@ export default function HobbyLog() {
       <div className="detail-header">
         <button className="icon-btn" onClick={goBack}><Icon name="back" size={18} /></button>
         <div className="page-title" style={{ margin: 0 }}>{titleLabel}</div>
-        <div style={{ display: 'flex', gap: 8 }}>
-          <button className="icon-btn" aria-label="Scan a barcode" title="Scan a barcode to add a box" onClick={() => setScannerOpen(true)}><Icon name="scan" size={18} /></button>
-          <button className="icon-btn" onClick={() => pushParams({ entry: 'new' })}><Icon name="plus" size={18} /></button>
-        </div>
+        <button className="icon-btn" onClick={() => pushParams({ entry: 'new' })}><Icon name="plus" size={18} /></button>
       </div>
-      {scannerOpen && <BarcodeScanner onDetected={onBarcodeDetected} onClose={() => setScannerOpen(false)} />}
       {isFlatAll && (
         <div className="detail-sub" style={{ marginBottom: 14 }}>
           Track every unit you're building and painting, separate from the step-by-step recipes themselves.

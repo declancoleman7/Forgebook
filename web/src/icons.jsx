@@ -27,7 +27,6 @@ const PATHS = {
   grid: '<rect x="3" y="3" width="8" height="8" rx="1" /><rect x="13" y="3" width="8" height="8" rx="1" /><rect x="3" y="13" width="8" height="8" rx="1" /><rect x="13" y="13" width="8" height="8" rx="1" />',
   x: '<path d="M6 6l12 12" /><path d="M18 6L6 18" />',
   'clipboard-check': '<rect x="5" y="4" width="14" height="17" rx="2" /><rect x="9" y="2" width="6" height="4" rx="1" /><path d="M9 13l2 2 4-4" />',
-  scan: '<path d="M3 8V5a2 2 0 0 1 2-2h3" /><path d="M16 3h3a2 2 0 0 1 2 2v3" /><path d="M21 16v3a2 2 0 0 1-2 2h-3" /><path d="M8 21H5a2 2 0 0 1-2-2v-3" /><path d="M7 12h10" />',
 };
 
 export default function Icon({ name, size = 20, className }) {
