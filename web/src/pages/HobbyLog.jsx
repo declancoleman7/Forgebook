@@ -819,6 +819,11 @@ function DashTile({ color, count, label, icon, onClick }) {
   );
 }
 
+// Same order as the tab row itself -- a left swipe moves forward through
+// this list, a right swipe moves back, clamped at either end (no wraparound,
+// so swiping past Timeline doesn't loop back to Overview unexpectedly).
+const DASH_VIEWS = ['overview', 'army', 'category', 'timeline'];
+
 export default function HobbyLog() {
   const navigate = useNavigate();
   const { data: entries = [], isLoading } = useMyHobbyLog();
@@ -829,6 +834,26 @@ export default function HobbyLog() {
   // state below (hobby/system/faction drill-down), since it's scoped to the
   // Level 0 dashboard only.
   const [dashView, setDashView] = useState('overview'); // overview | army | category | timeline
+  // Swipe left/right across the chart area to move between dashViews, same
+  // effect as tapping the tab row -- a ref (not state) since a touch start
+  // position never needs to trigger a render, only be read back on touchend.
+  const dashTouchStartRef = useRef(null);
+  const onDashTouchStart = (e) => {
+    dashTouchStartRef.current = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+  };
+  const onDashTouchEnd = (e) => {
+    const start = dashTouchStartRef.current;
+    dashTouchStartRef.current = null;
+    if (!start) return;
+    const dx = e.changedTouches[0].clientX - start.x;
+    const dy = e.changedTouches[0].clientY - start.y;
+    // Mostly-vertical or too-short a drag is a scroll, not a swipe -- leave
+    // it alone rather than hijacking the page's own scroll gesture.
+    if (Math.abs(dx) < 40 || Math.abs(dx) < Math.abs(dy) * 1.5) return;
+    const idx = DASH_VIEWS.indexOf(dashView);
+    const nextIdx = dx < 0 ? Math.min(idx + 1, DASH_VIEWS.length - 1) : Math.max(idx - 1, 0);
+    setDashView(DASH_VIEWS[nextIdx]);
+  };
 
   // Every drill-down/edit level below lives in the URL's own query string,
   // not local state -- this whole page is a single route, so plain useState
@@ -924,32 +949,34 @@ export default function HobbyLog() {
               <button className={dashView === 'category' ? 'is-active' : ''} onClick={() => setDashView('category')}>By Category</button>
               <button className={dashView === 'timeline' ? 'is-active' : ''} onClick={() => setDashView('timeline')}>Timeline</button>
             </div>
-            {dashView === 'overview' && (
-              <>
-                <div className="section-label">Your pipeline</div>
-                <StagePipelineChart entries={entries} onStageClick={(id) => pushParams({ hobby: 'all', stage: id })} />
-                <ThisMonthStats stageEvents={stageEvents} onStageClick={(id) => pushParams({ hobby: 'all', stage: id })} />
-              </>
-            )}
-            {dashView === 'army' && (
-              <>
-                <div className="section-label">Models by army</div>
-                <ModelsByArmyChart entries={entries} onArmyClick={(target) => pushParams(target)} />
-              </>
-            )}
-            {dashView === 'category' && (
-              <>
-                <div className="section-label">Models by category</div>
-                <ModelsByCategoryChart entries={entries} onCategoryClick={(id) => pushParams({ hobby: 'all', cat: id })} />
-              </>
-            )}
-            {dashView === 'timeline' && (
-              <>
-                <div className="section-label">Pipeline over time</div>
-                <div className="detail-sub" style={{ margin: '2px 2px 12px' }}>How many models reached each stage, month by month.</div>
-                <PipelineTimelineChart stageEvents={stageEvents} onStageClick={(id) => pushParams({ hobby: 'all', stage: id })} />
-              </>
-            )}
+            <div onTouchStart={onDashTouchStart} onTouchEnd={onDashTouchEnd}>
+              {dashView === 'overview' && (
+                <>
+                  <div className="section-label">Your pipeline</div>
+                  <StagePipelineChart entries={entries} onStageClick={(id) => pushParams({ hobby: 'all', stage: id })} />
+                  <ThisMonthStats stageEvents={stageEvents} onStageClick={(id) => pushParams({ hobby: 'all', stage: id })} />
+                </>
+              )}
+              {dashView === 'army' && (
+                <>
+                  <div className="section-label">Models by army</div>
+                  <ModelsByArmyChart entries={entries} onArmyClick={(target) => pushParams(target)} />
+                </>
+              )}
+              {dashView === 'category' && (
+                <>
+                  <div className="section-label">Models by category</div>
+                  <ModelsByCategoryChart entries={entries} onCategoryClick={(id) => pushParams({ hobby: 'all', cat: id })} />
+                </>
+              )}
+              {dashView === 'timeline' && (
+                <>
+                  <div className="section-label">Pipeline over time</div>
+                  <div className="detail-sub" style={{ margin: '2px 2px 12px' }}>How many models reached each stage, month by month.</div>
+                  <PipelineTimelineChart stageEvents={stageEvents} onStageClick={(id) => pushParams({ hobby: 'all', stage: id })} />
+                </>
+              )}
+            </div>
           </>
         )}
 
