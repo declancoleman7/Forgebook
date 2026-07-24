@@ -2,14 +2,20 @@
 // count is split across these, not reduced to one status for the whole
 // unit. Order matters (used for both display and the "which stage absorbs
 // a quantity change" logic in HobbyLog.jsx's EntryForm).
+// Colours are CSS custom properties (forgebook.css's --chart-* tokens, themed
+// per light/dark) rather than raw hex -- this exact 7-hue set and order was
+// run through the dataviz skill's validate_palette.js, not eyeballed. Two of
+// the previous hex values (Assembled/Primed) measured almost identical even
+// to full-colour vision (ΔE 4.8, well under the 15 floor) -- don't reorder
+// or swap a single slot's hue without re-running the validator.
 export const HOBBY_STAGES = [
-  { id: 'unassembled', label: 'Unassembled', color: '#8a97a8' },
-  { id: 'assembled', label: 'Assembled', color: '#7f9bc9' },
-  { id: 'primed', label: 'Primed', color: '#9c8fc9' },
-  { id: 'in_progress', label: 'In Progress', color: 'var(--gold-bright)' },
-  { id: 'painted', label: 'Painted', color: '#d68f4a' },
-  { id: 'based', label: 'Based', color: '#8fc97f' },
-  { id: 'finished', label: 'Finished', color: '#4caf6e' },
+  { id: 'unassembled', label: 'Unassembled', color: 'var(--chart-blue)' },
+  { id: 'assembled', label: 'Assembled', color: 'var(--chart-orange)' },
+  { id: 'primed', label: 'Primed', color: 'var(--chart-aqua)' },
+  { id: 'in_progress', label: 'In Progress', color: 'var(--chart-violet)' },
+  { id: 'painted', label: 'Painted', color: 'var(--chart-magenta)' },
+  { id: 'based', label: 'Based', color: 'var(--chart-yellow)' },
+  { id: 'finished', label: 'Finished', color: 'var(--chart-green)' },
 ];
 
 // Maps the old single-status pipeline (owned/built/primed/wip/completed)

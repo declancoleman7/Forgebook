@@ -49,31 +49,35 @@ function dominantStage(entry) {
   return best;
 }
 
-function StagePipelineChart({ entries }) {
+function StagePipelineChart({ entries, onStageClick }) {
   const totalMinis = entries.reduce((sum, e) => sum + (e.quantity || 0), 0);
   if (!totalMinis) return null;
   // Weighted by category (a Titan or Vehicle is vastly more work than a
   // trooper) -- only shown when it actually differs from the raw count, so
   // an all-Infantry pile isn't cluttered with a redundant second number.
   const weightedTotal = Math.round(entries.reduce((sum, e) => sum + (e.quantity || 0) * categoryWeight(e.category), 0));
+  const rows = HOBBY_STAGES
+    .map((s) => ({ ...s, n: entries.reduce((sum, e) => sum + (e.stageCounts?.[s.id] || 0), 0) }))
+    .filter((s) => s.n > 0);
+
   return (
-    <div className="hoblog-chart">
+    <div className="hoblog-pipeline">
       {weightedTotal !== totalMinis && (
-        <div className="label-hint" style={{ marginBottom: 6 }}>{totalMinis} miniatures · ~{weightedTotal} weighted by category</div>
+        <div className="label-hint" style={{ marginBottom: 10 }}>{totalMinis} miniatures · ~{weightedTotal} weighted by category</div>
       )}
-      {HOBBY_STAGES.map((s) => {
-        const n = entries.reduce((sum, e) => sum + (e.stageCounts?.[s.id] || 0), 0);
-        const pct = Math.round((n / totalMinis) * 100);
+      {rows.map((s) => {
+        const pct = Math.round((s.n / totalMinis) * 100);
         return (
-          <div key={s.id} className="hoblog-chart__row">
-            <span className="hoblog-chart__row-label">{s.label}</span>
-            <div className="hoblog-chart__row-bar">
-              <i style={{ width: `${pct}%`, background: s.color }} />
-            </div>
-            <span className="hoblog-chart__row-count">{n}</span>
+          <div key={s.id} className={`hoblog-pipeline__row ${onStageClick ? 'is-clickable' : ''}`} onClick={onStageClick ? () => onStageClick(s.id) : undefined}>
+            <span className="hoblog-pipeline__label">{s.label}</span>
+            <div className="hoblog-pipeline__track"><div className="hoblog-pipeline__fill" style={{ width: `${pct}%`, background: s.color }} /></div>
+            <span className="hoblog-pipeline__pct">{pct}%</span>
           </div>
         );
       })}
+      <div className="hoblog-timeline__legend" style={{ marginTop: 12 }}>
+        {rows.map((s) => <span key={s.id} className="hoblog-timeline__legend-item"><i style={{ background: s.color }} />{s.label}</span>)}
+      </div>
     </div>
   );
 }
@@ -84,7 +88,7 @@ function StagePipelineChart({ entries }) {
 // true forever once logged (see schema.sql's hobby_log_stage_events
 // comment), so this never has to "undo" an earlier month's number just
 // because those same models have since moved further along.
-function ThisMonthStats({ stageEvents }) {
+function ThisMonthStats({ stageEvents, onStageClick }) {
   const now = new Date();
   const monthKey = `${now.getFullYear()}-${now.getMonth()}`;
   const totals = {};
@@ -98,10 +102,11 @@ function ThisMonthStats({ stageEvents }) {
   if (!rows.length) return null;
 
   return (
-    <div className="hoblog-month-stats">
+    <div className="hoblog-month-tiles">
       {rows.map((s) => (
-        <div key={s.id} className="hoblog-month-stat" style={{ '--chip-color': s.color }}>
-          <span className="hoblog-month-stat__n">{totals[s.id] > 0 ? '+' : ''}{totals[s.id]}</span> {s.label}
+        <div key={s.id} className={`hoblog-month-tile ${onStageClick ? 'is-clickable' : ''}`} style={{ '--tile-color': s.color }} onClick={onStageClick ? () => onStageClick(s.id) : undefined}>
+          <div className="hoblog-month-tile__label">{s.label}</div>
+          <div className="hoblog-month-tile__value">{totals[s.id] > 0 ? '+' : ''}{totals[s.id]}</div>
         </div>
       ))}
     </div>
@@ -111,39 +116,50 @@ function ThisMonthStats({ stageEvents }) {
 // A simple horizontal bar list, shared shape for "models by army" and
 // "models by category" -- both are just "total quantity grouped by one
 // field, sorted biggest first," differing only in what groups them and
-// what colour/label each group gets.
-function BarBreakdown({ rows }) {
+// what colour/label each group gets. onRowClick is optional and per-row --
+// a row can opt out (clickable: false) when there's nowhere sensible to
+// send it, e.g. "No army set" has no faction to scope a list to.
+function BarBreakdown({ rows, onRowClick }) {
   if (!rows.length) return null;
   const max = Math.max(1, ...rows.map((r) => r.n));
   return (
     <div className="hoblog-bars">
-      {rows.map((r) => (
-        <div key={r.key} className="hoblog-bars__row">
-          <span className="hoblog-bars__label">{r.label}</span>
-          <div className="hoblog-bars__track"><i style={{ width: `${(r.n / max) * 100}%`, background: r.color }} /></div>
-          <span className="hoblog-bars__n">{r.n}</span>
-        </div>
-      ))}
+      {rows.map((r) => {
+        const clickable = !!onRowClick && r.clickable !== false;
+        return (
+          <div key={r.key} className={`hoblog-bars__row ${clickable ? 'is-clickable' : ''}`} onClick={clickable ? () => onRowClick(r) : undefined}>
+            <div className="hoblog-bars__top">
+              <span className="hoblog-bars__label"><i style={{ background: r.color }} />{r.label}</span>
+              <span className="hoblog-bars__n">{r.n}</span>
+            </div>
+            <div className="hoblog-bars__track"><div className="hoblog-bars__fill" style={{ width: `${(r.n / max) * 100}%`, background: r.color }} /></div>
+          </div>
+        );
+      })}
     </div>
   );
 }
 
-function ModelsByArmyChart({ entries }) {
+function ModelsByArmyChart({ entries, onArmyClick }) {
   const totals = new Map();
   entries.forEach((e) => {
     const key = e.factionId || '__none__';
-    totals.set(key, (totals.get(key) || 0) + (e.quantity || 0));
+    if (!totals.has(key)) totals.set(key, { n: 0, hobbyId: e.hobbyId });
+    totals.get(key).n += (e.quantity || 0);
   });
   const rows = [...totals.entries()]
-    .map(([key, n]) => {
+    .map(([key, v]) => {
       const f = key !== '__none__' ? findFaction(key) : null;
-      return { key, n, label: f ? f.label : 'No army set', color: f?.color || 'var(--ink-dim)' };
+      return {
+        key, n: v.n, label: f ? f.label : 'No army set', color: f?.color || 'var(--ink-dim)',
+        clickable: !!f, hobby: v.hobbyId, system: f?.system, faction: key,
+      };
     })
     .sort((a, b) => b.n - a.n);
-  return <BarBreakdown rows={rows} />;
+  return <BarBreakdown rows={rows} onRowClick={onArmyClick ? (r) => onArmyClick({ hobby: r.hobby, system: r.system, faction: r.faction }) : undefined} />;
 }
 
-function ModelsByCategoryChart({ entries }) {
+function ModelsByCategoryChart({ entries, onCategoryClick }) {
   const totals = new Map();
   entries.forEach((e) => {
     const key = e.category || DEFAULT_MODEL_CATEGORY;
@@ -153,7 +169,7 @@ function ModelsByCategoryChart({ entries }) {
     .filter((c) => totals.get(c.id))
     .map((c) => ({ key: c.id, n: totals.get(c.id), label: c.label, color: c.color }))
     .sort((a, b) => b.n - a.n);
-  return <BarBreakdown rows={rows} />;
+  return <BarBreakdown rows={rows} onRowClick={onCategoryClick ? (r) => onCategoryClick(r.key) : undefined} />;
 }
 
 // A stacked column per month -- each segment is one stage's net "reached
@@ -161,7 +177,7 @@ function ModelsByCategoryChart({ entries }) {
 // that's the right quantity, not the raw stage_counts bucket). Segment
 // height within a column is proportional via flex-grow, not an absolute
 // size, so this stays readable whether one month had 3 models move or 300.
-function PipelineTimelineChart({ stageEvents }) {
+function PipelineTimelineChart({ stageEvents, onStageClick }) {
   const months = [];
   const today = new Date();
   for (let i = 5; i >= 0; i--) {
@@ -185,6 +201,7 @@ function PipelineTimelineChart({ stageEvents }) {
   return (
     <div className="hoblog-trend">
       <div className="hoblog-trend__bars">
+        <div className="hoblog-trend__grid"><i /><i /><i /><i /></div>
         {months.map((m, i) => {
           const totals = perMonth[i];
           const segments = HOBBY_STAGES.filter((s) => (totals[s.id] || 0) > 0);
@@ -193,7 +210,11 @@ function PipelineTimelineChart({ stageEvents }) {
               <span className="hoblog-trend__count">{monthTotals[i] || ''}</span>
               <div className="hoblog-trend__track">
                 <div className="hoblog-timeline__stack" style={{ height: `${Math.max(4, (monthTotals[i] / max) * 100)}%` }}>
-                  {segments.map((s) => <div key={s.id} title={`${s.label}: ${totals[s.id]}`} style={{ flex: totals[s.id], background: s.color }} />)}
+                  {segments.map((s) => (
+                    <div key={s.id} className={onStageClick ? 'is-clickable' : ''} title={`${s.label}: ${totals[s.id]}`}
+                      style={{ flex: totals[s.id], background: s.color }}
+                      onClick={onStageClick ? (e) => { e.stopPropagation(); onStageClick(s.id); } : undefined} />
+                  ))}
                 </div>
               </div>
               <span className="hoblog-trend__label">{m.label}</span>
@@ -804,7 +825,6 @@ export default function HobbyLog() {
   const { data: projects = [] } = useMyHobbyProjects();
   const { data: myRecipes = [] } = useMyRecipes();
   const { data: stageEvents = [] } = useHobbyLogStageEvents();
-  const [filter, setFilter] = useState('all');
   // Which dashboard metric view is showing -- kept separate from the browse
   // state below (hobby/system/faction drill-down), since it's scoped to the
   // Level 0 dashboard only.
@@ -836,6 +856,11 @@ export default function HobbyLog() {
   // null = faction grid; '__general__' = this hobby's entries with no
   // faction set; otherwise a faction id, scoping the list to just that one.
   const browseFactionId = searchParams.get('faction');
+  // Level 2's own filters -- also URL params (not useState) so a dashboard
+  // chart can deep-link straight to a filtered list (click "Painted" in the
+  // pipeline chart -> land on the flat list pre-filtered to Painted).
+  const stageFilter = searchParams.get('stage') || 'all';
+  const catFilter = searchParams.get('cat') || 'all';
 
   // Pushes one new history entry with the given params changed, preserving
   // every other param already in the URL (e.g. opening a unit FROM WITHIN a
@@ -848,6 +873,15 @@ export default function HobbyLog() {
     const next = new URLSearchParams(searchParams);
     Object.entries(updates).forEach(([k, v]) => (v == null ? next.delete(k) : next.set(k, v)));
     navigate({ search: next.toString() });
+  };
+  // Same param-merging as pushParams, but replaces the current history entry
+  // instead of adding one -- for adjustments to a view you're already on
+  // (flipping a filter tab), where every tap becoming its own back-stack
+  // entry would make "go back" feel like it's undoing clicks, not leaving.
+  const replaceParams = (updates) => {
+    const next = new URLSearchParams(searchParams);
+    Object.entries(updates).forEach(([k, v]) => (v == null ? next.delete(k) : next.set(k, v)));
+    navigate({ search: next.toString() }, { replace: true });
   };
   const goBack = () => navigate(-1);
 
@@ -893,27 +927,27 @@ export default function HobbyLog() {
             {dashView === 'overview' && (
               <>
                 <div className="section-label">Your pipeline</div>
-                <StagePipelineChart entries={entries} />
-                <ThisMonthStats stageEvents={stageEvents} />
+                <StagePipelineChart entries={entries} onStageClick={(id) => pushParams({ hobby: 'all', stage: id })} />
+                <ThisMonthStats stageEvents={stageEvents} onStageClick={(id) => pushParams({ hobby: 'all', stage: id })} />
               </>
             )}
             {dashView === 'army' && (
               <>
                 <div className="section-label">Models by army</div>
-                <ModelsByArmyChart entries={entries} />
+                <ModelsByArmyChart entries={entries} onArmyClick={(target) => pushParams(target)} />
               </>
             )}
             {dashView === 'category' && (
               <>
                 <div className="section-label">Models by category</div>
-                <ModelsByCategoryChart entries={entries} />
+                <ModelsByCategoryChart entries={entries} onCategoryClick={(id) => pushParams({ hobby: 'all', cat: id })} />
               </>
             )}
             {dashView === 'timeline' && (
               <>
                 <div className="section-label">Pipeline over time</div>
                 <div className="detail-sub" style={{ margin: '2px 2px 12px' }}>How many models reached each stage, month by month.</div>
-                <PipelineTimelineChart stageEvents={stageEvents} />
+                <PipelineTimelineChart stageEvents={stageEvents} onStageClick={(id) => pushParams({ hobby: 'all', stage: id })} />
               </>
             )}
           </>
@@ -1037,9 +1071,14 @@ export default function HobbyLog() {
   const scopedEntries = isFlatAll ? entries : entries.filter((e) => (
     browseFactionId === '__general__' ? e.hobbyId === browseHobbyId && !e.factionId : e.hobbyId === browseHobbyId && e.factionId === browseFactionId
   ));
-  const filtered = filter === 'all' ? scopedEntries : scopedEntries.filter((e) => dominantStage(e) === filter);
+  const stageScoped = stageFilter === 'all' ? scopedEntries : scopedEntries.filter((e) => dominantStage(e) === stageFilter);
+  // Category has no visible tab row of its own (stage already owns that
+  // row) -- it only ever arrives as a landing state from the "By Category"
+  // dashboard chart, shown as a clearable pill next to the title instead.
+  const filtered = catFilter === 'all' ? stageScoped : stageScoped.filter((e) => (e.category || DEFAULT_MODEL_CATEGORY) === catFilter);
   const countFor = (s) => scopedEntries.filter((e) => dominantStage(e) === s).length;
   const titleLabel = isFlatAll ? 'All units' : browseFactionId === '__general__' ? 'General' : (findFaction(browseFactionId)?.label || 'Entries');
+  const activeCategory = catFilter !== 'all' ? MODEL_CATEGORIES.find((c) => c.id === catFilter) : null;
 
   return (
     <div className="page-enter">
@@ -1054,11 +1093,19 @@ export default function HobbyLog() {
           Mark public entries to share them on your profile.
         </div>
       )}
+      {activeCategory && (
+        <div className="hoblog-month-stat" style={{ '--chip-color': activeCategory.color, marginBottom: 12, width: 'fit-content' }}>
+          Category: {activeCategory.label}
+          <button type="button" aria-label="Clear category filter" onClick={() => replaceParams({ cat: null })} style={{ background: 'none', border: 0, color: 'inherit', cursor: 'pointer', padding: 0, marginLeft: 6, display: 'inline-flex' }}>
+            <Icon name="x" size={11} />
+          </button>
+        </div>
+      )}
 
       <div className="lib-filter-seg lib-filter-seg--wrap">
-        <button className={filter === 'all' ? 'is-active' : ''} onClick={() => setFilter('all')}>All <span className="b">{scopedEntries.length}</span></button>
+        <button className={stageFilter === 'all' ? 'is-active' : ''} onClick={() => replaceParams({ stage: null })}>All <span className="b">{scopedEntries.length}</span></button>
         {HOBBY_STAGES.map((s) => (
-          <button key={s.id} className={filter === s.id ? 'is-active' : ''} onClick={() => setFilter(s.id)}>{s.label} <span className="b">{countFor(s.id)}</span></button>
+          <button key={s.id} className={stageFilter === s.id ? 'is-active' : ''} onClick={() => replaceParams({ stage: s.id })}>{s.label} <span className="b">{countFor(s.id)}</span></button>
         ))}
       </div>
 
