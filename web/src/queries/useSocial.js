@@ -3,6 +3,7 @@ import { supabase, CONFIG } from '../supabase.js';
 import { useAuth } from '../auth/AuthContext.jsx';
 import { fromRemoteRecipe } from './useRecipes.js';
 import { fromRemoteHobbyLogEntry, HOBBY_LOG_SELECT_WITH_RECIPES } from './useHobbyLog.js';
+import { championScore } from '../data/championScore.js';
 
 function avatarUrl(path) {
   return path ? `${CONFIG.supabaseUrl}/storage/v1/object/public/avatar-photos/${path}` : null;
@@ -103,7 +104,7 @@ export function useViewedProfile(id) {
   return useQuery({
     queryKey: ['viewedProfile', id],
     queryFn: async () => {
-      const [profRes, recipesRes, notesRes, ratingsRes, followerRes, followingRes, hobbyLogRes] = await Promise.all([
+      const [profRes, recipesRes, notesRes, ratingsRes, followerRes, followingRes, hobbyLogRes, commentsRes, recipeLikesRes] = await Promise.all([
         supabase.from('profiles').select('*').eq('user_id', id).maybeSingle(),
         supabase.from('recipes').select('*').eq('user_id', id).eq('published', true).eq('deleted', false),
         supabase.from('paint_notes').select('*').eq('user_id', id).eq('deleted', false),
@@ -111,11 +112,40 @@ export function useViewedProfile(id) {
         supabase.from('follows').select('follower_id').eq('followed_id', id),
         supabase.from('follows').select('followed_id').eq('follower_id', id),
         supabase.from('hobby_log_entries').select(HOBBY_LOG_SELECT_WITH_RECIPES).eq('user_id', id).eq('is_public', true).eq('deleted', false).order('updated_at', { ascending: false }),
+        // Only the same public subset "read comments on visible recipes"
+        // already exposes to anyone else -- a visitor's own contribution
+        // score must never count comments a report/admin has hidden.
+        supabase.from('recipe_comments').select('id').eq('user_id', id).eq('deleted', false).eq('status', 'visible').eq('flagged', false),
+        // recipe_vote_summary is fully public (see schema.sql) -- summed
+        // client-side rather than via a new aggregate, since this is the
+        // only place that needs a per-author total rather than a per-recipe one.
+        supabase.from('recipe_vote_summary').select('like_count').eq('recipe_owner_id', id),
       ]);
       if (!profRes.data) return null;
       const followerIds = (followerRes.data || []).map((row) => row.follower_id);
       const followingIds = (followingRes.data || []).map((row) => row.followed_id);
-      const [followerObjs, followingObjs] = await Promise.all([resolvePeople(followerIds), resolvePeople(followingIds)]);
+      const commentIds = (commentsRes.data || []).map((row) => row.id);
+      const [followerObjs, followingObjs, commentVotesRes] = await Promise.all([
+        resolvePeople(followerIds),
+        resolvePeople(followingIds),
+        // Likes on THIS user's own comments -- comment_votes has no
+        // per-author aggregate view, but its own RLS is already public for
+        // any comment visible enough to have been counted above, so a plain
+        // .in() over the ids just fetched is enough, no new view needed.
+        commentIds.length ? supabase.from('comment_votes').select('comment_id').in('comment_id', commentIds) : { data: [] },
+      ]);
+
+      const recipesPublished = (recipesRes.data || []).length;
+      const commentCount = commentIds.length;
+      const recipeLikes = (recipeLikesRes.data || []).reduce((sum, r) => sum + (r.like_count || 0), 0);
+      const commentLikes = (commentVotesRes.data || []).length;
+      const hobbyLog = (hobbyLogRes.data || []).map(fromRemoteHobbyLogEntry);
+      // Public Pile of Potential entries only -- same "only what they've
+      // chosen to share" boundary hobbyLog itself is already scoped to
+      // (is_public=true above), not every model they own.
+      const modelsOwned = hobbyLog.reduce((sum, e) => sum + (e.quantity || 0), 0);
+      const modelsCompleted = hobbyLog.reduce((sum, e) => sum + (e.stageCounts?.finished || 0), 0);
+
       return {
         userId: id,
         displayName: profRes.data.display_name,
@@ -124,8 +154,11 @@ export function useViewedProfile(id) {
         recipes: (recipesRes.data || []).map((row) => ({ ...fromRemoteRecipe(row), authorId: id })),
         notes: (notesRes.data || []).map(fromRemoteNote),
         ratings: (ratingsRes.data || []).map(fromRemoteRating),
-        hobbyLog: (hobbyLogRes.data || []).map(fromRemoteHobbyLogEntry),
+        hobbyLog,
         followerIds, followingIds, followerObjs, followingObjs,
+        championScore: championScore({ recipesPublished, commentCount, likesReceived: recipeLikes + commentLikes }),
+        championBreakdown: { recipesPublished, commentCount, likesReceived: recipeLikes + commentLikes },
+        modelsOwned, modelsCompleted,
       };
     },
     enabled: !!id,

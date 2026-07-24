@@ -8,6 +8,7 @@ import RecipeCard from '../components/RecipeCard.jsx';
 import HobbyStageStack from '../components/HobbyStageStack.jsx';
 import { faction } from '../data/factions.js';
 import { PAINT_LIBRARY, paintKey } from '../data/paints.js';
+import { championTier } from '../data/championScore.js';
 import { useAuth } from '../auth/AuthContext.jsx';
 import { useActiveHobbyId, useActiveHobby } from '../hooks/useActiveHobby.js';
 import { useMyRecipes, useSharedRecipes, useSavedRecipes } from '../queries/useRecipes.js';
@@ -101,6 +102,35 @@ function SavedPaintRow({ p }) {
         <div className="paint-row__name">{p.name}</div>
         <div className="paint-row__brand">{p.brand || ''}{p.type ? ` · ${p.type}` : ''}</div>
       </div>
+    </div>
+  );
+}
+
+// A community-contribution score built entirely from data that's already
+// public about this profile (published recipes, visible comments, likes on
+// both) -- see data/championScore.js for the weighting. Models painted is
+// shown as its own stat rather than folded into the score, and only counts
+// Pile of Potential entries this profile has chosen to make public -- same
+// boundary the section below it already respects.
+function ChampionCard({ profile }) {
+  const { recipesPublished, commentCount, likesReceived } = profile.championBreakdown;
+  return (
+    <div className="champion-card">
+      <div className="champion-card__head">
+        <span className="champion-card__score">{profile.championScore}</span>
+        <span className="champion-card__tier">{championTier(profile.championScore)}</span>
+      </div>
+      <div className="champion-card__stats">
+        <div className="champion-stat"><span className="champion-stat__n">{recipesPublished}</span><span className="champion-stat__l">Recipes</span></div>
+        <div className="champion-stat"><span className="champion-stat__n">{commentCount}</span><span className="champion-stat__l">Comments</span></div>
+        <div className="champion-stat"><span className="champion-stat__n">{likesReceived}</span><span className="champion-stat__l">Likes</span></div>
+      </div>
+      {profile.modelsOwned > 0 && (
+        <div className="champion-card__models">
+          <span>Models painted</span>
+          <span><b>{profile.modelsCompleted}</b> finished / {profile.modelsOwned} owned</span>
+        </div>
+      )}
     </div>
   );
 }
@@ -239,6 +269,8 @@ export default function Profile() {
               </button>
             )}
           </div>
+
+          <ChampionCard profile={viewedProfile} />
 
           {isMe && <PersonalWorkspace recipes={recipes} />}
         </div>
