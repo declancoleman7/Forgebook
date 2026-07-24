@@ -4673,10 +4673,6 @@ main {
 
 /* The paint-library row's swatch and a recipe's Paints-Used swatch both
    double as the "find similar colours" trigger. */
-.paint-row__swatch[data-action="find-similar-colour"] {
-  cursor: pointer;
-}
-
 /* ============================================================
    PRINT — a recipe printed from its detail page. Only that page's own
    content prints; everything else (nav, search, the sidebar recipe list on

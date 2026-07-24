@@ -11,13 +11,15 @@ import HobbyStageStack from '../components/HobbyStageStack.jsx';
 import { faction } from '../data/factions.js';
 import { paintTypeKey, isWanted, paintCategory } from '../data/paints.js';
 import { useAuth } from '../auth/AuthContext.jsx';
-import { useFindRecipe, useDeleteRecipe, useRecipeVoteSummary, useMyRecipeVotes, useVoteRecipe, useSavedRecipes, useToggleSaveRecipe } from '../queries/useRecipes.js';
+import { useFindRecipe, useDeleteRecipe, usePushRecipe, useRecipeVoteSummary, useMyRecipeVotes, useVoteRecipe, useSavedRecipes, useToggleSaveRecipe } from '../queries/useRecipes.js';
 import { useMyPaints, useSharedPaints, useWantToBuy, useToggleWanted, useAddPaintToRack } from '../queries/usePaints.js';
 import { useMyHobbyLog } from '../queries/useHobbyLog.js';
 import { useConfirm } from '../confirm/ConfirmContext.jsx';
 import { useToast } from '../toast/ToastContext.jsx';
 import { useReport } from '../report/ReportContext.jsx';
 import { useReportContent } from '../queries/useReports.js';
+import { estimatedMinutes, formatDuration, slug } from '../utils/format.js';
+import { drawShareCardCanvas } from '../utils/shareCard.js';
 
 const CATEGORY_GLYPH = {
   wash: '<path d="M12 3C12 3 6 10 6 14.5C6 18.09 8.69 21 12 21C15.31 21 18 18.09 18 14.5C18 10 12 3 12 3Z"/>',
@@ -30,17 +32,6 @@ function TypeBadge({ type }) {
   return glyph ? <span className="paint-type-badge"><svg viewBox="0 0 24 24" fill="currentColor" stroke="none" dangerouslySetInnerHTML={{ __html: glyph }} /></span> : null;
 }
 
-function estimatedMinutes(r) {
-  const steps = (r.steps || []).length;
-  if (!steps) return 0;
-  return Math.max(5, Math.round((steps * 12) / 5) * 5);
-}
-function formatDuration(mins) {
-  if (!mins) return '—';
-  if (mins < 60) return `~${mins}m`;
-  const h = Math.floor(mins / 60), m = mins % 60;
-  return m ? `~${h}h ${m}m` : `~${h}h`;
-}
 function groupStepsByArea(steps) {
   const groups = [];
   (steps || []).forEach((s, i) => {
@@ -96,6 +87,16 @@ function VoteWidget({ recipe, ownerId }) {
 export default function RecipeDetail() {
   const { id, authorId } = useParams();
   const navigate = useNavigate();
+  // The paint's own swatch is the "find similar colours" affordance --
+  // always, regardless of whether the row itself goes somewhere else on
+  // click (an owned paint's row opens its rack detail page instead; see
+  // paint-row's own onClick below). stopPropagation keeps a tap on the
+  // swatch from also firing that outer click. This was dropped in the
+  // React port -- the old app's swatch had the exact same data-action.
+  const openSimilar = (e, name, brand) => {
+    e.stopPropagation();
+    navigate(`/similar/${encodeURIComponent(name)}/${encodeURIComponent(brand || '')}`);
+  };
   const confirm = useConfirm();
   const showToast = useToast();
   const report = useReport();
@@ -103,6 +104,7 @@ export default function RecipeDetail() {
   const { userId } = useAuth();
   const r = useFindRecipe(id, authorId);
   const deleteRecipe = useDeleteRecipe();
+  const pushRecipe = usePushRecipe();
   const [lightboxOpen, setLightboxOpen] = useState(false);
   const { data: myPaints } = useMyPaints();
   const { data: sharedPaints } = useSharedPaints(authorId ? [authorId] : []);
@@ -172,6 +174,62 @@ export default function RecipeDetail() {
     }
   };
 
+  // Generates a portrait share-card PNG (see utils/shareCard.js) and hands
+  // it to the Web Share API, falling back to a download + copied link on
+  // desktop/unsupported browsers. An own, not-yet-published recipe gets
+  // published first -- a share link only makes sense for something the
+  // public route (/r/:authorId/:id) can actually resolve.
+  const onShare = async () => {
+    let recipe = r;
+    if (!isShared && !r.published) {
+      showToast('Publishing recipe…');
+      try {
+        recipe = await pushRecipe.mutateAsync({ ...r, published: true });
+      } catch (e) {
+        showToast(e.message || "Couldn't publish that — try again.");
+        return;
+      }
+    }
+
+    const cardSteps = (recipe.steps || []).map((s) => {
+      const p = resolveStepPaint(s, 'paintId');
+      return { technique: s.technique, paintName: p ? p.name : '(paint deleted)', hex: p ? p.hex : f.color };
+    });
+    const canvas = drawShareCardCanvas(recipe, f, paints, cardSteps);
+    const shareUrl = `https://forgebook.co.uk/#/r/${encodeURIComponent(ownerId)}/${encodeURIComponent(recipe.id)}`;
+
+    canvas.toBlob(async (blob) => {
+      if (!blob) { showToast("Couldn't generate the share image — try again."); return; }
+      const fileName = `${slug(recipe.name)}.png`;
+      const shareText = `${recipe.name} — a Forgebook paint recipe. ${shareUrl}`;
+      const file = new File([blob], fileName, { type: 'image/png' });
+
+      if (navigator.canShare && navigator.canShare({ files: [file] })) {
+        try {
+          await navigator.share({ files: [file], title: recipe.name, text: shareText });
+          return;
+        } catch (e) {
+          if (e && e.name === 'AbortError') return; // user backed out of the share sheet
+          // anything else: fall through to the download fallback below
+        }
+      }
+
+      const objUrl = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = objUrl;
+      a.download = fileName;
+      a.click();
+      URL.revokeObjectURL(objUrl);
+
+      try {
+        await navigator.clipboard.writeText(shareUrl);
+        showToast('Image saved, link copied — paste both into your post');
+      } catch {
+        showToast('Image saved — copy the link from the recipe page to include it');
+      }
+    }, 'image/png');
+  };
+
   return (
     <div className="page-enter">
       <div className="detail-header">
@@ -221,7 +279,7 @@ export default function RecipeDetail() {
           if (!isShared && !p.isWant) {
             return (
               <div key={i} className="paint-row" onClick={() => navigate(`/paint/${p.id}`)}>
-                <div className="paint-row__swatch" style={{ background: p.hex }}><TypeBadge type={p.type} /></div>
+                <div className="paint-row__swatch" title="Find similar colours" style={{ background: p.hex, cursor: 'pointer' }} onClick={(e) => openSimilar(e, p.name, p.brand)}><TypeBadge type={p.type} /></div>
                 <div>
                   <div className="paint-row__name">{p.name}</div>
                   <div className="paint-row__brand">{p.brand || ''}{p.type ? ` · ${p.type}` : ''}</div>
@@ -234,7 +292,7 @@ export default function RecipeDetail() {
           const wanted = !owned && isWanted(wantedKeys, p.name, p.brand, p.type);
           return (
             <div key={i} className={`paint-row ${owned ? 'is-owned' : ''}`}>
-              <div className="paint-row__swatch" style={{ background: p.hex }}><TypeBadge type={p.type} /></div>
+              <div className="paint-row__swatch" title="Find similar colours" style={{ background: p.hex }} onClick={(e) => openSimilar(e, p.name, p.brand)}><TypeBadge type={p.type} /></div>
               <div>
                 <div className="paint-row__name">{p.name}</div>
                 <div className="paint-row__brand">{p.brand || ''}{p.type ? ` · ${p.type}` : ''}</div>
@@ -289,6 +347,11 @@ export default function RecipeDetail() {
       )) : <div className="empty-state__sub">No steps recorded.</div>}
 
       {r.notes && <><div className="section-label">Notes</div><div className="notes-block">{r.notes}</div></>}
+
+      <div className="detail-actions">
+        <button className="btn btn-ghost btn-block" style={{ flex: 1 }} onClick={() => window.print()}>Print Recipe</button>
+        <button className="btn btn-primary btn-block" style={{ flex: 1 }} onClick={onShare}><Icon name="upload" size={15} /> Share</button>
+      </div>
 
       {!isShared && (() => {
         const usedByEntries = myHobbyLog.filter((e) => e.recipeLinks.some((l) => l.recipeId === r.id));
