@@ -707,6 +707,55 @@ main {
   }
 }
 
+/* Barcode scanner -- a full-screen overlay (same z-index layer as
+   .filter-overlay) rather than a bottom sheet, since a camera viewport
+   needs real room, not a cramped panel. */
+.scanner-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  background: var(--bg-void);
+  display: flex;
+  flex-direction: column;
+}
+.scanner-overlay__viewport-wrap {
+  flex: 1;
+  position: relative;
+  background: #000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+.scanner-overlay__viewport {
+  width: 100%;
+}
+.scanner-overlay__viewport video {
+  width: 100%;
+  height: auto;
+  display: block;
+}
+.scanner-overlay__hint {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 16px;
+  text-align: center;
+  font-size: 13px;
+  color: var(--parchment);
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.8);
+  padding: 0 20px;
+}
+.scanner-overlay__manual {
+  padding: 14px 16px calc(14px + env(safe-area-inset-bottom));
+  border-top: 1px solid var(--line);
+  background: var(--bg-panel);
+  flex-shrink: 0;
+}
+.scanner-overlay__manual input {
+  flex: 1;
+}
+
 .faction-chip {
   flex-shrink: 0;
   display: flex;
