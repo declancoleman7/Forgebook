@@ -3,12 +3,20 @@
 // unit. Order matters (used for both display and the "which stage absorbs
 // a quantity change" logic in HobbyLog.jsx's EntryForm).
 // Colours are CSS custom properties (forgebook.css's --chart-* tokens, themed
-// per light/dark) rather than raw hex -- this exact 7-hue set and order was
-// run through the dataviz skill's validate_palette.js, not eyeballed. Two of
-// the previous hex values (Assembled/Primed) measured almost identical even
-// to full-colour vision (ΔE 4.8, well under the 15 floor) -- don't reorder
-// or swap a single slot's hue without re-running the validator.
+// per light/dark) rather than raw hex -- this exact set and order was run
+// through the dataviz skill's validate_palette.js, not eyeballed. Two of the
+// previous hex values (Assembled/Primed) measured almost identical even to
+// full-colour vision (ΔE 4.8, well under the 15 floor) -- don't reorder or
+// swap a single slot's hue without re-running the validator.
+// 'needs_stripped' was added later (red, the 8th hue in the dataviz skill's
+// own documented palette, originally dropped when this was first scoped to
+// 7 stages) -- for a secondhand/already-painted model going back to bare
+// plastic before the normal build starts again. Placed first: it's earlier
+// than Unassembled, not further along than Finished. Re-validated as a full
+// 8-slot set against Forgebook's real surfaces before adding -- still ALL
+// CHECKS PASS in both modes, same accepted yellow/green CVD warn as before.
 export const HOBBY_STAGES = [
+  { id: 'needs_stripped', label: 'Needs Stripped', color: 'var(--chart-red)' },
   { id: 'unassembled', label: 'Unassembled', color: 'var(--chart-blue)' },
   { id: 'assembled', label: 'Assembled', color: 'var(--chart-orange)' },
   { id: 'primed', label: 'Primed', color: 'var(--chart-aqua)' },
@@ -33,7 +41,7 @@ export function stageTotal(stageCounts) {
 }
 
 // A single 0-100 "how far along is this, overall" number -- each model
-// contributes its own stage's position in the pipeline (Unassembled=0%,
+// contributes its own stage's position in the pipeline (Needs Stripped=0%,
 // Finished=100%, everything else spread evenly between), averaged across
 // the whole quantity. Softer and more informative than "% finished" alone,
 // which would read a unit that's fully Painted but not yet Based/Finished

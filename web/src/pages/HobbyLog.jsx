@@ -360,7 +360,7 @@ function EntryForm({ existing, myRecipes, prefill, onClose }) {
   // correction, not a multi-stage rewind. Always clamped to what's actually
   // available, so the breakdown can never drift from quantity -- no
   // separate "does this add up" validation needed, it's balanced by
-  // construction. Unassembled (the first stage) has nothing earlier to
+  // construction. Needs Stripped (the first stage) has nothing earlier to
   // shift with; it only changes via the quantity field above.
   const shiftStage = (stageId, delta) => {
     const idx = HOBBY_STAGES.findIndex((s) => s.id === stageId);
@@ -447,8 +447,11 @@ function EntryForm({ existing, myRecipes, prefill, onClose }) {
       // that cumulative count only drops when a stage is genuinely
       // corrected backward (the "-" stepper, "move all to" an earlier
       // stage, or shrinking the miniature count), which is exactly the
-      // model deltas should reflect. Unassembled (index 0) is skipped --
-      // "reached unassembled" is just pipeline size, not a real milestone.
+      // model deltas should reflect. Needs Stripped (index 0) is skipped --
+      // "reached needs stripped" is just pipeline size, not a real
+      // milestone. Reaching Unassembled (index 1) IS now a real one: taking
+      // a secondhand model back to bare plastic is genuine hobby effort,
+      // unlike a brand-new model starting there for free.
       const reachedOrBeyond = (counts, idx) => HOBBY_STAGES.slice(idx).reduce((sum, s) => sum + (counts[s.id] || 0), 0);
       const deltas = {};
       HOBBY_STAGES.forEach((s, idx) => {
@@ -526,7 +529,7 @@ function EntryForm({ existing, myRecipes, prefill, onClose }) {
 
       <div className="field">
         <label>Build &amp; paint progress</label>
-        <div className="label-hint" style={{ marginBottom: 8 }}>Tap − / + to move models to or from the stage before it, or tap a stage's name to put every model there, from wherever they currently sit. Unassembled only changes via the miniature count above.</div>
+        <div className="label-hint" style={{ marginBottom: 8 }}>Tap − / + to move models to or from the stage before it, or tap a stage's name to put every model there, from wherever they currently sit. Needs Stripped only changes via the miniature count above.</div>
         <div className="hoblog-chart">
           {HOBBY_STAGES.map((s, idx) => {
             const n = entry.stageCounts[s.id] || 0;

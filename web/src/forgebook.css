@@ -84,6 +84,7 @@
   --chart-magenta: #d55181;
   --chart-yellow: #c98500;
   --chart-green: #008300;
+  --chart-red: #e66767;
 }
 
 :root[data-theme="light"] {
@@ -132,6 +133,7 @@
   --chart-magenta: #e87ba4;
   --chart-yellow: #eda100;
   --chart-green: #008300;
+  --chart-red: #e34948;
 }
 
 /* Per-hobby accent -- only the brand tokens shift (--gold*), same "override
@@ -5208,7 +5210,7 @@ button.hoblog-chart__row-label--action:disabled {
 }
 
 /* The current pipeline breakdown -- rounded data-ends, value at the tip,
-   a shared legend (see .hoblog-timeline__legend below) since 7 hues with
+   a shared legend (see .hoblog-timeline__legend below) since 8 hues with
    no key would make you memorize the mapping every time. */
 .hoblog-pipeline { margin-bottom: 20px; }
 .hoblog-pipeline__row {
