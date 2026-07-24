@@ -4,6 +4,7 @@ import Icon from '../icons.jsx';
 import Avatar from '../components/Avatar.jsx';
 import EmptyState from '../components/EmptyState.jsx';
 import { useOpenReports, useTopOffenders, useHideContent, useDismissReports, useSetUserBanned } from '../queries/useAdmin.js';
+import { useOpenPaintSuggestions, useReviewPaintSuggestion } from '../queries/usePaintSuggestions.js';
 import { useSearchProfiles } from '../queries/useSocial.js';
 import { useAuth } from '../auth/AuthContext.jsx';
 import { useConfirm } from '../confirm/ConfirmContext.jsx';
@@ -94,6 +95,54 @@ function ReportsTab() {
   return (
     <div className="settings-group">
       {reports.map((r) => <ReportRow key={`${r.contentType}:${r.contentId}`} report={r} />)}
+    </div>
+  );
+}
+
+// A user-submitted "please add this paint (or range)" request -- approving
+// or rejecting just marks it reviewed and drops it from the queue.
+// PAINT_LIBRARY is a static bundled file, not a live table, so "approved"
+// doesn't add anything itself; it's a note to actually add this in a future
+// library update, kept separate from "rejected" so good ideas don't get
+// lost in the same pile as ones that were already covered or not a fit.
+function SuggestionRow({ suggestion }) {
+  const showToast = useToast();
+  const review = useReviewPaintSuggestion();
+
+  const act = async (status) => {
+    try {
+      await review.mutateAsync({ id: suggestion.id, status });
+      showToast(status === 'approved' ? 'Marked for a future update' : 'Rejected');
+    } catch (err) {
+      showToast(err.message || "Couldn't update that — try again");
+    }
+  };
+
+  return (
+    <div className="settings-row" style={{ display: 'block' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+        {suggestion.hex && <span style={{ width: 16, height: 16, borderRadius: 4, background: suggestion.hex, flexShrink: 0 }} />}
+        <span className="settings-row__label" style={{ margin: 0 }}>{suggestion.name}</span>
+      </div>
+      <div className="settings-row__desc" style={{ marginBottom: 6 }}>
+        {[suggestion.brand, suggestion.type].filter(Boolean).join(' · ') || 'No brand/type given'}
+      </div>
+      {suggestion.notes && <div className="fine-print" style={{ marginBottom: 8, whiteSpace: 'pre-wrap' }}>{suggestion.notes}</div>}
+      <div style={{ display: 'flex', gap: 8 }}>
+        <button type="button" className="btn btn-primary btn-sm" onClick={() => act('approved')}>Approve</button>
+        <button type="button" className="btn btn-ghost btn-sm" onClick={() => act('rejected')}>Reject</button>
+      </div>
+    </div>
+  );
+}
+
+function SuggestionsTab() {
+  const { data: suggestions = [], isLoading } = useOpenPaintSuggestions();
+  if (isLoading) return <div className="empty-state__sub">Loading…</div>;
+  if (!suggestions.length) return <EmptyState icon="flag" title="No pending suggestions" sub="Paint or range suggestions from users will show up here." />;
+  return (
+    <div className="settings-group">
+      {suggestions.map((s) => <SuggestionRow key={s.id} suggestion={s} />)}
     </div>
   );
 }
@@ -258,7 +307,7 @@ function UsersTab() {
 // doesn't render a confusing half-working page for anyone else.
 export default function Admin() {
   const navigate = useNavigate();
-  const [tab, setTab] = useState('reports'); // reports | users
+  const [tab, setTab] = useState('reports'); // reports | suggestions | users
 
   return (
     <div className="page-enter">
@@ -270,10 +319,11 @@ export default function Admin() {
 
       <div className="lib-filter-seg" style={{ marginBottom: 16 }}>
         <button className={tab === 'reports' ? 'is-active' : ''} onClick={() => setTab('reports')}>Reports</button>
+        <button className={tab === 'suggestions' ? 'is-active' : ''} onClick={() => setTab('suggestions')}>Suggestions</button>
         <button className={tab === 'users' ? 'is-active' : ''} onClick={() => setTab('users')}>Users</button>
       </div>
 
-      {tab === 'reports' ? <ReportsTab /> : <UsersTab />}
+      {tab === 'reports' ? <ReportsTab /> : tab === 'suggestions' ? <SuggestionsTab /> : <UsersTab />}
     </div>
   );
 }

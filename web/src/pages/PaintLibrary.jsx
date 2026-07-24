@@ -7,6 +7,7 @@ import { useMyPaints, useWantToBuy, useAddPaintToRack, useToggleWanted, useToggl
 import { useConfirm } from '../confirm/ConfirmContext.jsx';
 import { useToast } from '../toast/ToastContext.jsx';
 import PaintLibFilterOverlay from '../components/PaintLibFilterOverlay.jsx';
+import SuggestPaintForm from '../components/SuggestPaintForm.jsx';
 
 const CATEGORY_GLYPH = {
   wash: '<path d="M12 3C12 3 6 10 6 14.5C6 18.09 8.69 21 12 21C15.31 21 18 18.09 18 14.5C18 10 12 3 12 3Z"/>',
@@ -77,6 +78,7 @@ export default function PaintLibrary() {
   const [brands, setBrands] = useState([]);
   const [categories, setCategories] = useState([]);
   const [view, setView] = useState('list'); // list | ranges
+  const [suggestOpen, setSuggestOpen] = useState(false);
   // The list container's offset from the top of the page -- feeds
   // scrollMargin below, since the list sits partway down a naturally-
   // scrolling page (search bar, progress bar, filter segment all render
@@ -244,7 +246,13 @@ export default function PaintLibrary() {
           </div>
         )
       ) : !entries.length ? (
-        <div className="empty-state"><div className="empty-state__title">No matches</div><div className="empty-state__sub">Try a different filter.</div></div>
+        <div className="empty-state">
+          <div className="empty-state__title">No matches</div>
+          <div className="empty-state__sub">Try a different filter, or suggest a paint that's missing.</div>
+          <button type="button" className="btn btn-ghost btn-sm" style={{ marginTop: 12 }} onClick={() => setSuggestOpen(true)}>
+            <Icon name="flag" size={14} /> Suggest a paint
+          </button>
+        </div>
       ) : (
         <div ref={listRef} style={{ height: virtualizer.getTotalSize(), position: 'relative' }}>
           {virtualizer.getVirtualItems().map((vRow) => {
@@ -286,6 +294,10 @@ export default function PaintLibrary() {
           onClear={() => { setBrands([]); setCategories([]); }}
           onClose={() => setFilterOpen(false)}
         />
+      )}
+
+      {suggestOpen && (
+        <SuggestPaintForm prefill={{ name: query.trim() }} onClose={() => setSuggestOpen(false)} />
       )}
     </div>
   );

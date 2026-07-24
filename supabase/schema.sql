@@ -298,6 +298,34 @@ where deleted = false
 group by paint_key;
 
 -- ------------------------------------------------------------
+-- Paint library suggestions — a user-submitted "please add this paint (or
+-- whole range)" request. PAINT_LIBRARY is a static bundled JSON file, not a
+-- live table, so there's nothing here for an approval to write back into;
+-- `status` just lets an admin mark a suggestion as judged worth adding to a
+-- FUTURE library update (a manual dev step) versus rejected, so the review
+-- queue empties out over time instead of accumulating forever. brand/type/
+-- hex are all nullable -- a "please add the whole Xpress Color range"
+-- suggestion has no single hex or type of its own, only a name and notes.
+-- ------------------------------------------------------------
+create table if not exists public.paint_suggestions (
+  id          uuid        not null default gen_random_uuid(),
+  user_id     uuid        not null references auth.users (id) on delete cascade,
+  name        text        not null,
+  brand       text,
+  type        text,
+  hex         text,
+  notes       text,
+  status      text        not null default 'pending',
+  reviewed_by uuid        references auth.users (id) on delete set null,
+  reviewed_at timestamptz,
+  created_at  timestamptz not null default now(),
+  primary key (id),
+  check (status in ('pending', 'approved', 'rejected')),
+  check (char_length(name) between 1 and 120)
+);
+create index if not exists paint_suggestions_status_idx on public.paint_suggestions (status, created_at);
+
+-- ------------------------------------------------------------
 -- Recipe likes/dislikes — a quick one-tap engagement signal, distinct from
 -- the considered 1-5 star paint ratings above. Recipes are keyed by
 -- (user_id, id), not a single string like paint_key, so this needs the same
@@ -749,11 +777,12 @@ create policy "admin manage faction emblems" on public.faction_emblems
 -- ------------------------------------------------------------
 -- Comments, reports, paint notes, paint ratings
 -- ------------------------------------------------------------
-alter table public.recipe_comments enable row level security;
-alter table public.reports         enable row level security;
-alter table public.paint_notes     enable row level security;
-alter table public.paint_ratings   enable row level security;
-alter table public.recipe_votes    enable row level security;
+alter table public.recipe_comments  enable row level security;
+alter table public.reports          enable row level security;
+alter table public.paint_notes      enable row level security;
+alter table public.paint_ratings    enable row level security;
+alter table public.recipe_votes     enable row level security;
+alter table public.paint_suggestions enable row level security;
 
 -- Readable by anyone who can already read the underlying recipe (including
 -- an anonymous visitor on the public share page) — mirrors "read published
@@ -989,6 +1018,29 @@ drop policy if exists "read all paint ratings" on public.paint_ratings;
 create policy "read all paint ratings" on public.paint_ratings
   for select
   using (deleted = false);
+
+-- Anyone signed in can submit a suggestion; only its own submitter or an
+-- admin can read it back (there's no public "browse other people's
+-- suggestions" concept here, unlike ratings/votes above) -- an admin's own
+-- review (approve/reject) is a plain update, covered by the same policy.
+drop policy if exists "submit paint suggestions" on public.paint_suggestions;
+create policy "submit paint suggestions" on public.paint_suggestions
+  for insert
+  with check (auth.uid() = user_id);
+
+drop policy if exists "read own or admin paint suggestions" on public.paint_suggestions;
+create policy "read own or admin paint suggestions" on public.paint_suggestions
+  for select
+  using (
+    auth.uid() = user_id
+    or exists (select 1 from public.profiles p where p.user_id = auth.uid() and p.is_admin)
+  );
+
+drop policy if exists "admin review paint suggestions" on public.paint_suggestions;
+create policy "admin review paint suggestions" on public.paint_suggestions
+  for update
+  using      (exists (select 1 from public.profiles p where p.user_id = auth.uid() and p.is_admin))
+  with check (exists (select 1 from public.profiles p where p.user_id = auth.uid() and p.is_admin));
 
 -- One policy (not comments' insert/update split) covers insert, update, AND
 -- delete: with check gates insert/update on "still published, not your own

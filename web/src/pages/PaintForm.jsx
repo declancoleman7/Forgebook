@@ -1,7 +1,10 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate, useSearchParams, useLocation } from 'react-router-dom';
 import Icon from '../icons.jsx';
+import ColourWheel, { PRESET_SWATCHES } from '../components/ColourWheel.jsx';
+import SuggestPaintForm from '../components/SuggestPaintForm.jsx';
 import { PAINT_BRANDS, PAINT_TYPES, paintTypeKey } from '../data/paints.js';
+import { hexToHsv, hsvToHex } from '../utils/colour.js';
 import { useMyPaints, useSavePaint } from '../queries/usePaints.js';
 import { useToast } from '../toast/ToastContext.jsx';
 import { getRecipeDraft, setRecipeDraft } from '../state/recipeDraft.js';
@@ -29,6 +32,17 @@ export default function PaintForm() {
   const [brand, setBrand] = useState(existing?.brand || 'Citadel');
   const [type, setType] = useState(existing?.type || 'Base');
   const [hex, setHex] = useState(existing?.hex || '#c9a227');
+  const [hexInputValue, setHexInputValue] = useState(hex.replace('#', '').toUpperCase());
+  const [suggestOpen, setSuggestOpen] = useState(false);
+
+  useEffect(() => { setHexInputValue(hex.replace('#', '').toUpperCase()); }, [hex]);
+  const wheel = hexToHsv(hex);
+  const brightnessGradient = `linear-gradient(to right, #000, ${hsvToHex(wheel.h, wheel.s, 1)})`;
+  const onHexInput = (v) => {
+    const clean = v.replace(/[^0-9a-fA-F]/g, '').slice(0, 6);
+    setHexInputValue(clean);
+    if (clean.length === 6) setHex('#' + clean);
+  };
 
   if (editId && myPaints && !existing) {
     return null; // paint vanished from the rack mid-edit -- nothing sane to show
@@ -102,9 +116,26 @@ export default function PaintForm() {
 
       <div className="field">
         <label>Colour</label>
-        <div className="field-hex-row">
-          <input type="color" value={hex} onChange={(e) => setHex(e.target.value)} />
-          <span className="paint-row__hex">{hex}</span>
+        <div className="colour-match-card">
+          <ColourWheel hex={hex} onChange={setHex} />
+          <div className="brightness-row">
+            <span className="brightness-row__label">Bright</span>
+            <input type="range" min={0} max={100} value={Math.round(wheel.v * 100)} style={{ background: brightnessGradient }}
+              onChange={(e) => setHex(hsvToHex(wheel.h, wheel.s, Number(e.target.value) / 100))} />
+          </div>
+          <div className="colour-match-card__row">
+            <div className="picker-swatch" style={{ background: hex }} />
+            <div className="picker-fields">
+              <div className="hex-field">
+                <span>#</span>
+                <input type="text" maxLength={6} value={hexInputValue} onChange={(e) => onHexInput(e.target.value)} />
+              </div>
+              <div className="swatch-row">
+                {PRESET_SWATCHES.map((h) => <button type="button" key={h} style={{ background: h }} onClick={() => setHex(h)} />)}
+              </div>
+            </div>
+          </div>
+          <div className="label-hint" style={{ marginTop: 10 }}>Drag the wheel for hue and saturation, or type a hex code.</div>
         </div>
       </div>
 
@@ -112,6 +143,17 @@ export default function PaintForm() {
         <button className="btn btn-ghost btn-block" onClick={cancel}>Cancel</button>
         <button className="btn btn-primary btn-block" onClick={save}>Save paint</button>
       </div>
+
+      <button type="button" className="btn btn-ghost btn-block" style={{ marginTop: 10 }} onClick={() => setSuggestOpen(true)}>
+        <Icon name="flag" size={14} /> Suggest adding this to the Paint Library
+      </button>
+
+      {suggestOpen && (
+        <SuggestPaintForm
+          prefill={{ name, brand, type, hex }}
+          onClose={() => setSuggestOpen(false)}
+        />
+      )}
     </div>
   );
 }

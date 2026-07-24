@@ -1,8 +1,16 @@
-export { default as PAINT_LIBRARY } from './paintLibrary.json';
+import PAINT_LIBRARY from './paintLibrary.json';
+
+export { PAINT_LIBRARY };
 
 export const TECHNIQUES = ['Primer', 'Base', 'Shade', 'Layer', 'Highlight', 'Edge Highlight', 'Glaze', 'Drybrush', 'Wash', 'Contrast', 'Technical'];
-export const PAINT_TYPES = ['Base', 'Layer', 'Shade', 'Contrast', 'Dry', 'Technical', 'Air', 'Spray', 'Other'];
-export const PAINT_BRANDS = ['Citadel', 'Vallejo', 'Army Painter', 'Scale75', 'Pro Acryl', 'Two Thin Coats', 'AK', 'Kimera', 'Colour Forge', 'Other'];
+// Derived from PAINT_LIBRARY itself (plus a trailing "Other" catch-all) so
+// a custom paint's own type/brand dropdown can never drift out of sync with
+// what the library actually contains again -- this used to be a hand-typed
+// list of ~9 generic types/10 brands, while the library alone has 64 real
+// type strings (e.g. "Speedpaint 2.0", "Pro Acryl Standard (Metallics)")
+// and includes Humbrol/Tamiya, neither of which was even in the old list.
+export const PAINT_TYPES = [...new Set(PAINT_LIBRARY.map((p) => p.type))].sort().concat('Other');
+export const PAINT_BRANDS = [...new Set(PAINT_LIBRARY.map((p) => p.brand))].sort().concat('Other');
 export const PAINT_CATEGORY_LABEL = { base: 'Base/Layer', wash: 'Wash', contrast: 'Contrast/Speedpaint', metallic: 'Metallic', primer: 'Primer/Spray' };
 
 export function paintKey(name, brand) {
