@@ -2629,55 +2629,12 @@ main {
   }
 
   /* Same reasoning as the recipe-master override above -- content-dense
-     browse/dashboard pages (Paint Library's grid, Profile's two-column
-     layout) are starved by the 880px reading-width cap. Settings, forms,
+     browse/dashboard pages (Paint Library's grid, Profile's recipe/pile
+     grids) are starved by the 880px reading-width cap. Settings, forms,
      and anything else not opting into this class stay at the narrower,
      more readable default. */
   main:has(.view-wide) {
     max-width: 1320px;
-  }
-
-  /* Profile: an avatar/stats/armies rail alongside the actual content,
-     instead of a single narrow column with the rail's info stacked above
-     it. Grid-only -- on mobile (no media query match) .profile-layout is
-     just a plain block, so .profile-layout__side and __main stack in DOM
-     order exactly as they did before this existed. */
-  .profile-layout {
-    display: grid;
-    grid-template-columns: 260px 1fr;
-    gap: 32px;
-    align-items: start;
-  }
-
-  .profile-layout__side {
-    position: sticky;
-    top: calc(var(--topbar-h) + 24px);
-  }
-
-  /* .empty-state__sub's max-width+auto-margin centers it as a standalone
-     "nothing here" line when it's narrower than its container -- fine at
-     the old ~800px column width, but floats disconnected from the label
-     above it once the main column is this much wider. These renders bare
-     (no .empty-state wrapper), so nothing else depends on the centering. */
-  .profile-layout__main > .empty-state__sub {
-    margin: 0;
-    max-width: none;
-  }
-
-  /* Rating rows are a compact label+stars pair -- fine two-up on desktop,
-     unlike the prose-length Notes rows beside them which stay single
-     column. Cards need their own border here since, without a wrapping
-     .settings-group, .settings-row normally only draws a bottom divider. */
-  .profile-ratings-grid {
-    display: grid;
-    grid-template-columns: repeat(2, 1fr);
-    gap: 8px;
-  }
-
-  .profile-ratings-grid .settings-row {
-    border: 1px solid var(--line);
-    border-radius: var(--radius-sm);
-    background: var(--bg-panel);
   }
 
   /* Home: a capped-width feed column (a feed stretched to fill an ultra-wide
@@ -4389,74 +4346,201 @@ main {
   vertical-align: middle;
 }
 
-/* Community Champion card — a profile-page score derived entirely from
-   already-public data (see data/championScore.js), styled after the same
-   stat-tile language .lib-progress/.hoblog-month-tile already use elsewhere
-   rather than inventing a new visual pattern for one card. */
-.champion-card {
-  background: var(--bg-panel);
-  border: 1px solid var(--line);
-  border-radius: var(--radius-md);
-  padding: 14px 16px;
-  margin: 14px 0;
-}
-.champion-card__head {
+/* Profile page — hero (avatar/identity/stats/tier/follow) plus a tabbed
+   pane below it. The Champion score used to be its own floating box; it
+   now lives as just another entry in the stat strip, and the tier reads as
+   a badge next to the name instead of buried a scroll down. */
+.profile-hero {
   display: flex;
-  align-items: baseline;
+  gap: 16px;
+  align-items: flex-start;
+  flex-wrap: wrap;
+  margin-bottom: 14px;
+}
+.profile-hero__avatarwrap {
+  position: relative;
+  flex-shrink: 0;
+}
+.profile-hero__identity {
+  flex: 1;
+  min-width: 220px;
+}
+.profile-hero__name-row {
+  display: flex;
+  align-items: center;
   gap: 8px;
-  margin-bottom: 10px;
+  flex-wrap: wrap;
 }
-.champion-card__score {
-  font-family: var(--font-mono);
+.profile-hero__name {
+  font-family: var(--font-display);
   font-size: 22px;
-  color: var(--gold);
+  letter-spacing: 0.01em;
 }
-.champion-card__tier {
+.profile-tier {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
   font-family: var(--font-mono);
   font-size: 10px;
-  letter-spacing: 0.1em;
+  letter-spacing: 0.05em;
   text-transform: uppercase;
-  color: var(--ink-dim);
+  color: var(--gold-bright);
+  background: var(--gold-dim);
+  border: 1px solid var(--gold-border);
+  border-radius: 999px;
+  padding: 3px 10px 3px 8px;
 }
-.champion-card__stats {
+.profile-tier svg {
+  width: 11px;
+  height: 11px;
+}
+.profile-stat-strip {
   display: flex;
-  gap: 8px;
+  gap: 22px;
+  margin-top: 10px;
+  flex-wrap: wrap;
 }
-.champion-stat {
-  flex: 1;
-  background: var(--bg-raised);
-  border-radius: var(--radius-sm);
-  padding: 8px 6px;
-  text-align: center;
+.profile-stat {
+  display: flex;
+  flex-direction: column;
 }
-.champion-stat__n {
-  display: block;
+.profile-stat b {
   font-family: var(--font-mono);
-  font-size: 15px;
+  font-size: 17px;
   color: var(--parchment);
+  line-height: 1.1;
 }
-.champion-stat__l {
-  display: block;
+.profile-stat b.is-score {
+  color: var(--gold);
+}
+.profile-stat span {
   font-family: var(--font-mono);
   font-size: 9px;
-  letter-spacing: 0.06em;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--ink-dim);
   margin-top: 2px;
 }
-.champion-card__models {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-top: 10px;
-  padding-top: 10px;
-  border-top: 1px solid var(--line);
+.profile-stat.is-link {
+  cursor: pointer;
+}
+.profile-stat.is-link b {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.profile-hero__models {
+  margin-top: 8px;
   font-size: 12px;
   color: var(--ink-dim);
 }
-.champion-card__models b {
-  color: var(--parchment);
+
+/* Individual pills with real gaps between them, not a single cramped
+   segmented strip -- deliberately NOT .lib-filter-seg's shape, which reads
+   too tight once a label is as long as "Pile of Potential." */
+.profile-tabs {
+  display: flex;
+  gap: 8px;
+  margin: 18px 0 14px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.profile-tabs::-webkit-scrollbar {
+  display: none;
+}
+.profile-tabs button {
+  font-family: var(--font-body);
   font-weight: 600;
+  font-size: 13px;
+  color: var(--ink-dim);
+  background: var(--bg-raised);
+  border: 1px solid transparent;
+  border-radius: 999px;
+  padding: 10px 16px;
+  white-space: nowrap;
+  flex-shrink: 0;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+.profile-tabs button.is-active {
+  background: var(--gold-dim);
+  color: var(--gold-bright);
+  border-color: var(--gold-border);
+}
+.profile-tabs button .n {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--ink-dim);
+  margin-left: 4px;
+}
+.profile-tabs button.is-active .n {
+  color: var(--gold-bright);
+}
+
+.profile-group-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin: 16px 0 8px;
+}
+.profile-group-head:first-child {
+  margin-top: 0;
+}
+.profile-group-head__label {
+  font-family: var(--font-display);
+  font-size: 14px;
+  color: var(--parchment-dim);
+}
+
+/* The shared row Notes and Ratings both render through now, instead of the
+   comment-row vs settings-row split they used to get. */
+.profile-activity-row {
+  display: flex;
+  gap: 12px;
+  padding: 10px 2px;
+  border-bottom: 1px solid var(--line-soft);
+}
+.profile-activity-row:last-child {
+  border-bottom: none;
+}
+.profile-activity-row__icon {
+  width: 28px;
+  height: 28px;
+  border-radius: var(--radius-sm);
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.profile-activity-row__icon.is-note {
+  background: var(--kinship-dim);
+  color: var(--kinship);
+}
+.profile-activity-row__icon.is-rating {
+  background: var(--gold-dim);
+  color: var(--gold-bright);
+}
+.profile-activity-row__body {
+  flex: 1;
+  min-width: 0;
+}
+.profile-activity-row__title {
+  font-size: 13px;
+}
+.profile-activity-row__title b {
+  font-weight: 600;
+}
+.profile-activity-row__inline-meta {
+  color: var(--ink-dim);
+  font-size: 12px;
+  font-weight: 400;
+}
+.profile-activity-row__meta {
+  font-size: 12.5px;
+  color: var(--ink-dim);
+  margin-top: 2px;
+}
+.profile-activity-row__trailing {
+  flex-shrink: 0;
 }
 
 /* Avatars — an <img> (background-image, so a broken/slow-loading photo

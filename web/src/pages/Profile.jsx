@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import Icon from '../icons.jsx';
 import Avatar from '../components/Avatar.jsx';
@@ -36,40 +36,21 @@ function paintFromKey(key) {
   return PAINT_LIBRARY.find((p) => paintKey(p.name, p.brand) === key) || null;
 }
 
-function SectionLabel({ label, count, kind, profileId }) {
-  const navigate = useNavigate();
+// The shared row shape Notes and Ratings now both render through, instead
+// of the comment-row vs settings-row split they used to get -- a note and a
+// rating are both "a small thing you left somewhere," so they should look
+// like the same kind of thing.
+function ActivityRow({ icon, title, meta, trailing }) {
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-      <div className="section-label" style={{ flex: 1 }}>{label}</div>
-      {count > 4 && <button type="button" className="section-see-all" onClick={() => navigate(`/u/${profileId}/section/${kind}`)}>See all ({count})</button>}
-    </div>
-  );
-}
-
-function NoteRow({ n }) {
-  const navigate = useNavigate();
-  const paint = paintFromKey(n.paintKey);
-  return (
-    <div className="comment-row">
-      <div className="comment-row__meta">
-        {paint
-          ? <span className="comment-row__author" style={{ cursor: 'pointer' }} onClick={() => navigate(`/similar/${encodeURIComponent(paint.name)}/${encodeURIComponent(paint.brand)}`)}>{paint.name}</span>
-          : <span className="comment-row__author">Unknown paint</span>}
+    <div className="profile-activity-row">
+      <div className={`profile-activity-row__icon is-${icon}`}>
+        {icon === 'note' ? <Icon name="comment" size={14} /> : <svg width={13} height={13} viewBox="0 0 24 24" fill="currentColor" stroke="none"><path d={STAR_PATH} /></svg>}
       </div>
-      <div className="comment-row__body">{n.body}</div>
-    </div>
-  );
-}
-
-function RatingRow({ r }) {
-  const paint = paintFromKey(r.paintKey);
-  return (
-    <div className="settings-row">
-      <div>
-        <div className="settings-row__label">{paint ? paint.name : 'Unknown paint'}</div>
-        <div className="settings-row__desc">{paint ? paint.brand : ''}</div>
+      <div className="profile-activity-row__body">
+        <div className="profile-activity-row__title">{title}</div>
+        {meta && <div className="profile-activity-row__meta">{meta}</div>}
       </div>
-      <StarRow value={r.stars} />
+      {trailing && <div className="profile-activity-row__trailing">{trailing}</div>}
     </div>
   );
 }
@@ -106,30 +87,64 @@ function SavedPaintRow({ p }) {
   );
 }
 
+// A sub-heading inside a tab pane, with the same "See all" escape hatch the
+// old per-section labels used, just at a slightly higher preview cap --
+// tabs give this content the whole page instead of a cramped 4-item strip,
+// so there's room to actually show a handful before asking to go further.
+function TabGroupHeader({ label, count, kind, profileId }) {
+  const navigate = useNavigate();
+  return (
+    <div className="profile-group-head">
+      <div className="profile-group-head__label">{label}</div>
+      {count > 6 && <button type="button" className="section-see-all" onClick={() => navigate(`/u/${profileId}/section/${kind}`)}>See all ({count})</button>}
+    </div>
+  );
+}
+
 // A community-contribution score built entirely from data that's already
 // public about this profile (published recipes, visible comments, likes on
-// both) -- see data/championScore.js for the weighting. Models painted is
-// shown as its own stat rather than folded into the score, and only counts
-// Pile of Potential entries this profile has chosen to make public -- same
-// boundary the section below it already respects.
-function ChampionCard({ profile }) {
-  const { recipesPublished, commentCount, likesReceived } = profile.championBreakdown;
+// both) -- see data/championScore.js for the weighting. It reads as just
+// another stat next to followers/following/recipes, and the tier sits as a
+// badge beside the name -- not a separate box bolted on below, which is
+// where this used to live.
+function ProfileHero({ profile, isMe, id, recipesCount, isFollowing, onToggleFollow, onReportPhoto, navigate }) {
   return (
-    <div className="champion-card">
-      <div className="champion-card__head">
-        <span className="champion-card__score">{profile.championScore}</span>
-        <span className="champion-card__tier">{championTier(profile.championScore)}</span>
+    <div className="profile-hero">
+      <div className="profile-hero__avatarwrap">
+        <Avatar displayName={profile.displayName} url={profile.avatarUrl} size={64} />
+        {!isMe && profile.avatarUrl && (
+          <button type="button" className="report-photo-btn" aria-label="Report photo" title="Report photo" onClick={onReportPhoto}>
+            <Icon name="flag" size={11} />
+          </button>
+        )}
       </div>
-      <div className="champion-card__stats">
-        <div className="champion-stat"><span className="champion-stat__n">{recipesPublished}</span><span className="champion-stat__l">Recipes</span></div>
-        <div className="champion-stat"><span className="champion-stat__n">{commentCount}</span><span className="champion-stat__l">Comments</span></div>
-        <div className="champion-stat"><span className="champion-stat__n">{likesReceived}</span><span className="champion-stat__l">Likes</span></div>
-      </div>
-      {profile.modelsOwned > 0 && (
-        <div className="champion-card__models">
-          <span>Models painted</span>
-          <span><b>{profile.modelsCompleted}</b> finished / {profile.modelsOwned} owned</span>
+      <div className="profile-hero__identity">
+        <div className="profile-hero__name-row">
+          <span className="profile-hero__name">{profile.displayName}</span>
+          {profile.isAdmin && <span className="admin-badge" title="Forgebook admin">GM</span>}
+          <span className="profile-tier">
+            <svg viewBox="0 0 24 24" fill="currentColor"><path d={STAR_PATH} /></svg>
+            {championTier(profile.championScore)}
+          </span>
         </div>
+        <div className="profile-stat-strip">
+          <div className="profile-stat is-link" onClick={() => navigate(`/u/${id}/section/followers`)}>
+            <b>{profile.followerIds.length}</b><span>Follower{profile.followerIds.length === 1 ? '' : 's'}</span>
+          </div>
+          <div className="profile-stat is-link" onClick={() => navigate(`/u/${id}/section/following`)}>
+            <b>{profile.followingIds.length}</b><span>Following</span>
+          </div>
+          <div className="profile-stat"><b>{recipesCount}</b><span>Recipes</span></div>
+          <div className="profile-stat"><b className="is-score">{profile.championScore}</b><span>Score</span></div>
+        </div>
+        {profile.modelsOwned > 0 && (
+          <div className="profile-hero__models">{profile.modelsCompleted} of {profile.modelsOwned} models finished</div>
+        )}
+      </div>
+      {!isMe && (
+        <button className={`btn ${isFollowing ? 'btn-ghost' : 'btn-primary'} btn-sm`} onClick={onToggleFollow}>
+          {isFollowing ? 'Following' : 'Follow'}
+        </button>
       )}
     </div>
   );
@@ -188,6 +203,8 @@ function PersonalWorkspace({ recipes }) {
   );
 }
 
+const PREVIEW_LIMIT = 6;
+
 export default function Profile() {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -196,6 +213,7 @@ export default function Profile() {
   const showToast = useToast();
   const report = useReport();
   const reportContent = useReportContent();
+  const [tab, setTab] = useState('recipes');
 
   const { data: viewedProfile, isLoading } = useViewedProfile(id);
   const { data: myRecipes = [] } = useMyRecipes();
@@ -206,20 +224,23 @@ export default function Profile() {
   const toggleFollow = useToggleFollow();
   const { data: myHobbyLog = [] } = useMyHobbyLog();
 
-  const savedRecipeObjs = useMemo(() => {
-    if (!isMe) return [];
-    return savedRecipes.map((s) => {
-      if (s.recipeOwnerId === userId) return myRecipes.find((r) => r.id === s.recipeId);
-      return sharedRecipes.find((r) => r.authorId === s.recipeOwnerId && r.id === s.recipeId);
-    }).filter(Boolean);
-  }, [isMe, savedRecipes, myRecipes, sharedRecipes, userId]);
-  const savedPaintObjs = useMemo(() => (isMe ? savedPaintKeys.map(paintFromKey).filter(Boolean) : []), [isMe, savedPaintKeys]);
-
   if (isLoading) return <div className="empty-state__sub">Loading…</div>;
   if (!viewedProfile) return <EmptyState icon="search" title="Painter not found" sub="This profile doesn't exist, or has no published work yet." />;
 
   const recipes = isMe ? myRecipes : viewedProfile.recipes;
   const isFollowing = followingIds.includes(id);
+  const pileEntries = isMe ? myHobbyLog : viewedProfile.hobbyLog;
+  const savedRecipeObjs = isMe
+    ? savedRecipes.map((s) => (s.recipeOwnerId === userId ? myRecipes.find((r) => r.id === s.recipeId) : sharedRecipes.find((r) => r.authorId === s.recipeOwnerId && r.id === s.recipeId))).filter(Boolean)
+    : [];
+  const savedPaintObjs = isMe ? savedPaintKeys.map(paintFromKey).filter(Boolean) : [];
+
+  const TABS = [
+    { id: 'recipes', label: 'Recipes', count: recipes.length },
+    { id: 'activity', label: 'Activity', count: viewedProfile.notes.length + viewedProfile.ratings.length },
+    { id: 'pile', label: 'Pile', title: isMe ? 'Pile of Potential' : 'Public Pile of Potential', count: pileEntries.length },
+  ];
+  if (isMe) TABS.push({ id: 'collection', label: 'Collection', count: savedRecipeObjs.length + savedPaintObjs.length });
 
   const doReportPhoto = async () => {
     const reason = await report('photo');
@@ -244,68 +265,97 @@ export default function Profile() {
         ) : <div style={{ width: 36 }} />}
       </div>
 
-      <div className="profile-layout">
-        <div className="profile-layout__side">
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-            <div style={{ position: 'relative' }}>
-              <Avatar displayName={viewedProfile.displayName} url={viewedProfile.avatarUrl} size={56} />
-              {!isMe && viewedProfile.avatarUrl && (
-                <button type="button" className="report-photo-btn" style={{ top: -4, right: -4, width: 22, height: 22 }} aria-label="Report photo" title="Report photo" onClick={doReportPhoto}>
-                  <Icon name="flag" size={11} />
-                </button>
-              )}
-            </div>
-            <div style={{ flex: 1 }}>
-              <div className="detail-title detail-title--identity">{viewedProfile.displayName}{viewedProfile.isAdmin && <span className="admin-badge" title="Forgebook admin">GM</span>}</div>
-              <div className="detail-sub">
-                {recipes.length} recipe{recipes.length === 1 ? '' : 's'}{isMe ? '' : ' shared'} ·{' '}
-                <span style={{ cursor: 'pointer', textDecoration: 'underline' }} onClick={() => navigate(`/u/${id}/section/followers`)}>{viewedProfile.followerIds.length} follower{viewedProfile.followerIds.length === 1 ? '' : 's'}</span> ·{' '}
-                <span style={{ cursor: 'pointer', textDecoration: 'underline' }} onClick={() => navigate(`/u/${id}/section/following`)}>{viewedProfile.followingIds.length} following</span>
-              </div>
-            </div>
-            {!isMe && (
-              <button className={`btn ${isFollowing ? 'btn-ghost' : 'btn-primary'} btn-sm`} onClick={() => toggleFollow.mutate({ profileId: id, following: isFollowing })}>
-                {isFollowing ? 'Following' : 'Follow'}
-              </button>
-            )}
-          </div>
+      <ProfileHero
+        profile={viewedProfile}
+        isMe={isMe}
+        id={id}
+        recipesCount={recipes.length}
+        isFollowing={isFollowing}
+        onToggleFollow={() => toggleFollow.mutate({ profileId: id, following: isFollowing })}
+        onReportPhoto={doReportPhoto}
+        navigate={navigate}
+      />
 
-          <ChampionCard profile={viewedProfile} />
+      {isMe && <PersonalWorkspace recipes={recipes} />}
 
-          {isMe && <PersonalWorkspace recipes={recipes} />}
-        </div>
+      <div className="profile-tabs" role="tablist">
+        {TABS.map((t) => (
+          <button key={t.id} type="button" className={tab === t.id ? 'is-active' : ''} title={t.title} onClick={() => setTab(t.id)}>
+            {t.label} <span className="n">{t.count}</span>
+          </button>
+        ))}
+      </div>
 
-        <div className="profile-layout__main">
-          <SectionLabel label={isMe ? 'Your Recipes' : 'Published Recipes'} count={recipes.length} kind="recipes" profileId={id} />
-          {recipes.length
-            ? <div className="recipe-grid">{recipes.slice(0, 4).map((r) => <RecipeCard key={r.authorId ? `${r.authorId}:${r.id}` : r.id} r={r} />)}</div>
-            : <EmptyState icon="book" title="No recipes yet" sub={isMe ? 'Tap the + button to record your first paint recipe.' : 'Nothing published so far.'} />}
+      <div className="profile-pane">
+        {tab === 'recipes' && (
+          recipes.length
+            ? <div className="recipe-grid">{recipes.slice(0, PREVIEW_LIMIT).map((r) => <RecipeCard key={r.authorId ? `${r.authorId}:${r.id}` : r.id} r={r} />)}</div>
+            : <EmptyState icon="book" title="No recipes yet" sub={isMe ? 'Tap the + button to record your first paint recipe.' : 'Nothing published so far.'} />
+        )}
+        {recipes.length > PREVIEW_LIMIT && tab === 'recipes' && (
+          <button type="button" className="section-see-all" style={{ marginTop: 10 }} onClick={() => navigate(`/u/${id}/section/recipes`)}>See all ({recipes.length})</button>
+        )}
 
-          <SectionLabel label="Notes Written" count={viewedProfile.notes.length} kind="notes" profileId={id} />
-          {viewedProfile.notes.length ? viewedProfile.notes.slice(0, 4).map((n) => <NoteRow key={n.id} n={n} />) : <div className="empty-state__sub">No community notes yet.</div>}
+        {tab === 'activity' && (
+          <>
+            <TabGroupHeader label="Notes Written" count={viewedProfile.notes.length} kind="notes" profileId={id} />
+            {viewedProfile.notes.length
+              ? viewedProfile.notes.slice(0, PREVIEW_LIMIT).map((n) => {
+                const paint = paintFromKey(n.paintKey);
+                return (
+                  <ActivityRow
+                    key={n.id}
+                    icon="note"
+                    title={<>Note on <b>{paint ? paint.name : 'Unknown paint'}</b>{paint?.brand && <span className="profile-activity-row__inline-meta"> · {paint.brand}</span>}</>}
+                    meta={`"${n.body}"`}
+                  />
+                );
+              })
+              : <div className="empty-state__sub">No community notes yet.</div>}
 
-          <SectionLabel label="Ratings Given" count={viewedProfile.ratings.length} kind="ratings" profileId={id} />
-          {viewedProfile.ratings.length
-            ? <div className="profile-ratings-grid">{viewedProfile.ratings.slice(0, 4).map((r) => <RatingRow key={r.paintKey} r={r} />)}</div>
-            : <div className="empty-state__sub">No ratings yet.</div>}
+            <TabGroupHeader label="Ratings Given" count={viewedProfile.ratings.length} kind="ratings" profileId={id} />
+            {viewedProfile.ratings.length
+              ? viewedProfile.ratings.slice(0, PREVIEW_LIMIT).map((r) => {
+                const paint = paintFromKey(r.paintKey);
+                return (
+                  <ActivityRow
+                    key={r.paintKey}
+                    icon="rating"
+                    title={<>Rated <b>{paint ? paint.name : 'Unknown paint'}</b>{paint?.brand && <span className="profile-activity-row__inline-meta"> · {paint.brand}</span>}</>}
+                    meta={<StarRow value={r.stars} />}
+                  />
+                );
+              })
+              : <div className="empty-state__sub">No ratings yet.</div>}
+          </>
+        )}
 
-          <SectionLabel label={isMe ? 'Pile of Potential' : 'Public Pile of Potential'} count={(isMe ? myHobbyLog : viewedProfile.hobbyLog).length} kind="hobby-log" profileId={id} />
-          {(isMe ? myHobbyLog : viewedProfile.hobbyLog).length
-            ? <div className="hobbylog-list">{(isMe ? myHobbyLog : viewedProfile.hobbyLog).slice(0, 4).map((e) => <HobbyLogRow key={e.id} entry={e} />)}</div>
-            : <div className="empty-state__sub">{isMe ? 'Nothing logged yet — tap the paint drop above to start.' : 'Nothing public yet.'}</div>}
+        {tab === 'pile' && (
+          pileEntries.length
+            ? (
+              <>
+                <div className="hobbylog-list">{pileEntries.slice(0, PREVIEW_LIMIT).map((e) => <HobbyLogRow key={e.id} entry={e} />)}</div>
+                {pileEntries.length > PREVIEW_LIMIT && (
+                  <button type="button" className="section-see-all" style={{ marginTop: 10 }} onClick={() => navigate(`/u/${id}/section/hobby-log`)}>See all ({pileEntries.length})</button>
+                )}
+              </>
+            )
+            : <div className="empty-state__sub">{isMe ? 'Nothing logged yet — tap the paint drop above to start.' : 'Nothing public yet.'}</div>
+        )}
 
-          {isMe && (
-            <>
-              <SectionLabel label="Saved Recipes" count={savedRecipeObjs.length} kind="saved-recipes" profileId={id} />
-              {savedRecipeObjs.length
-                ? <div className="recipe-grid">{savedRecipeObjs.slice(0, 4).map((r) => <RecipeCard key={r.authorId ? `${r.authorId}:${r.id}` : r.id} r={r} />)}</div>
-                : <div className="empty-state__sub">Nothing saved yet.</div>}
+        {tab === 'collection' && isMe && (
+          <>
+            <TabGroupHeader label="Saved Recipes" count={savedRecipeObjs.length} kind="saved-recipes" profileId={id} />
+            {savedRecipeObjs.length
+              ? <div className="recipe-grid">{savedRecipeObjs.slice(0, PREVIEW_LIMIT).map((r) => <RecipeCard key={r.authorId ? `${r.authorId}:${r.id}` : r.id} r={r} />)}</div>
+              : <div className="empty-state__sub">Nothing saved yet.</div>}
 
-              <SectionLabel label="Saved Paints" count={savedPaintObjs.length} kind="saved-paints" profileId={id} />
-              {savedPaintObjs.length ? savedPaintObjs.slice(0, 4).map((p) => <SavedPaintRow key={paintKey(p.name, p.brand)} p={p} />) : <div className="empty-state__sub">Nothing saved yet.</div>}
-            </>
-          )}
-        </div>
+            <TabGroupHeader label="Saved Paints" count={savedPaintObjs.length} kind="saved-paints" profileId={id} />
+            {savedPaintObjs.length
+              ? savedPaintObjs.slice(0, PREVIEW_LIMIT).map((p) => <SavedPaintRow key={paintKey(p.name, p.brand)} p={p} />)
+              : <div className="empty-state__sub">Nothing saved yet.</div>}
+          </>
+        )}
       </div>
     </div>
   );
