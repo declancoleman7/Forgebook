@@ -873,6 +873,7 @@ export default function HobbyLog() {
   const [searchParams] = useSearchParams();
   const editingId = searchParams.get('entry'); // null | 'new' | entry id
   const editingProjectId = searchParams.get('project'); // null | 'new' | project id
+  const viewAllProjects = searchParams.get('projects') === 'all';
   // null = hobby-picker dashboard; 'all' = flat list of everything (the
   // escape hatch, same view this page used to open straight to);
   // otherwise a hobby id, drilling into that hobby's systems/factions below.
@@ -927,6 +928,25 @@ export default function HobbyLog() {
   if (editingProjectId) {
     const existing = editingProjectId === 'new' ? null : projects.find((p) => p.id === editingProjectId);
     return <ProjectForm key={editingProjectId} existing={existing} entries={entries} onClose={goBack} onOpenEntry={(id) => pushParams({ entry: id })} />;
+  }
+
+  if (viewAllProjects) {
+    return (
+      <div className="page-enter">
+        <div className="detail-header">
+          <button className="icon-btn" onClick={goBack}><Icon name="back" size={18} /></button>
+          <div className="page-title" style={{ margin: 0 }}>Projects</div>
+          <button className="icon-btn" onClick={() => pushParams({ project: 'new' })}><Icon name="plus" size={18} /></button>
+        </div>
+        {projects.length ? (
+          <div className="hobbylog-list">
+            {projects.map((project) => <ProjectCard key={project.id} project={project} entries={entries} onEdit={(id) => pushParams({ project: id })} />)}
+          </div>
+        ) : (
+          <EmptyState icon="clipboard-check" title="No projects yet" sub="Tap + to group units toward a goal." />
+        )}
+      </div>
+    );
   }
 
   if (isLoading) return <div className="empty-state__sub">Loading…</div>;
@@ -986,10 +1006,15 @@ export default function HobbyLog() {
           </>
         )}
 
-        <div className="section-label">Projects</div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <div className="section-label" style={{ flex: 1 }}>Projects</div>
+          {projects.length > 4 && (
+            <button type="button" className="section-see-all" onClick={() => pushParams({ projects: 'all' })}>See all ({projects.length})</button>
+          )}
+        </div>
         {projects.length > 0 && (
           <div className="hobbylog-list" style={{ marginBottom: 10 }}>
-            {projects.map((project) => <ProjectCard key={project.id} project={project} entries={entries} onEdit={(id) => pushParams({ project: id })} />)}
+            {projects.slice(0, 4).map((project) => <ProjectCard key={project.id} project={project} entries={entries} onEdit={(id) => pushParams({ project: id })} />)}
           </div>
         )}
         <button type="button" className="btn btn-ghost btn-block" onClick={() => pushParams({ project: 'new' })}>
