@@ -2,11 +2,13 @@ import { useMemo, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import Icon from '../icons.jsx';
 import EmblemSvg from '../components/EmblemSvg.jsx';
+import HobbyEntryCard from '../components/HobbyEntryCard.jsx';
 import { faction } from '../data/factions.js';
 import { useActiveHobby } from '../hooks/useActiveHobby.js';
 import { useFactionArt } from '../hooks/useFactionArt.js';
 import { useVisibleRecipes } from '../queries/useRecipes.js';
 import { useMyProfile } from '../queries/useProfile.js';
+import { useMyHobbyLog } from '../queries/useHobbyLog.js';
 import { useGlobalFactionArt, useUploadGlobalFactionEmblem, useRemoveGlobalFactionEmblem } from '../queries/useFactionEmblems.js';
 import { downscaleImage } from '../utils/image.js';
 import { useToast } from '../toast/ToastContext.jsx';
@@ -30,6 +32,11 @@ export default function FactionDetail() {
   const fileRef = useRef(null);
   const adminFileRef = useRef(null);
   const { data: visibleRecipes = [] } = useVisibleRecipes();
+  const { data: hobbyLog = [] } = useMyHobbyLog();
+  // Every logged Pile of Potential unit for this faction -- the merged
+  // per-army page (recipes AND units, one screen) this component now is.
+  // See the Collections/Pile of Potential merge.
+  const loggedUnits = useMemo(() => hobbyLog.filter((e) => e.factionId === f.id), [hobbyLog, f.id]);
 
   const onArtChosen = async (e) => {
     const file = e.target.files[0];
@@ -90,9 +97,21 @@ export default function FactionDetail() {
       <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={onArtChosen} />
 
       <div className="detail-title">{f.label}</div>
-      <div className="detail-sub">{f.alliance !== 'All' ? `${f.alliance} · ` : ''}{total} recipe{total === 1 ? '' : 's'}</div>
+      <div className="detail-sub">
+        {f.alliance !== 'All' ? `${f.alliance} · ` : ''}{total} recipe{total === 1 ? '' : 's'}
+        {loggedUnits.length > 0 ? ` · ${loggedUnits.length} model${loggedUnits.length === 1 ? '' : 's'} logged` : ''}
+      </div>
 
-      <div className="section-label">Units</div>
+      <div className="detail-actions">
+        <button className="btn btn-primary" style={{ flex: 1 }} onClick={() => navigate('/recipe-new')}>
+          + New recipe
+        </button>
+        <button className="btn btn-ghost" style={{ flex: 1 }} onClick={() => navigate(`/hobby-log?hobby=${h.id}&faction=${f.id}&entry=new`)}>
+          + New unit
+        </button>
+      </div>
+
+      <div className="section-label">Recipes <span className="label-hint">how to paint it</span></div>
       <div className="unit-list">
         <div className="unit-row is-general" onClick={() => navigate(`/faction/${f.id}/unit/_general`)}>
           <div className="unit-row__bar" style={{ background: f.color }} />
@@ -116,12 +135,20 @@ export default function FactionDetail() {
         </div>
       )}
 
-      <div className="detail-actions">
-        <button className="btn btn-primary btn-block" onClick={() => navigate('/recipe-new')}>
-          + New recipe for {f.label}
-        </button>
-      </div>
-      {personalArt && <button className="btn btn-ghost btn-block" onClick={clearArt}>Remove custom emblem</button>}
+      <div className="section-label">Pile of Potential <span className="label-hint">what you own &amp; how far along</span></div>
+      {loggedUnits.length ? (
+        <div className="hobbylog-list">
+          {loggedUnits.map((entry) => (
+            <HobbyEntryCard key={entry.id} entry={entry} onEdit={(id) => navigate(`/hobby-log?entry=${id}`)} />
+          ))}
+        </div>
+      ) : (
+        <div className="empty-state__sub" style={{ padding: '10px 2px' }}>
+          Nothing logged for this {h.groupLabel.toLowerCase()} yet. Tap "+ New unit" above to start tracking one.
+        </div>
+      )}
+
+      {personalArt && <button className="btn btn-ghost btn-block" style={{ marginTop: 16 }} onClick={clearArt}>Remove custom emblem</button>}
 
       {isAdmin && (
         <>

@@ -1,22 +1,29 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { emblemPaths } from '../data/factions.js';
 import { useActiveHobby } from '../hooks/useActiveHobby.js';
 import { useAllFactionArt } from '../hooks/useFactionArt.js';
 import { useGlobalFactionArt } from '../queries/useFactionEmblems.js';
 import { useVisibleRecipes } from '../queries/useRecipes.js';
+import { useMyHobbyLog } from '../queries/useHobbyLog.js';
+import HobbyLogDashboard from '../components/HobbyLogDashboard.jsx';
 
 function slug(s) {
   return encodeURIComponent(String(s).trim().toLowerCase().replace(/\s+/g, '-'));
 }
 
-function FactionTile({ f, count, art }) {
+// count is recipes, unitCount is Pile of Potential units logged against
+// this faction -- shown together ("6 · 12") so the fact that units are
+// logged is visible from the grid itself, not only after finding the
+// Pile of Potential's own (now-removed) separate faction picker. See the
+// Collections/Pile of Potential merge.
+function FactionTile({ f, count, unitCount, art }) {
   const navigate = useNavigate();
   const gradId = `mg-${f.id}`;
   return (
     <div className={`faction-tile faction-tile--${slug(f.alliance)}`} style={{ '--faction-color': f.color }} title={f.label} onClick={() => navigate(`/faction/${f.id}`)}>
       <div className="faction-tile__rivet tl" /><div className="faction-tile__rivet tr" /><div className="faction-tile__rivet bl" /><div className="faction-tile__rivet br" />
-      {count > 0 && <div className="faction-tile__count">{count}</div>}
+      {(count > 0 || unitCount > 0) && <div className="faction-tile__count">{count}{unitCount > 0 ? ` · ${unitCount}` : ''}</div>}
       <div className={`faction-tile__art ${art ? 'has-art' : ''}`} style={art ? { backgroundImage: `url('${art}')` } : undefined}>
         {!art && (
           <>
@@ -50,44 +57,68 @@ function FactionTile({ f, count, art }) {
 export default function Collection() {
   const h = useActiveHobby();
   const { data: recipes = [] } = useVisibleRecipes();
+  const { data: hobbyLog = [] } = useMyHobbyLog();
   const personalArt = useAllFactionArt();
   const { data: globalArt = {} } = useGlobalFactionArt();
   // Personal (this-device) override always wins over the admin's shared
   // one -- same merge order as the old app's viewFactions().
   const art = { ...globalArt, ...personalArt };
+  // Which top-level pane is showing -- "armies" is the faction grid this
+  // page has always been; "dashboard" is the cross-army Pile of Potential
+  // rollup, moved here (out from under Profile) since browsing one army's
+  // recipes+units and viewing the rollup across all of them are the two
+  // halves of the same "browse your collection" job. See the Collections/
+  // Pile of Potential merge.
+  const [tab, setTab] = useState('armies');
   const countByFaction = useMemo(() => {
     const map = new Map();
     recipes.forEach((r) => map.set(r.faction, (map.get(r.faction) || 0) + 1));
     return map;
   }, [recipes]);
+  const unitCountByFaction = useMemo(() => {
+    const map = new Map();
+    hobbyLog.forEach((e) => { if (e.factionId) map.set(e.factionId, (map.get(e.factionId) || 0) + 1); });
+    return map;
+  }, [hobbyLog]);
 
   return (
     <div className="page-enter">
       <div className="page-title">{h.browseTitle}</div>
-      {h.systems.map((sys) => {
-        const groups = sys.alliances.map((alliance) => {
-          const facs = h.factions.filter((f) => f.system === sys.id && f.alliance === alliance);
-          if (!facs.length) return null;
-          return (
-            <div key={alliance}>
-              {!h.flatBrowse && <div className="alliance-label">{alliance}</div>}
-              <div className="faction-tiles">{facs.map((f) => <FactionTile key={f.id} f={f} count={countByFaction.get(f.id) || 0} art={art[f.id]} />)}</div>
+      <div className="lib-filter-seg" style={{ marginBottom: 14 }}>
+        <button className={tab === 'armies' ? 'is-active' : ''} onClick={() => setTab('armies')}>Armies</button>
+        <button className={tab === 'dashboard' ? 'is-active' : ''} onClick={() => setTab('dashboard')}>Dashboard</button>
+      </div>
+
+      {tab === 'dashboard' ? (
+        <HobbyLogDashboard />
+      ) : (
+        <>
+          {h.systems.map((sys) => {
+            const groups = sys.alliances.map((alliance) => {
+              const facs = h.factions.filter((f) => f.system === sys.id && f.alliance === alliance);
+              if (!facs.length) return null;
+              return (
+                <div key={alliance}>
+                  {!h.flatBrowse && <div className="alliance-label">{alliance}</div>}
+                  <div className="faction-tiles">{facs.map((f) => <FactionTile key={f.id} f={f} count={countByFaction.get(f.id) || 0} unitCount={unitCountByFaction.get(f.id) || 0} art={art[f.id]} />)}</div>
+                </div>
+              );
+            }).filter(Boolean);
+            if (!groups.length) return null;
+            return (
+              <div key={sys.id}>
+                {!h.flatBrowse && <div className="section-label">{sys.label}</div>}
+                {groups}
+              </div>
+            );
+          })}
+          {h.id === 'warhammer' && (
+            <div className="fine-print">
+              Emblems are original artwork drawn for Forgebook, not Games Workshop's own icons.
+              Open any army to swap in your own image.
             </div>
-          );
-        }).filter(Boolean);
-        if (!groups.length) return null;
-        return (
-          <div key={sys.id}>
-            {!h.flatBrowse && <div className="section-label">{sys.label}</div>}
-            {groups}
-          </div>
-        );
-      })}
-      {h.id === 'warhammer' && (
-        <div className="fine-print">
-          Emblems are original artwork drawn for Forgebook, not Games Workshop's own icons.
-          Open any army to swap in your own image.
-        </div>
+          )}
+        </>
       )}
     </div>
   );

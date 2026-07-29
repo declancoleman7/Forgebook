@@ -6,34 +6,20 @@ import RecipePicker from '../components/RecipePicker.jsx';
 import EntryPicker from '../components/EntryPicker.jsx';
 import FactionPicker from '../components/FactionPicker.jsx';
 import Lightbox from '../components/Lightbox.jsx';
-import EmblemSvg from '../components/EmblemSvg.jsx';
 import HobbyStageStack from '../components/HobbyStageStack.jsx';
+import HobbyEntryCard from '../components/HobbyEntryCard.jsx';
+import ProjectCard, { sumStageCounts } from '../components/HobbyProjectCard.jsx';
 import { HOBBIES, faction as findFaction } from '../data/factions.js';
 import { HOBBY_STAGES, stageProgressPercent } from '../data/hobbyStages.js';
-import { MODEL_CATEGORIES, DEFAULT_MODEL_CATEGORY, categoryLabel, categoryWeight } from '../data/modelCategories.js';
+import { MODEL_CATEGORIES, DEFAULT_MODEL_CATEGORY } from '../data/modelCategories.js';
 import { downscaleImage } from '../utils/image.js';
-import { relativeTime } from '../utils/format.js';
-import { useMyHobbyLog, useCreateHobbyLogEntry, useUpdateHobbyLogEntry, useDeleteHobbyLogEntry, useUploadHobbyLogPhoto, useHobbyLogStageEvents, useLogHobbyStageEvents, useMakeHobbyLogEntriesPublic } from '../queries/useHobbyLog.js';
+import { useMyHobbyLog, useCreateHobbyLogEntry, useUpdateHobbyLogEntry, useDeleteHobbyLogEntry, useUploadHobbyLogPhoto, useLogHobbyStageEvents, useMakeHobbyLogEntriesPublic } from '../queries/useHobbyLog.js';
 import { useMyHobbyProjects, useCreateHobbyProject, useUpdateHobbyProject, useDeleteHobbyProject } from '../queries/useHobbyProjects.js';
 import { useMyRecipes } from '../queries/useRecipes.js';
 import { useConfirm } from '../confirm/ConfirmContext.jsx';
 import { useToast } from '../toast/ToastContext.jsx';
 import { useAuth } from '../auth/AuthContext.jsx';
 import { containsBlockedContent } from '../utils/moderation.js';
-
-// A Project's own progress is always derived by summing whichever units are
-// linked to it -- weighted by miniature count, not a per-unit average, so a
-// 40-model unit moves the needle far more than a 1-model one, matching how
-// quantity is the unit of measure everywhere else in the Pile of Potential.
-function sumStageCounts(entries, entryIds) {
-  const linked = entries.filter((e) => entryIds.includes(e.id));
-  const quantity = linked.reduce((sum, e) => sum + (e.quantity || 0), 0);
-  const stageCounts = {};
-  linked.forEach((e) => {
-    HOBBY_STAGES.forEach((s) => { stageCounts[s.id] = (stageCounts[s.id] || 0) + (e.stageCounts?.[s.id] || 0); });
-  });
-  return { quantity, stageCounts };
-}
 
 // Which non-zero stage an entry has made the most progress into -- used to
 // bucket a mixed unit (e.g. half primed, half still unassembled) into one
@@ -47,218 +33,6 @@ function dominantStage(entry) {
     if (n >= bestN) { best = s.id; bestN = n; }
   });
   return best;
-}
-
-function StagePipelineChart({ entries, onStageClick }) {
-  const totalMinis = entries.reduce((sum, e) => sum + (e.quantity || 0), 0);
-  if (!totalMinis) return null;
-  // Weighted by category (a Titan or Vehicle is vastly more work than a
-  // trooper) -- only shown when it actually differs from the raw count, so
-  // an all-Infantry pile isn't cluttered with a redundant second number.
-  const weightedTotal = Math.round(entries.reduce((sum, e) => sum + (e.quantity || 0) * categoryWeight(e.category), 0));
-  const rows = HOBBY_STAGES
-    .map((s) => ({ ...s, n: entries.reduce((sum, e) => sum + (e.stageCounts?.[s.id] || 0), 0) }))
-    .filter((s) => s.n > 0);
-
-  return (
-    <div className="hoblog-pipeline">
-      {weightedTotal !== totalMinis && (
-        <div className="label-hint" style={{ marginBottom: 10 }}>{totalMinis} miniatures · ~{weightedTotal} weighted by category</div>
-      )}
-      {rows.map((s) => {
-        const pct = Math.round((s.n / totalMinis) * 100);
-        return (
-          <div key={s.id} className={`hoblog-pipeline__row ${onStageClick ? 'is-clickable' : ''}`} onClick={onStageClick ? () => onStageClick(s.id) : undefined}>
-            <span className="hoblog-pipeline__label">{s.label}</span>
-            <div className="hoblog-pipeline__track"><div className="hoblog-pipeline__fill" style={{ width: `${pct}%`, background: s.color }} /></div>
-            <span className="hoblog-pipeline__pct">{pct}%</span>
-          </div>
-        );
-      })}
-      <div className="hoblog-timeline__legend" style={{ marginTop: 12 }}>
-        {rows.map((s) => <span key={s.id} className="hoblog-timeline__legend-item"><i style={{ background: s.color }} />{s.label}</span>)}
-      </div>
-    </div>
-  );
-}
-
-// "This month you painted 20" / "built 40" -- net progress THIS calendar
-// month, per stage, straight from the real transition log. A stage only
-// shows up once it has actually moved this month; reaching Primed stays
-// true forever once logged (see schema.sql's hobby_log_stage_events
-// comment), so this never has to "undo" an earlier month's number just
-// because those same models have since moved further along.
-function ThisMonthStats({ stageEvents, onStageClick }) {
-  const now = new Date();
-  const monthKey = `${now.getFullYear()}-${now.getMonth()}`;
-  const totals = {};
-  stageEvents.forEach((ev) => {
-    if (!ev.occurredAt) return;
-    const d = new Date(ev.occurredAt);
-    if (`${d.getFullYear()}-${d.getMonth()}` !== monthKey) return;
-    totals[ev.stageId] = (totals[ev.stageId] || 0) + ev.delta;
-  });
-  const rows = HOBBY_STAGES.filter((s) => totals[s.id]);
-  if (!rows.length) return null;
-
-  return (
-    <div className="hoblog-month-tiles">
-      {rows.map((s) => (
-        <div key={s.id} className={`hoblog-month-tile ${onStageClick ? 'is-clickable' : ''}`} style={{ '--tile-color': s.color }} onClick={onStageClick ? () => onStageClick(s.id) : undefined}>
-          <div className="hoblog-month-tile__label">{s.label}</div>
-          <div className="hoblog-month-tile__value">{totals[s.id] > 0 ? '+' : ''}{totals[s.id]}</div>
-        </div>
-      ))}
-    </div>
-  );
-}
-
-// A simple horizontal bar list, shared shape for "models by army" and
-// "models by category" -- both are just "total quantity grouped by one
-// field, sorted biggest first," differing only in what groups them and
-// what colour/label each group gets. onRowClick is optional and per-row --
-// a row can opt out (clickable: false) when there's nowhere sensible to
-// send it, e.g. "No army set" has no faction to scope a list to.
-function BarBreakdown({ rows, onRowClick }) {
-  if (!rows.length) return null;
-  const max = Math.max(1, ...rows.map((r) => r.n));
-  return (
-    <div className="hoblog-bars">
-      {rows.map((r) => {
-        const clickable = !!onRowClick && r.clickable !== false;
-        return (
-          <div key={r.key} className={`hoblog-bars__row ${clickable ? 'is-clickable' : ''}`} onClick={clickable ? () => onRowClick(r) : undefined}>
-            <div className="hoblog-bars__top">
-              <span className="hoblog-bars__label"><i style={{ background: r.color }} />{r.label}</span>
-              <span className="hoblog-bars__n">{r.n}</span>
-            </div>
-            <div className="hoblog-bars__track"><div className="hoblog-bars__fill" style={{ width: `${(r.n / max) * 100}%`, background: r.color }} /></div>
-          </div>
-        );
-      })}
-    </div>
-  );
-}
-
-function ModelsByArmyChart({ entries, onArmyClick }) {
-  const totals = new Map();
-  entries.forEach((e) => {
-    const key = e.factionId || '__none__';
-    if (!totals.has(key)) totals.set(key, { n: 0, hobbyId: e.hobbyId });
-    totals.get(key).n += (e.quantity || 0);
-  });
-  const rows = [...totals.entries()]
-    .map(([key, v]) => {
-      const f = key !== '__none__' ? findFaction(key) : null;
-      return {
-        key, n: v.n, label: f ? f.label : 'No army set', color: f?.color || 'var(--ink-dim)',
-        clickable: !!f, hobby: v.hobbyId, system: f?.system, faction: key,
-      };
-    })
-    .sort((a, b) => b.n - a.n);
-  return <BarBreakdown rows={rows} onRowClick={onArmyClick ? (r) => onArmyClick({ hobby: r.hobby, system: r.system, faction: r.faction }) : undefined} />;
-}
-
-function ModelsByCategoryChart({ entries, onCategoryClick }) {
-  const totals = new Map();
-  entries.forEach((e) => {
-    const key = e.category || DEFAULT_MODEL_CATEGORY;
-    totals.set(key, (totals.get(key) || 0) + (e.quantity || 0));
-  });
-  const rows = MODEL_CATEGORIES
-    .filter((c) => totals.get(c.id))
-    .map((c) => ({ key: c.id, n: totals.get(c.id), label: c.label, color: c.color }))
-    .sort((a, b) => b.n - a.n);
-  return <BarBreakdown rows={rows} onRowClick={onCategoryClick ? (r) => onCategoryClick(r.key) : undefined} />;
-}
-
-// A stacked column per month -- each segment is one stage's net "reached
-// this stage or beyond" delta that month (see HobbyLog's save() for why
-// that's the right quantity, not the raw stage_counts bucket). Segment
-// height within a column is proportional via flex-grow, not an absolute
-// size, so this stays readable whether one month had 3 models move or 300.
-function PipelineTimelineChart({ stageEvents, onStageClick }) {
-  const months = [];
-  const today = new Date();
-  for (let i = 5; i >= 0; i--) {
-    const d = new Date(today.getFullYear(), today.getMonth() - i, 1);
-    months.push({ key: `${d.getFullYear()}-${d.getMonth()}`, label: d.toLocaleDateString(undefined, { month: 'short' }) });
-  }
-  const perMonth = months.map(({ key }) => {
-    const totals = {};
-    stageEvents.forEach((ev) => {
-      if (!ev.occurredAt) return;
-      const d = new Date(ev.occurredAt);
-      if (`${d.getFullYear()}-${d.getMonth()}` !== key) return;
-      totals[ev.stageId] = (totals[ev.stageId] || 0) + ev.delta;
-    });
-    return totals;
-  });
-  const monthTotals = perMonth.map((t) => HOBBY_STAGES.reduce((sum, s) => sum + Math.max(0, t[s.id] || 0), 0));
-  const max = Math.max(1, ...monthTotals);
-  if (!monthTotals.some((n) => n > 0)) return null;
-
-  return (
-    <div className="hoblog-trend">
-      <div className="hoblog-trend__bars">
-        <div className="hoblog-trend__grid"><i /><i /><i /><i /></div>
-        {months.map((m, i) => {
-          const totals = perMonth[i];
-          const segments = HOBBY_STAGES.filter((s) => (totals[s.id] || 0) > 0);
-          return (
-            <div key={m.key} className="hoblog-trend__col">
-              <span className="hoblog-trend__count">{monthTotals[i] || ''}</span>
-              <div className="hoblog-trend__track">
-                <div className="hoblog-timeline__stack" style={{ height: `${Math.max(4, (monthTotals[i] / max) * 100)}%` }}>
-                  {segments.map((s) => (
-                    <div key={s.id} className={onStageClick ? 'is-clickable' : ''} title={`${s.label}: ${totals[s.id]}`}
-                      style={{ flex: totals[s.id], background: s.color }}
-                      onClick={onStageClick ? (e) => { e.stopPropagation(); onStageClick(s.id); } : undefined} />
-                  ))}
-                </div>
-              </div>
-              <span className="hoblog-trend__label">{m.label}</span>
-            </div>
-          );
-        })}
-      </div>
-      <div className="hoblog-timeline__legend">
-        {HOBBY_STAGES.map((s) => (
-          <span key={s.id} className="hoblog-timeline__legend-item"><i style={{ background: s.color }} />{s.label}</span>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function EntryCard({ entry, onEdit }) {
-  const f = entry.factionId ? findFaction(entry.factionId) : null;
-  const [lightboxOpen, setLightboxOpen] = useState(false);
-  const openLightbox = (e) => { e.stopPropagation(); setLightboxOpen(true); };
-  return (
-    <div className="hobbylog-card" onClick={() => onEdit(entry.id)}>
-      <div className={`hobbylog-card__photo ${entry.photo ? 'has-photo' : ''}`} style={entry.photo ? { backgroundImage: `url('${entry.photo}')`, cursor: 'pointer' } : undefined}
-        onClick={entry.photo ? openLightbox : undefined}>
-        {!entry.photo && <Icon name="paintdrop" size={22} />}
-      </div>
-      {lightboxOpen && entry.photo && (
-        <div onClick={(e) => e.stopPropagation()}>
-          <Lightbox url={entry.photo} onClose={() => setLightboxOpen(false)} />
-        </div>
-      )}
-      <div className="hobbylog-card__body">
-        <div className="hobbylog-card__title">{entry.title} <span className="hobbylog-card__qty">×{entry.quantity}</span></div>
-        <HobbyStageStack stageCounts={entry.stageCounts} quantity={entry.quantity} />
-        <div className="hobbylog-card__meta">
-          {f && <span className="hobbylog-card__tag" style={{ color: f.color }}>{f.label}</span>}
-          {entry.category && entry.category !== DEFAULT_MODEL_CATEGORY && <span className="hobbylog-card__tag">{categoryLabel(entry.category)}</span>}
-          {entry.completedAt && <span className="hobbylog-card__public">Finished {relativeTime(entry.completedAt)}</span>}
-          {entry.isPublic && <span className="hobbylog-card__public" title="Visible on your public profile"><Icon name="user" size={11} /> Public</span>}
-          {entry.recipeLinks.length > 0 && <span className="hobbylog-card__recipes">{entry.recipeLinks.length} recipe{entry.recipeLinks.length === 1 ? '' : 's'}</span>}
-        </div>
-      </div>
-    </div>
-  );
 }
 
 // A recipe linked to this unit -- a proper row (its own photo, faction,
@@ -649,24 +423,6 @@ function EntryForm({ existing, myRecipes, prefill, onClose }) {
   );
 }
 
-function ProjectCard({ project, entries, onEdit }) {
-  const { quantity, stageCounts } = sumStageCounts(entries, project.entryIds);
-  const pct = stageProgressPercent(stageCounts, quantity);
-  return (
-    <div className="hobbylog-card" onClick={() => onEdit(project.id)}>
-      <div className="hobbylog-card__photo"><Icon name="clipboard-check" size={22} /></div>
-      <div className="hobbylog-card__body">
-        <div className="hobbylog-card__title">{project.title} <span className="hobbylog-card__pct">{pct}%</span></div>
-        <HobbyStageStack stageCounts={stageCounts} quantity={quantity} />
-        <div className="hobbylog-card__meta">
-          <span>{project.entryIds.length} unit{project.entryIds.length === 1 ? '' : 's'}</span>
-          {project.isPublic && <span className="hobbylog-card__public" title="Visible on your public profile"><Icon name="user" size={11} /> Public</span>}
-        </div>
-      </div>
-    </div>
-  );
-}
-
 // One linked unit within a Project's edit form -- a proper vertical row
 // (title, its own stage stack + %, faction tag) rather than the old
 // horizontal faction-chip strip, which squeezed everything down to a name
@@ -809,57 +565,14 @@ function ProjectForm({ existing, entries, onClose, onOpenEntry }) {
   );
 }
 
-function DashTile({ color, count, label, icon, onClick }) {
-  return (
-    <div className="faction-tile" style={{ '--faction-color': color }} title={label} onClick={onClick}>
-      <div className="faction-tile__rivet tl" /><div className="faction-tile__rivet tr" /><div className="faction-tile__rivet bl" /><div className="faction-tile__rivet br" />
-      <div className="faction-tile__count">{count}</div>
-      <div className="faction-tile__art">
-        <span className="emblem-badge emblem-badge--lg">{icon}</span>
-      </div>
-      <div className="faction-tile__label">{label}</div>
-    </div>
-  );
-}
-
-// Same order as the tab row itself -- a left swipe moves forward through
-// this list, a right swipe moves back, clamped at either end (no wraparound,
-// so swiping past Timeline doesn't loop back to Overview unexpectedly).
-const DASH_VIEWS = ['overview', 'army', 'category', 'timeline'];
-
 export default function HobbyLog() {
   const navigate = useNavigate();
   const { data: entries = [], isLoading } = useMyHobbyLog();
   const { data: projects = [] } = useMyHobbyProjects();
   const { data: myRecipes = [] } = useMyRecipes();
-  const { data: stageEvents = [] } = useHobbyLogStageEvents();
   const makeAllPublic = useMakeHobbyLogEntriesPublic();
   const confirm = useConfirm();
   const showToast = useToast();
-  // Which dashboard metric view is showing -- kept separate from the browse
-  // state below (hobby/system/faction drill-down), since it's scoped to the
-  // Level 0 dashboard only.
-  const [dashView, setDashView] = useState('overview'); // overview | army | category | timeline
-  // Swipe left/right across the chart area to move between dashViews, same
-  // effect as tapping the tab row -- a ref (not state) since a touch start
-  // position never needs to trigger a render, only be read back on touchend.
-  const dashTouchStartRef = useRef(null);
-  const onDashTouchStart = (e) => {
-    dashTouchStartRef.current = { x: e.touches[0].clientX, y: e.touches[0].clientY };
-  };
-  const onDashTouchEnd = (e) => {
-    const start = dashTouchStartRef.current;
-    dashTouchStartRef.current = null;
-    if (!start) return;
-    const dx = e.changedTouches[0].clientX - start.x;
-    const dy = e.changedTouches[0].clientY - start.y;
-    // Mostly-vertical or too-short a drag is a scroll, not a swipe -- leave
-    // it alone rather than hijacking the page's own scroll gesture.
-    if (Math.abs(dx) < 40 || Math.abs(dx) < Math.abs(dy) * 1.5) return;
-    const idx = DASH_VIEWS.indexOf(dashView);
-    const nextIdx = dx < 0 ? Math.min(idx + 1, DASH_VIEWS.length - 1) : Math.max(idx - 1, 0);
-    setDashView(DASH_VIEWS[nextIdx]);
-  };
 
   // Every drill-down/edit level below lives in the URL's own query string,
   // not local state -- this whole page is a single route, so plain useState
@@ -874,19 +587,15 @@ export default function HobbyLog() {
   const editingId = searchParams.get('entry'); // null | 'new' | entry id
   const editingProjectId = searchParams.get('project'); // null | 'new' | project id
   const viewAllProjects = searchParams.get('projects') === 'all';
-  // null = hobby-picker dashboard; 'all' = flat list of everything (the
-  // escape hatch, same view this page used to open straight to);
-  // otherwise a hobby id, drilling into that hobby's systems/factions below.
+  // null = hobby-picker dashboard; 'all' = flat list of everything; otherwise
+  // a hobby id, scoping the list below to just that hobby.
   const browseHobbyId = searchParams.get('hobby');
-  // Only meaningful for a hobby with more than one system (Warhammer: 40k/
-  // AoS/Horus Heresy/etc, per data/factions.js's HOBBIES[].systems, the
-  // same grouping Collection.jsx's own browse grid already uses) -- null
-  // means "still picking a system," '__general__' means entries logged
-  // against this hobby with no faction at all (can't belong to a system
-  // without one), otherwise a system id.
-  const browseSystemId = searchParams.get('system');
-  // null = faction grid; '__general__' = this hobby's entries with no
-  // faction set; otherwise a faction id, scoping the list to just that one.
+  // null = every unit in the chosen hobby; '__general__' = that hobby's
+  // entries with no faction set; otherwise a faction id, scoping the list to
+  // just that one -- set directly by a FactionDetail "+ New unit"/entry
+  // link or a dashboard chart click-through, not picked via an in-page
+  // system/faction picker (Collection's own browse grid is that picker now,
+  // see the Collections/Pile of Potential merge).
   const browseFactionId = searchParams.get('faction');
   // Level 2's own filters -- also URL params (not useState) so a dashboard
   // chart can deep-link straight to a filtered list (click "Painted" in the
@@ -965,63 +674,11 @@ export default function HobbyLog() {
           <button className="icon-btn" onClick={() => pushParams({ entry: 'new' })}><Icon name="plus" size={18} /></button>
         </div>
         <div className="detail-sub" style={{ marginBottom: 14 }}>
-          Track every unit you're building and painting, miniature by miniature. Pick a hobby to see the armies or categories you've logged something for.
+          Track every unit you're building and painting, miniature by miniature, separate from the step-by-step recipes
+          themselves. The pipeline charts and Projects now live under Collection's own Dashboard tab, alongside your armies.
         </div>
-        {entries.length > 0 && (
-          <>
-            <div className="lib-filter-seg" style={{ marginBottom: 10 }}>
-              <button className={dashView === 'overview' ? 'is-active' : ''} onClick={() => setDashView('overview')}>Overview</button>
-              <button className={dashView === 'army' ? 'is-active' : ''} onClick={() => setDashView('army')}>By Army</button>
-              <button className={dashView === 'category' ? 'is-active' : ''} onClick={() => setDashView('category')}>By Category</button>
-              <button className={dashView === 'timeline' ? 'is-active' : ''} onClick={() => setDashView('timeline')}>Timeline</button>
-            </div>
-            <div onTouchStart={onDashTouchStart} onTouchEnd={onDashTouchEnd}>
-              {dashView === 'overview' && (
-                <>
-                  <div className="section-label">Your pipeline</div>
-                  <StagePipelineChart entries={entries} onStageClick={(id) => pushParams({ hobby: 'all', stage: id })} />
-                  <ThisMonthStats stageEvents={stageEvents} onStageClick={(id) => pushParams({ hobby: 'all', stage: id })} />
-                </>
-              )}
-              {dashView === 'army' && (
-                <>
-                  <div className="section-label">Models by army</div>
-                  <ModelsByArmyChart entries={entries} onArmyClick={(target) => pushParams(target)} />
-                </>
-              )}
-              {dashView === 'category' && (
-                <>
-                  <div className="section-label">Models by category</div>
-                  <ModelsByCategoryChart entries={entries} onCategoryClick={(id) => pushParams({ hobby: 'all', cat: id })} />
-                </>
-              )}
-              {dashView === 'timeline' && (
-                <>
-                  <div className="section-label">Pipeline over time</div>
-                  <div className="detail-sub" style={{ margin: '2px 2px 12px' }}>How many models reached each stage, month by month.</div>
-                  <PipelineTimelineChart stageEvents={stageEvents} onStageClick={(id) => pushParams({ hobby: 'all', stage: id })} />
-                </>
-              )}
-            </div>
-          </>
-        )}
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          <div className="section-label" style={{ flex: 1 }}>Projects</div>
-          {projects.length > 4 && (
-            <button type="button" className="section-see-all" onClick={() => pushParams({ projects: 'all' })}>See all ({projects.length})</button>
-          )}
-        </div>
-        {projects.length > 0 && (
-          <div className="hobbylog-list" style={{ marginBottom: 10 }}>
-            {projects.slice(0, 4).map((project) => <ProjectCard key={project.id} project={project} entries={entries} onEdit={(id) => pushParams({ project: id })} />)}
-          </div>
-        )}
-        <button type="button" className="btn btn-ghost btn-block" onClick={() => pushParams({ project: 'new' })}>
-          <Icon name="plus" size={14} /> New project
-        </button>
-
-        <div className="settings-group" style={{ marginTop: 20 }}>
+        <div className="settings-group">
           {HOBBIES.map((h) => {
             const n = hobbyCounts.get(h.id) || 0;
             return (
@@ -1053,89 +710,31 @@ export default function HobbyLog() {
 
   const isFlatAll = browseHobbyId === 'all';
   const hobby = HOBBIES.find((h) => h.id === browseHobbyId);
-  const hasSystemLevel = !isFlatAll && hobby?.systems?.length > 1;
-
-  // --- Level 0.5: pick a system within the hobby (multi-system hobbies only) ---
-  if (!isFlatAll && hasSystemLevel && !browseSystemId) {
-    const hobbyEntries = entries.filter((e) => e.hobbyId === browseHobbyId);
-    const systemCounts = new Map();
-    let generalCount = 0;
-    hobbyEntries.forEach((e) => {
-      const fac = e.factionId ? findFaction(e.factionId) : null;
-      if (fac) systemCounts.set(fac.system, (systemCounts.get(fac.system) || 0) + 1);
-      else generalCount++;
-    });
-    const ownedSystems = hobby.systems.filter((sys) => systemCounts.get(sys.id));
-
-    return (
-      <div className="page-enter">
-        <div className="detail-header">
-          <button className="icon-btn" onClick={goBack}><Icon name="back" size={18} /></button>
-          <div className="page-title" style={{ margin: 0 }}>{hobby.label}</div>
-          <button className="icon-btn" onClick={() => pushParams({ entry: 'new' })}><Icon name="plus" size={18} /></button>
-        </div>
-        {ownedSystems.length || generalCount ? (
-          <div className="faction-tiles">
-            {ownedSystems.map((sys) => (
-              <DashTile key={sys.id} color="var(--gold)" count={systemCounts.get(sys.id)} label={sys.label} icon={<Icon name="shield" size={26} />} onClick={() => pushParams({ system: sys.id })} />
-            ))}
-            {generalCount > 0 && (
-              <DashTile color="var(--ink-dim)" count={generalCount} label="General" icon={<Icon name="paintdrop" size={22} />} onClick={() => pushParams({ system: '__general__', faction: '__general__' })} />
-            )}
-          </div>
-        ) : (
-          <EmptyState icon="paintdrop" title="Nothing logged yet" sub="Tap + to log your first unit." />
-        )}
-      </div>
-    );
-  }
-
-  // --- Level 1: pick a faction/category within the chosen hobby+system --
-  if (!isFlatAll && !browseFactionId) {
-    const hobbyEntries = entries.filter((e) => e.hobbyId === browseHobbyId);
-    const factionCounts = new Map();
-    let generalCount = 0;
-    hobbyEntries.forEach((e) => { if (e.factionId) factionCounts.set(e.factionId, (factionCounts.get(e.factionId) || 0) + 1); else generalCount++; });
-    const scopedFactionIds = hasSystemLevel
-      ? [...factionCounts.keys()].filter((id) => findFaction(id)?.system === browseSystemId)
-      : [...factionCounts.keys()];
-    const ownedFactions = scopedFactionIds.map((id) => findFaction(id)).filter(Boolean);
-    const titleLabel = hasSystemLevel ? hobby.systems.find((s) => s.id === browseSystemId)?.label : hobby?.label;
-
-    return (
-      <div className="page-enter">
-        <div className="detail-header">
-          <button className="icon-btn" onClick={goBack}><Icon name="back" size={18} /></button>
-          <div className="page-title" style={{ margin: 0 }}>{titleLabel || 'Browse'}</div>
-          <button className="icon-btn" onClick={() => pushParams({ entry: 'new' })}><Icon name="plus" size={18} /></button>
-        </div>
-        {ownedFactions.length || (!hasSystemLevel && generalCount) ? (
-          <div className="faction-tiles">
-            {ownedFactions.map((f) => (
-              <DashTile key={f.id} color={f.color} count={factionCounts.get(f.id)} label={f.label} icon={<EmblemSvg emblemKey={f.emblem} size={30} />} onClick={() => pushParams({ faction: f.id })} />
-            ))}
-            {!hasSystemLevel && generalCount > 0 && (
-              <DashTile color="var(--ink-dim)" count={generalCount} label="General" icon={<Icon name="paintdrop" size={22} />} onClick={() => pushParams({ faction: '__general__' })} />
-            )}
-          </div>
-        ) : (
-          <EmptyState icon="paintdrop" title="Nothing logged yet" sub={`Tap + to log your first ${(hobby?.groupLabel || 'unit').toLowerCase()}.`} />
-        )}
-      </div>
-    );
-  }
 
   // --- Level 2: the entry list, scoped to whatever was picked above -----
-  const scopedEntries = isFlatAll ? entries : entries.filter((e) => (
-    browseFactionId === '__general__' ? e.hobbyId === browseHobbyId && !e.factionId : e.hobbyId === browseHobbyId && e.factionId === browseFactionId
-  ));
+  // Picking a hobby (or a chart click-through/deep link that also names a
+  // faction) used to funnel through a system picker then a faction picker
+  // before landing here -- those are gone now that a faction's own page
+  // (FactionDetail, via the Collections/Pile of Potential merge) is the
+  // real way to browse into one army's units. A bare hobby pick (no faction
+  // param at all) now falls straight through to every unit in that hobby,
+  // same breadth "browse everything at once" already had for ALL hobbies.
+  const scopedEntries = isFlatAll ? entries : entries.filter((e) => {
+    if (e.hobbyId !== browseHobbyId) return false;
+    if (browseFactionId === '__general__') return !e.factionId;
+    if (browseFactionId) return e.factionId === browseFactionId;
+    return true;
+  });
   const stageScoped = stageFilter === 'all' ? scopedEntries : scopedEntries.filter((e) => dominantStage(e) === stageFilter);
   // Category has no visible tab row of its own (stage already owns that
   // row) -- it only ever arrives as a landing state from the "By Category"
   // dashboard chart, shown as a clearable pill next to the title instead.
   const filtered = catFilter === 'all' ? stageScoped : stageScoped.filter((e) => (e.category || DEFAULT_MODEL_CATEGORY) === catFilter);
   const countFor = (s) => scopedEntries.filter((e) => dominantStage(e) === s).length;
-  const titleLabel = isFlatAll ? 'All units' : browseFactionId === '__general__' ? 'General' : (findFaction(browseFactionId)?.label || 'Entries');
+  const titleLabel = isFlatAll ? 'All units'
+    : browseFactionId === '__general__' ? 'General'
+    : browseFactionId ? (findFaction(browseFactionId)?.label || 'Entries')
+    : (hobby?.label || 'Entries');
   const activeCategory = catFilter !== 'all' ? MODEL_CATEGORIES.find((c) => c.id === catFilter) : null;
   const privateIds = filtered.filter((e) => !e.isPublic).map((e) => e.id);
 
@@ -1197,7 +796,7 @@ export default function HobbyLog() {
         <EmptyState icon="paintdrop" title="Nothing here yet" sub="Tap + to log a unit you're working on." />
       ) : (
         <div className="hobbylog-list">
-          {filtered.map((entry) => <EntryCard key={entry.id} entry={entry} onEdit={(id) => pushParams({ entry: id })} />)}
+          {filtered.map((entry) => <HobbyEntryCard key={entry.id} entry={entry} onEdit={(id) => pushParams({ entry: id })} />)}
         </div>
       )}
     </div>
