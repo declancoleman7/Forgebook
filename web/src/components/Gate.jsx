@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import Icon from '../icons.jsx';
 import { useAuth } from '../auth/AuthContext.jsx';
 import { useToast } from '../toast/ToastContext.jsx';
@@ -35,6 +36,7 @@ function AvailabilityHint({ hint }) {
 export function AuthForm() {
   const { signIn, signUp, requestPasswordReset } = useAuth();
   const showToast = useToast();
+  const navigate = useNavigate();
   const [mode, setMode] = useState('signin'); // 'signin' | 'signup'
   const [signupSent, setSignupSent] = useState(null); // email string, or null
   const [email, setEmail] = useState('');
@@ -118,6 +120,11 @@ export function AuthForm() {
         <div className="settings-row__desc" style={{ marginTop: 10 }}>
           You'll get an email with a confirmation link — you can't sign in until you click it.
         </div>
+        <div className="label-hint" style={{ marginTop: 8 }}>
+          By creating an account you agree to Forgebook's{' '}
+          <span style={{ textDecoration: 'underline', cursor: 'pointer' }} onClick={() => navigate('/terms')}>Terms of Service</span> and{' '}
+          <span style={{ textDecoration: 'underline', cursor: 'pointer' }} onClick={() => navigate('/privacy')}>Privacy Policy</span>.
+        </div>
         <button type="button" className="btn btn-ghost btn-sm" style={{ marginTop: 8 }} onClick={() => setMode('signin')}>
           Already have an account? Sign in
         </button>
@@ -146,6 +153,7 @@ export function AuthForm() {
 }
 
 export default function Gate() {
+  const navigate = useNavigate();
   return (
     <div className="gate">
       <div className="gate__card">
@@ -153,6 +161,13 @@ export default function Gate() {
         <div className="gate__tagline">Your paint recipes, wherever you paint.</div>
         <div className="gate__field" style={{ marginTop: 20, textAlign: 'left' }}>
           <AuthForm />
+        </div>
+        <div className="fine-print" style={{ marginTop: 18, textAlign: 'center' }}>
+          <span style={{ textDecoration: 'underline', cursor: 'pointer' }} onClick={() => navigate('/about')}>About</span>
+          {' · '}
+          <span style={{ textDecoration: 'underline', cursor: 'pointer' }} onClick={() => navigate('/terms')}>Terms</span>
+          {' · '}
+          <span style={{ textDecoration: 'underline', cursor: 'pointer' }} onClick={() => navigate('/privacy')}>Privacy</span>
         </div>
       </div>
     </div>

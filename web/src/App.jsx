@@ -29,6 +29,9 @@ import PublicProfile from './pages/PublicProfile.jsx';
 import SimilarColours from './pages/SimilarColours.jsx';
 import HobbyLog from './pages/HobbyLog.jsx';
 import Admin from './pages/Admin.jsx';
+import About from './pages/About.jsx';
+import Terms from './pages/Terms.jsx';
+import Privacy from './pages/Privacy.jsx';
 
 // Same "what should be on screen right now" decision as the old app's
 // decideBootState(), just expressed as JSX branches instead of imperative
@@ -101,6 +104,12 @@ export default function App() {
           <ReportProvider>
             <Routes>
               <Route path="/r/:authorId/:id" element={<PublicRecipe />} />
+              {/* Reachable signed-in or signed-out (see Settings.jsx/Gate.jsx) --
+                  legal pages shouldn't require an account to read, same
+                  reasoning as the public recipe share link above. */}
+              <Route path="/about" element={<About />} />
+              <Route path="/terms" element={<Terms />} />
+              <Route path="/privacy" element={<Privacy />} />
               <Route path="*" element={<Boot />} />
             </Routes>
           </ReportProvider>

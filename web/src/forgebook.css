@@ -3380,6 +3380,65 @@ main {
   text-align: left;
 }
 
+/* About/Terms/Privacy -- same shell-less .gate/.gate__card treatment,
+   widened and left-aligned like public-recipe above (this is prose, not a
+   form). Reachable signed-in or signed-out (see App.jsx), so it's aligned
+   to the page top rather than vertically centred like the sign-in gate --
+   real legal text is longer than one screen. */
+.legal-page {
+  align-items: flex-start;
+  padding-top: 40px;
+  padding-bottom: 60px;
+}
+.legal-page__card {
+  max-width: 640px;
+  text-align: left;
+}
+.legal-page__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 18px;
+}
+.legal-page__title {
+  font-family: var(--font-display);
+  font-size: 22px;
+  font-weight: 600;
+  margin: 0 0 4px;
+}
+.legal-page__body {
+  font-size: 14px;
+  line-height: 1.65;
+  color: var(--parchment-dim);
+}
+.legal-page__body .section-label {
+  margin-top: 26px;
+}
+.legal-page__body .section-label:first-child {
+  margin-top: 0;
+}
+.legal-page__body p {
+  margin: 0 0 12px;
+}
+.legal-page__body ul {
+  margin: 0 0 12px;
+  padding-left: 20px;
+}
+.legal-page__body li {
+  margin-bottom: 6px;
+}
+.legal-page__body a,
+.legal-page__body .legal-page__link {
+  color: var(--gold-bright);
+  text-decoration: underline;
+  cursor: pointer;
+}
+.legal-page__updated {
+  font-size: 11px;
+  color: var(--ink-dim);
+  margin-bottom: 20px;
+}
+
 .public-recipe__banner {
   display: flex;
   align-items: center;

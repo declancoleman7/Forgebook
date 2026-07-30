@@ -207,14 +207,27 @@ export default function Settings() {
         </>
       )}
 
+      <div className="section-label">About</div>
+      <div className="settings-group">
+        <div className="settings-row" style={{ cursor: 'pointer' }} onClick={() => navigate('/about')}>
+          <div className="settings-row__label">About Forgebook</div>
+          <Icon name="chevron" size={18} />
+        </div>
+        <div className="settings-row" style={{ cursor: 'pointer' }} onClick={() => navigate('/terms')}>
+          <div className="settings-row__label">Terms of Service</div>
+          <Icon name="chevron" size={18} />
+        </div>
+        <div className="settings-row" style={{ cursor: 'pointer' }} onClick={() => navigate('/privacy')}>
+          <div className="settings-row__label">Privacy Policy</div>
+          <Icon name="chevron" size={18} />
+        </div>
+      </div>
+
       <div className="fine-print">
-        Faction names are used to organise your own recipes. Forgebook is an unofficial hobby
-        tool, not affiliated with or endorsed by Games Workshop. All emblems shipped with the
-        app are original artwork. If you sign in, your email address and an encrypted password
-        are stored with our database provider (Supabase) so your recipes can sync across
-        devices — this is a small, self-run hobby project, not a professional security service,
-        so please use a password you don't rely on elsewhere. An account is required to use
-        Forgebook.
+        Forgebook is an unofficial hobby tool, not affiliated with or endorsed by Games Workshop
+        or Wizards of the Coast — see About for the full notice. This is a small, self-run
+        project, not a professional security service, so please use a password you don't rely on
+        elsewhere.
       </div>
 
       {avatarPending && (
