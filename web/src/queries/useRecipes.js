@@ -17,6 +17,11 @@ function toRemoteRecipe(r, userId) {
     hobby_id: r.hobbyId || 'warhammer', difficulty: r.difficulty, photo_path: r.photoPath || null,
     photo_focal_x: r.photoFocalX ?? 0.5, photo_focal_y: r.photoFocalY ?? 0.5,
     steps: r.steps || [], notes: r.notes || '', published: !!r.published,
+    // Set once at "Copy to new recipe" time (RecipeDetail.jsx) and carried
+    // through unchanged on every later edit -- see schema.sql's own
+    // comment on why this is a name snapshot, not a live join.
+    copied_from_owner_id: r.copiedFromOwnerId || null, copied_from_recipe_id: r.copiedFromRecipeId || null,
+    copied_from_name: r.copiedFromName || null,
     updated_at: new Date().toISOString(), deleted: false,
   };
 }
@@ -27,6 +32,8 @@ export function fromRemoteRecipe(row) {
     photo: photoUrl(row.photo_path), photoFocalX: row.photo_focal_x ?? 0.5, photoFocalY: row.photo_focal_y ?? 0.5,
     steps: row.steps || [], notes: row.notes || '',
     published: !!row.published, updatedAt: row.updated_at,
+    copiedFromOwnerId: row.copied_from_owner_id || null, copiedFromRecipeId: row.copied_from_recipe_id || null,
+    copiedFromName: row.copied_from_name || null,
   };
 }
 

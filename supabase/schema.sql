@@ -51,6 +51,22 @@ alter table public.recipes add constraint recipes_photo_focal_x_check check (pho
 alter table public.recipes drop constraint if exists recipes_photo_focal_y_check;
 alter table public.recipes add constraint recipes_photo_focal_y_check check (photo_focal_y between 0 and 1);
 
+-- "Copy to new recipe" (RecipeDetail.jsx) provenance -- set once at copy
+-- time, never recomputed, so a copy still shows where it came from even
+-- after the original is edited, unpublished or deleted. copied_from_name is
+-- a snapshot (not a live join) for exactly that reason: the composite FK
+-- below only guarantees the LINK stays valid or clears itself, not that the
+-- original still has the same name, still exists, or is still visible to
+-- anyone else. NULL on either id column (the common case -- most recipes
+-- are never copies of anything) means Postgres skips the FK check entirely
+-- for that row, so this is a no-op for existing rows.
+alter table public.recipes add column if not exists copied_from_owner_id uuid;
+alter table public.recipes add column if not exists copied_from_recipe_id text;
+alter table public.recipes add column if not exists copied_from_name text;
+alter table public.recipes drop constraint if exists recipes_copied_from_fkey;
+alter table public.recipes add constraint recipes_copied_from_fkey
+  foreign key (copied_from_owner_id, copied_from_recipe_id) references public.recipes (user_id, id) on delete set null;
+
 -- ------------------------------------------------------------
 -- Paint rack
 -- ------------------------------------------------------------

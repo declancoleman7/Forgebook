@@ -201,6 +201,13 @@ function RecipeFormInner({ existing, myRecipes }) {
       hobbyId: recipe.hobbyId || 'warhammer', difficulty: recipe.difficulty, photoPath,
       photoFocalX: recipe.photoFocalX ?? 0.5, photoFocalY: recipe.photoFocalY ?? 0.5,
       steps, notes: recipe.notes, published: !!recipe.published, updatedAt: new Date().toISOString(),
+      // Set once, at "Copy to new recipe" time (see RecipeDetail.jsx) --
+      // carried through on every later edit rather than recomputed, so a
+      // copy's provenance survives even if the original is later deleted
+      // or unpublished (copiedFromName is a snapshot, not a live lookup).
+      copiedFromOwnerId: recipe.copiedFromOwnerId || null,
+      copiedFromRecipeId: recipe.copiedFromRecipeId || null,
+      copiedFromName: recipe.copiedFromName || null,
     };
 
     showToast('Saving…');

@@ -115,6 +115,17 @@ export default function RecipeDetail() {
   // HobbyLog.jsx's EntryForm), so this reverse lookup only ever has
   // anything to show on a recipe you own yourself, never a shared one.
   const { data: myHobbyLog = [] } = useMyHobbyLog();
+  // Resolves the "Copy to new recipe" provenance link (see doCopy below) --
+  // undefined authorId means "look in my own recipes", same convention this
+  // component's own r = useFindRecipe(id, authorId) already uses. Called
+  // unconditionally (before the !r early return below) since it's a hook;
+  // r?. keeps it safe while the real recipe is still loading. Not found
+  // (the original was deleted, or a shared one got unpublished since) just
+  // means no link to show -- copiedFromName still shows the attribution
+  // text either way, since that's a snapshot taken at copy time, not a
+  // live lookup.
+  const copiedFromIsOwn = r?.copiedFromOwnerId === userId;
+  const copiedFromOriginal = useFindRecipe(r?.copiedFromRecipeId, copiedFromIsOwn ? undefined : r?.copiedFromOwnerId);
 
   if (!r) return <EmptyState icon="search" title="Recipe not found" sub="It may have been deleted." />;
 
@@ -197,6 +208,7 @@ export default function RecipeDetail() {
       id: null, name: `Copy of ${r.name}`, faction: r.faction, unit: r.unit || '',
       hobbyId: r.hobbyId || 'warhammer', difficulty: r.difficulty,
       photo: null, photoPath: null, originalPhoto: null, photoFocalX: 0.5, photoFocalY: 0.5,
+      copiedFromOwnerId: ownerId, copiedFromRecipeId: r.id, copiedFromName: r.name,
       steps: (r.steps || []).map((s) => {
         if (!isShared) return { ...s, id: 'ns' + Math.random().toString(36).slice(2, 9) };
         const p = resolveStepPaint(s, 'paintId');
@@ -308,6 +320,19 @@ export default function RecipeDetail() {
         <div className="shared-badge">
           <Avatar displayName={r.author?.displayName} url={r.author?.avatarUrl} size={16} /> Shared by{' '}
           <span onClick={() => navigate(`/u/${r.authorId}`)} style={{ cursor: 'pointer', textDecoration: 'underline' }}>{r.author?.displayName}</span>
+        </div>
+      )}
+      {r.copiedFromRecipeId && (
+        <div className="shared-badge">
+          Copied from{' '}
+          {copiedFromOriginal ? (
+            <span
+              onClick={() => navigate(copiedFromIsOwn ? `/recipe/${r.copiedFromRecipeId}` : `/recipe/${r.copiedFromRecipeId}/by/${r.copiedFromOwnerId}`)}
+              style={{ cursor: 'pointer', textDecoration: 'underline' }}
+            >
+              {r.copiedFromName}
+            </span>
+          ) : r.copiedFromName}
         </div>
       )}
       {r.published && <VoteWidget recipe={r} ownerId={ownerId} />}
