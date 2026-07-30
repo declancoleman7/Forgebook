@@ -174,6 +174,48 @@ export default function RecipeDetail() {
     }
   };
 
+  // Prefills a brand-new recipe from this one -- good for a variant that
+  // shares most of its steps with something you (or someone else) already
+  // wrote up. Works on a shared recipe too, not just your own: a step
+  // there points at the AUTHOR's rack, which means nothing on your own, so
+  // it's carried over as a want-snapshot (the same shape the paint picker
+  // already writes for a library paint you don't own yet) instead of a
+  // paintId that would silently resolve to nothing. The photo is
+  // deliberately NOT copied -- a new recipe is a fresh attempt, and
+  // (for a shared recipe) it isn't yours to reuse anyway.
+  //
+  // Handed over via router location state, not state/recipeDraft.js's
+  // module-level draft: that module's read-once-and-clear pattern assumes
+  // exactly one mount of the destination form, but Layout.jsx's page-
+  // transition wrapper (AnimatePresence/motion.div keyed by pathname)
+  // genuinely mounts RecipeForm twice for a single navigation here -- the
+  // second mount would find the draft already cleared by the first, and
+  // silently land on a blank form. location.state isn't consumed on read,
+  // so it survives being read on either (or both) mount.
+  const doCopy = () => {
+    const copyFrom = {
+      id: null, name: `Copy of ${r.name}`, faction: r.faction, unit: r.unit || '',
+      hobbyId: r.hobbyId || 'warhammer', difficulty: r.difficulty,
+      photo: null, photoPath: null, originalPhoto: null, photoFocalX: 0.5, photoFocalY: 0.5,
+      steps: (r.steps || []).map((s) => {
+        if (!isShared) return { ...s, id: 'ns' + Math.random().toString(36).slice(2, 9) };
+        const p = resolveStepPaint(s, 'paintId');
+        const mixP = (s.mixPaintId || s.mixWantPaint) ? resolveStepPaint(s, 'mixPaintId') : null;
+        return {
+          id: 'ns' + Math.random().toString(36).slice(2, 9), technique: s.technique,
+          paintId: '', wantPaint: p ? { name: p.name, brand: p.brand, hex: p.hex, type: p.type } : undefined,
+          notes: s.notes || '', area: s.area || '',
+          mixPaintId: mixP ? '' : undefined,
+          mixWantPaint: mixP ? { name: mixP.name, brand: mixP.brand, hex: mixP.hex, type: mixP.type } : undefined,
+          mixRatio: s.mixRatio || '',
+        };
+      }),
+      notes: r.notes || '', published: false,
+    };
+    showToast('Copied — tweak it and save as a new recipe');
+    navigate('/recipe-new', { state: { copyFrom } });
+  };
+
   // Generates a portrait share-card PNG (see utils/shareCard.js) and hands
   // it to the Web Share API, falling back to a download + copied link on
   // desktop/unsupported browsers. An own, not-yet-published recipe gets
@@ -234,12 +276,15 @@ export default function RecipeDetail() {
     <div className="page-enter">
       <div className="detail-header">
         <button className="icon-btn" onClick={() => navigate('/recipes')}><Icon name="back" size={18} /></button>
-        {!isShared && (
-          <div style={{ display: 'flex', gap: 8 }}>
-            <button className="icon-btn" onClick={() => navigate(`/recipe/${r.id}/edit`)}><Icon name="edit" size={16} /></button>
-            <button className="icon-btn" onClick={doDelete}><Icon name="trash" size={16} /></button>
-          </div>
-        )}
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button className="icon-btn" aria-label="Copy to new recipe" title="Copy to new recipe" onClick={doCopy}><Icon name="copy" size={16} /></button>
+          {!isShared && (
+            <>
+              <button className="icon-btn" onClick={() => navigate(`/recipe/${r.id}/edit`)}><Icon name="edit" size={16} /></button>
+              <button className="icon-btn" onClick={doDelete}><Icon name="trash" size={16} /></button>
+            </>
+          )}
+        </div>
       </div>
 
       <div className={`detail-hero ${r.photo ? 'has-photo' : ''}`} style={{ '--faction-color': f.color, cursor: r.photo ? 'pointer' : undefined, ...(r.photo ? { backgroundImage: `url('${r.photo}')`, backgroundPosition: `${(r.photoFocalX ?? 0.5) * 100}% ${(r.photoFocalY ?? 0.5) * 100}%` } : {}) }}

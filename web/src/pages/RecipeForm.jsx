@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useNavigate, useParams, useLocation } from 'react-router-dom';
 import Icon from '../icons.jsx';
 import EmptyState from '../components/EmptyState.jsx';
 import PaintPicker from '../components/PaintPicker.jsx';
@@ -57,6 +57,7 @@ export default function RecipeForm() {
 
 function RecipeFormInner({ existing, myRecipes }) {
   const navigate = useNavigate();
+  const location = useLocation();
   const activeHobby = useActiveHobby();
   const confirm = useConfirm();
   const showToast = useToast();
@@ -69,9 +70,19 @@ function RecipeFormInner({ existing, myRecipes }) {
 
   const draftCandidate = getRecipeDraft();
   const draftMatches = draftCandidate && (existing ? draftCandidate.id === existing.id : !draftCandidate.id);
+  // "Copy to new recipe" (RecipeDetail.jsx) hands its prefill over via
+  // router location state, not the recipeDraft module -- that module's
+  // read-once-and-clear pattern assumes exactly one mount, which doesn't
+  // hold here: the app's page-transition wrapper (Layout.jsx's
+  // AnimatePresence/motion.div keyed by pathname) genuinely mounts
+  // RecipeFormInner twice for a single navigation, and the second mount
+  // would find the draft already cleared by the first. location.state
+  // isn't consumed on read, so reading it twice is harmless.
+  const copyFrom = location.state?.copyFrom;
 
   const [recipe, setRecipe] = useState(() => {
     if (draftMatches) { clearRecipeDraft(); return draftCandidate; }
+    if (copyFrom) return copyFrom;
     if (existing) return { ...JSON.parse(JSON.stringify(existing)), unit: existing.unit || '', originalPhoto: existing.photo || null };
     return {
       id: null, name: '', faction: activeHobby.factions[0].id, unit: '',
