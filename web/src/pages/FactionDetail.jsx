@@ -85,7 +85,7 @@ export default function FactionDetail() {
   return (
     <div className="page-enter">
       <div className="detail-header">
-        <button className="icon-btn" onClick={() => navigate('/factions')}><Icon name="back" size={18} /></button>
+        <button className="icon-btn" onClick={() => navigate(-1)}><Icon name="back" size={18} /></button>
         <button className="btn btn-ghost btn-sm" onClick={() => fileRef.current?.click()}>
           <Icon name="image" size={14} /> {personalArt ? 'Change emblem' : 'Add emblem'}
         </button>

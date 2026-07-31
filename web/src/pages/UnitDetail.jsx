@@ -19,7 +19,7 @@ export default function UnitDetail() {
   return (
     <div className="page-enter">
       <div className="detail-header">
-        <button className="icon-btn" onClick={() => navigate(`/faction/${id}`)}><Icon name="back" size={18} /></button>
+        <button className="icon-btn" onClick={() => navigate(-1)}><Icon name="back" size={18} /></button>
       </div>
       <div className="detail-id" style={{ color: f.color }}>{f.label}</div>
       <div className="detail-title">{label}</div>

@@ -1,5 +1,5 @@
-import { useMemo, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useMemo } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { emblemPaths } from '../data/factions.js';
 import { useActiveHobby } from '../hooks/useActiveHobby.js';
 import { useAllFactionArt } from '../hooks/useFactionArt.js';
@@ -69,7 +69,17 @@ export default function Collection() {
   // recipes+units and viewing the rollup across all of them are the two
   // halves of the same "browse your collection" job. See the Collections/
   // Pile of Potential merge.
-  const [tab, setTab] = useState('armies');
+  //
+  // Lives in the URL, not useState -- this page remounts fresh every time
+  // browser/back-button history returns to it (e.g. from a faction's own
+  // back button), and useState would silently reset to "armies" on every
+  // one of those remounts, discarding which tab you'd actually been on.
+  // replace:true because switching tabs is an adjustment to the view
+  // you're already on, not a new place to go back through -- same
+  // convention as HobbyLog.jsx's replaceParams for its own filter tabs.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const tab = searchParams.get('tab') === 'dashboard' ? 'dashboard' : 'armies';
+  const setTab = (next) => setSearchParams({ tab: next }, { replace: true });
   const countByFaction = useMemo(() => {
     const map = new Map();
     recipes.forEach((r) => map.set(r.faction, (map.get(r.faction) || 0) + 1));
