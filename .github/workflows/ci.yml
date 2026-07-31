@@ -1,0 +1,43 @@
+# Lint + build check for web/ -- runs on every PR that touches it (so a
+# change gets feedback before merge, not just after) and on pushes to main
+# as a safety net. Deliberately its own workflow, not folded into
+# deploy-pages.yml/deploy-web-staging.yml: those two only ever trigger on
+# push to main and each does a real deploy, which a pull_request trigger
+# must never do -- a PR from a branch should never deploy to production or
+# staging on its own.
+name: CI
+
+on:
+  pull_request:
+    paths:
+      - "web/**"
+      - ".github/workflows/ci.yml"
+  push:
+    branches: [main]
+    paths:
+      - "web/**"
+      - ".github/workflows/ci.yml"
+
+jobs:
+  lint-and-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Install dependencies
+        working-directory: web
+        run: npm ci
+
+      - name: Lint
+        working-directory: web
+        run: npm run lint
+
+      - name: Build
+        working-directory: web
+        run: npm run build
