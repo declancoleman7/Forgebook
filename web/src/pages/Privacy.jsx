@@ -67,12 +67,14 @@ export default function Privacy() {
         comments, notes) directly in the app at any time.
       </p>
       <p>
-        Full account deletion isn't yet a self-service button in the app — email [placeholder
-        contact email] and we'll remove your account and its data by hand. One honest exception: if
-        someone else has used "Copy to new recipe" on a recipe you published, their copy keeps a
-        small text note recording the original recipe's name (not your account or any other
-        personal details) even after your account is gone — that's a deliberate record of where a
-        recipe came from, not something tied to your live account.
+        You can also delete your whole account yourself, any time, from Settings → Danger zone.
+        This permanently removes your account, your recipes, paint rack, Pile of Potential, and
+        every comment, note, and rating you've left, along with any photos you've uploaded — it
+        can't be undone. One honest exception: if someone else has used "Copy to new recipe" on a
+        recipe you published, their copy keeps a small text note recording the original recipe's
+        name (not your account or any other personal details) even after your account is gone —
+        that's a deliberate record of where a recipe came from, not something tied to your live
+        account.
       </p>
 
       <div className="section-label">Changes</div>

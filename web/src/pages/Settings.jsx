@@ -7,7 +7,7 @@ import { useAuth } from '../auth/AuthContext.jsx';
 import { useConfirm } from '../confirm/ConfirmContext.jsx';
 import { useToast } from '../toast/ToastContext.jsx';
 import { useTheme } from '../hooks/useTheme.js';
-import { useMyProfile, useUpdateDisplayName, useUploadAvatar } from '../queries/useProfile.js';
+import { useMyProfile, useUpdateDisplayName, useUploadAvatar, useDeleteAccount } from '../queries/useProfile.js';
 import { useMyHobbies, useAddHobby } from '../queries/useHobbies.js';
 import { HOBBIES } from '../data/factions.js';
 import { downscaleImage, downscaleImageSquare } from '../utils/image.js';
@@ -28,6 +28,7 @@ export default function Settings() {
   const profileQuery = useMyProfile();
   const updateDisplayName = useUpdateDisplayName();
   const uploadAvatar = useUploadAvatar();
+  const deleteAccount = useDeleteAccount();
   const hobbiesQuery = useMyHobbies();
   const addHobby = useAddHobby();
 
@@ -37,6 +38,12 @@ export default function Settings() {
   // only happens once they close the picker, using that point instead of
   // always taking the dead center.
   const [avatarPending, setAvatarPending] = useState(null);
+  // Deleting an account is a lot more consequential than deleting one
+  // recipe, so this gets a heavier confirmation than useConfirm()'s plain
+  // yes/no dialog -- typing the exact display name is a deliberate second
+  // step, not just a reflexive tap.
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [deleteText, setDeleteText] = useState('');
 
   const profile = profileQuery.data;
   const displayName = nameDraft ?? profile?.displayName ?? '';
@@ -79,6 +86,22 @@ export default function Settings() {
     if (await confirm('Sign out of Forgebook?', { okLabel: 'Sign out' })) {
       await signOut();
       showToast('Signed out');
+    }
+  };
+
+  // Calls the delete-account Edge Function (the browser client can never
+  // delete an auth.users row on its own -- see supabase/functions/
+  // delete-account), then tears down the local session the same way
+  // signing out does, since the account it belonged to no longer exists.
+  const doDeleteAccount = async () => {
+    showToast('Deleting your account…');
+    try {
+      await deleteAccount.mutateAsync();
+      await signOut();
+      showToast('Account deleted');
+      navigate('/home');
+    } catch (e) {
+      showToast(e.message || "Couldn't delete your account — try again.");
     }
   };
 
@@ -220,6 +243,37 @@ export default function Settings() {
         <div className="settings-row" style={{ cursor: 'pointer' }} onClick={() => navigate('/privacy')}>
           <div className="settings-row__label">Privacy Policy</div>
           <Icon name="chevron" size={18} />
+        </div>
+      </div>
+
+      <div className="section-label">Danger zone</div>
+      <div className="settings-group">
+        <div className="settings-row" style={{ display: 'block' }}>
+          <div className="settings-row__label">Delete account</div>
+          <div className="settings-row__desc" style={{ marginBottom: 10 }}>
+            Permanently deletes your account and everything in it — recipes, your paint rack, the
+            Pile of Potential, comments, notes, and ratings. This cannot be undone.
+          </div>
+          {deleteOpen ? (
+            <>
+              <div className="field" style={{ marginBottom: 8 }}>
+                <label>Type "{profile?.displayName}" to confirm</label>
+                <input type="text" value={deleteText} onChange={(e) => setDeleteText(e.target.value)} autoFocus />
+              </div>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button className="btn btn-ghost btn-sm" onClick={() => { setDeleteOpen(false); setDeleteText(''); }}>Cancel</button>
+                <button
+                  className="btn btn-danger btn-sm"
+                  disabled={!profile || deleteText.trim() !== profile.displayName || deleteAccount.isPending}
+                  onClick={doDeleteAccount}
+                >
+                  Permanently delete my account
+                </button>
+              </div>
+            </>
+          ) : (
+            <button className="btn btn-danger btn-sm" onClick={() => setDeleteOpen(true)}>Delete account</button>
+          )}
         </div>
       </div>
 

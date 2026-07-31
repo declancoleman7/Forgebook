@@ -101,6 +101,23 @@ export function useUpdateDefaultHobby() {
   });
 }
 
+// Calls the delete-account Edge Function (supabase/functions/delete-account)
+// -- the one thing the browser client can never do on its own, since
+// deleting an auth.users row needs the service_role key, which must never
+// reach a browser. No cache patching here: the caller signs out and
+// navigates away immediately after this resolves, so there's nothing left
+// to keep in sync.
+export function useDeleteAccount() {
+  return useMutation({
+    mutationFn: async () => {
+      const { data, error } = await supabase.functions.invoke('delete-account');
+      if (error) throw new Error(error.message || "Couldn't delete your account — try again.");
+      if (data && data.ok === false) throw new Error(data.error || "Couldn't delete your account — try again.");
+      return true;
+    },
+  });
+}
+
 export function useUploadAvatar() {
   const { userId } = useAuth();
   const qc = useQueryClient();
