@@ -431,7 +431,7 @@ export default function RecipeDetail() {
             <div className="section-label">Used by</div>
             <div className="hobbylog-list">
               {usedByEntries.map((entry) => (
-                <div key={entry.id} className="hobbylog-card" style={{ cursor: 'pointer' }} onClick={() => navigate('/hobby-log')}>
+                <div key={entry.id} className="hobbylog-card" style={{ cursor: 'pointer' }} onClick={() => navigate(`/hobby-log?entry=${entry.id}`)}>
                   <div className={`hobbylog-card__photo ${entry.photo ? 'has-photo' : ''}`} style={entry.photo ? { backgroundImage: `url('${entry.photo}')` } : undefined}>
                     {!entry.photo && <Icon name="paintdrop" size={22} />}
                   </div>
